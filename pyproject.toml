@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phase1-decomposition"
+version = "0.1.0"
+description = "Phase 1 decomposition: turn a Python repo into a deterministic repo-analysis artifact bundle (no LLM), then condense it into planner-facing digests."
+requires-python = ">=3.11"
+readme = "README.md"
+dependencies = [
+    "PyYAML",
+    "packaging",
+]
+
+[project.optional-dependencies]
+# Local semantic-retrieval lane (rag/vectors.faiss). Heavy; opt-in.
+embeddings = [
+    "faiss-cpu",
+    "numpy",
+    "model2vec",
+]
+# Contextual AST-aware query previews (queries/results/grep-ast/*.md).
+grepast = [
+    "grep-ast",
+    "tree-sitter-language-pack",
+    "pathspec",
+]
+
+[project.scripts]
+phase1-decompose = "phase1_decomposition.core.cli:main"
+
+[tool.setuptools]
+packages = [
+    "phase1_decomposition",
+    "phase1_decomposition.core",
+    "phase1_decomposition.libs",
+    "phase1_decomposition.libs.lanes",
+    "phase1_decomposition.libs.digest",
+    "phase1_decomposition.libs.commands",
+    "phase1_decomposition.libs.plan_normalization",
+]
