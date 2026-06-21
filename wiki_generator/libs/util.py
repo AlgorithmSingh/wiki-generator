@@ -123,4 +123,4 @@ def write_text(path: str, text: str) -> None:
 
 # --- Logging -------------------------------------------------------------------
 def log(msg: str) -> None:
-    print(f"[phase1] {msg}", file=sys.stderr, flush=True)
+    print(f"[wiki] {msg}", file=sys.stderr, flush=True)

@@ -11,7 +11,7 @@ No LLM calls in Phase 1.
 ## Command shape
 
 ```bash
-python -m phase1_decomposition decompose \
+python -m wiki_generator decompose \
   --repo /path/to/python/repo \
   --out /path/to/phase1-output
 ```

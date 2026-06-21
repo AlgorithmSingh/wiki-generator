@@ -92,7 +92,7 @@ The planner does not need the raw graph or full symbol table. It needs compact s
 This should be implemented in the **same Python package** as Step 1:
 
 ```text
-/Users/ankitsingh/Documents/deep-wiki/7-phase1-decomposition/phase1_decomposition/
+/Users/ankitsingh/Documents/deep-wiki/7-phase1-decomposition/wiki_generator/
 ```
 
 Do not create a completely separate codebase unless there is a strong reason. Step 2/3 consumes the exact artifact formats produced by Step 1, so it should reuse the same package, paths, JSONL utilities, artifact conventions, and tests.
@@ -100,7 +100,7 @@ Do not create a completely separate codebase unless there is a strong reason. St
 Recommended code shape:
 
 ```text
-phase1_decomposition/
+wiki_generator/
   cli.py                         # add condense/digest subcommands
   digest/
     __init__.py
@@ -121,11 +121,11 @@ The directory `/Users/ankitsingh/Documents/deep-wiki/7-phase1-decomposition-2/` 
 Step 2 and Step 3 can be exposed as separate commands:
 
 ```bash
-python -m phase1_decomposition condense \
+python -m wiki_generator condense \
   --in /path/to/phase1-output \
   --budget-tokens 250000
 
-python -m phase1_decomposition digest \
+python -m wiki_generator digest \
   --in /path/to/phase1-output \
   --out /path/to/phase1-output/planner-digest \
   --budget-tokens 250000

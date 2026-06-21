@@ -3,7 +3,7 @@
 Merges the DocumentPlan section metadata (title / order / parent / purpose /
 rationale / priority) with the matching SectionPlan (goal / coverage / questions
 / evidence needs), resolves every reference against the Phase 1 indexes via
-:class:`~phase1_decomposition.libs.plan_normalization.lookups.Lookups`, and
+:class:`~wiki_generator.libs.plan_normalization.lookups.Lookups`, and
 collects unresolved references. Deterministic; no LLM.
 """
 from __future__ import annotations
@@ -219,7 +219,7 @@ def _document_plan(doc: dict, section_order: list[str], lk: Lookups,
         "source_raw_response": source_raw_rel,
         "provider": provider,
         "normalization": {
-            "generated_by": "phase1_decomposition normalize-plan",
+            "generated_by": "wiki_generator normalize-plan",
             "unresolved_count": unresolved_count,
             "warnings": warnings,
         },

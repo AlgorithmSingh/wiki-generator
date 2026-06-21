@@ -64,7 +64,7 @@ Step 4 fails if:
 Canonical command:
 
 ```bash
-python3 -m phase1_decomposition bundle \
+python3 -m wiki_generator bundle \
   --in /path/to/phase1-output \
   --out /path/to/phase1-output/planner-digest \
   --budget-tokens 250000
@@ -268,7 +268,7 @@ If required files alone exceed the budget, fail loudly and write the reason to `
 Recommended package shape:
 
 ```text
-phase1_decomposition/
+wiki_generator/
   core/cli.py                 # add bundle subcommand
   libs/commands/bundle.py     # command wrapper
   libs/digest/upload_package.py

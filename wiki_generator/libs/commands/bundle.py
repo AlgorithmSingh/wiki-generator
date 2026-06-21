@@ -4,7 +4,7 @@ Packages the Step 2 condensates + the Step 3 ``planning-digest.md`` into an
 upload-ready ``planner-digest/`` folder (README + upload-list + the one
 concatenated ``planner-upload-bundle.md``). Deterministic; no LLM calls.
 
-    python -m phase1_decomposition bundle --in <bundle> [--out <dir>] [--budget-tokens N]
+    python -m wiki_generator bundle --in <bundle> [--out <dir>] [--budget-tokens N]
 """
 from __future__ import annotations
 

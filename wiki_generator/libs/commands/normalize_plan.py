@@ -3,7 +3,7 @@
 Reads the raw Gemini/Kimi planning response and the Phase 1 indexes, then writes
 machine-resolvable plan artifacts for Phase 3. No LLM calls.
 
-    python -m phase1_decomposition normalize-plan \\
+    python -m wiki_generator normalize-plan \\
         --bundle <bundle> --raw-response <bundle>/plans/phase2-gemini-response.md \\
         [--out <dir>] [--strict] [--provider gemini]
 """

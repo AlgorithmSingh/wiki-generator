@@ -1,14 +1,15 @@
 """Command-line interface (thin dispatcher).
 
 The CLI only parses arguments and routes to a command in
-``phase1_decomposition.libs.commands``. All real work lives in ``libs``; this
+``wiki_generator.libs.commands``. All real work lives in ``libs``; this
 module stays deliberately small.
 
-    python -m phase1_decomposition decompose     --repo <repo> --out <out> [flags]
-    python -m phase1_decomposition condense      --in <bundle> [--budget-tokens N]
-    python -m phase1_decomposition digest        --in <bundle> [--out <dir>] [--budget-tokens N]
-    python -m phase1_decomposition bundle        --in <bundle> [--out <dir>] [--budget-tokens N]
-    python -m phase1_decomposition normalize-plan --bundle <bundle> --raw-response <file> [--out <dir>]
+    python -m wiki_generator decompose     --repo <repo> --out <out> [flags]
+    python -m wiki_generator condense      --in <bundle> [--budget-tokens N]
+    python -m wiki_generator digest        --in <bundle> [--out <dir>] [--budget-tokens N]
+    python -m wiki_generator bundle        --in <bundle> [--out <dir>] [--budget-tokens N]
+    python -m wiki_generator plan          --bundle <bundle> [--project P --location L]  (Vertex AI; LLM step)
+    python -m wiki_generator normalize-plan --bundle <bundle> --raw-response <file> [--out <dir>]
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ from ..libs.commands import condense as condense_cmd
 from ..libs.commands import decompose as decompose_cmd
 from ..libs.commands import digest as digest_cmd
 from ..libs.commands import normalize_plan as normalize_plan_cmd
+from ..libs.commands import plan as plan_cmd
 
 _TOGGLE = ("auto", "on", "off")
 DEFAULT_BUDGET_TOKENS = 250_000
@@ -26,7 +28,7 @@ DEFAULT_BUDGET_TOKENS = 250_000
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="phase1_decomposition",
+        prog="wiki_generator",
         description="Phase 1 decomposition: build a deterministic repo-analysis "
                     "artifact bundle from a Python repo (no LLM calls), then "
                     "condense it into planner-facing digests.",
@@ -82,6 +84,36 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--budget-tokens", type=int, default=DEFAULT_BUDGET_TOKENS,
                    help="target upload token budget (default 250000)")
 
+    pl = sub.add_parser("plan",
+                        help="Phase 2 Step 1: run the planning LLM (Vertex AI "
+                             "Gemini 2.5 Pro) on the upload bundle. The only LLM "
+                             "step; needs the [vertex] extra + GCP credentials.")
+    pl.add_argument("--bundle", required=True,
+                    help="path to the Phase 1 decomposition bundle")
+    pl.add_argument("--bundle-file", dest="bundle_file", default=None,
+                    help="explicit upload bundle path "
+                         "(default <bundle>/planner-digest/planner-upload-bundle.md)")
+    pl.add_argument("--out", dest="out_dir", default=None,
+                    help="output directory for the raw response (default <bundle>/plans)")
+    pl.add_argument("--model", default="gemini-2.5-pro",
+                    help="Vertex AI model id (default gemini-2.5-pro)")
+    pl.add_argument("--project", default=None,
+                    help="GCP project (default $GOOGLE_CLOUD_PROJECT)")
+    pl.add_argument("--location", default=None,
+                    help="Vertex AI location (default $GOOGLE_CLOUD_LOCATION or us-central1)")
+    pl.add_argument("--provider", default="gemini",
+                    help="provider label for the output filename (default gemini)")
+    pl.add_argument("--system", default=None,
+                    help="system-instructions file (default gemini-gem/GEM_INSTRUCTIONS.md "
+                         "if present, else built-in)")
+    pl.add_argument("--prompt", default=None,
+                    help="kickoff-prompt file (default gemini-gem/KICKOFF_PROMPT.md "
+                         "if present, else built-in)")
+    pl.add_argument("--temperature", type=float, default=0.2,
+                    help="sampling temperature (default 0.2)")
+    pl.add_argument("--max-output-tokens", dest="max_output_tokens", type=int,
+                    default=65535, help="max output tokens (default 65535)")
+
     n = sub.add_parser("normalize-plan",
                        help="Phase 2 Step 2: deterministically normalize a planning "
                             "LLM response into machine-resolvable plan artifacts")
@@ -110,6 +142,8 @@ def main(argv: list[str] | None = None) -> int:
         return digest_cmd.run(args)
     if args.command == "bundle":
         return bundle_cmd.run(args)
+    if args.command == "plan":
+        return plan_cmd.run(args)
     if args.command == "normalize-plan":
         return normalize_plan_cmd.run(args)
     return 2  # pragma: no cover - argparse enforces a known command

@@ -466,7 +466,7 @@ def _write_ast_tags(ctx: RunContext, symbols: list[dict], constants_rows: list[d
     header = [
         "!_TAG_FILE_FORMAT\t2\t/extended format; --format=1 will not append ;\" to lines/",
         "!_TAG_FILE_SORTED\t1\t/0=unsorted, 1=sorted, 2=foldcase/",
-        "!_TAG_PROGRAM_NAME\tphase1_decomposition\t//",
+        "!_TAG_PROGRAM_NAME\twiki_generator\t//",
     ]
     lines_out = list(header)
     for name, path, pattern, kl, line, scope, scope_kind, _kn in entries:

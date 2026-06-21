@@ -56,7 +56,7 @@ The normalizer must not:
 Canonical command:
 
 ```bash
-python3 -m phase1_decomposition normalize-plan \
+python3 -m wiki_generator normalize-plan \
   --bundle /path/to/phase1-output \
   --raw-response /path/to/phase1-output/plans/phase2-gemini-response.md \
   --out /path/to/phase1-output/plans
@@ -161,7 +161,7 @@ Minimum required shape:
   "known_gaps": ["string"],
   "source_raw_response": "plans/phase2-gemini-response.md",
   "normalization": {
-    "generated_by": "phase1_decomposition normalize-plan",
+    "generated_by": "wiki_generator normalize-plan",
     "unresolved_count": 0,
     "warnings": []
   }
@@ -370,7 +370,7 @@ Each unresolved reference should include:
 Recommended package shape:
 
 ```text
-phase1_decomposition/
+wiki_generator/
   core/cli.py                         # add normalize-plan subcommand
   libs/commands/normalize_plan.py     # command wrapper
   libs/plan_normalization/

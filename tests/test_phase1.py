@@ -1,4 +1,4 @@
-"""End-to-end + unit tests for phase1_decomposition. Runnable with stdlib only:
+"""End-to-end + unit tests for wiki_generator. Runnable with stdlib only:
 
     python -m unittest discover -s tests -v
 """
@@ -14,9 +14,9 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from phase1_decomposition.libs import config, ids  # noqa: E402
-from phase1_decomposition.libs import chunker  # noqa: E402
-from phase1_decomposition.libs.lanes import symbols as symmod  # noqa: E402
+from wiki_generator.libs import config, ids  # noqa: E402
+from wiki_generator.libs import chunker  # noqa: E402
+from wiki_generator.libs.lanes import symbols as symmod  # noqa: E402
 
 
 def _read_jsonl(path):
@@ -69,7 +69,7 @@ def _make_repo(d: str) -> None:
 
 def _run(repo: str, out: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, "-m", "phase1_decomposition", "decompose",
+        [sys.executable, "-m", "wiki_generator", "decompose",
          "--repo", repo, "--out", out],
         cwd=ROOT, capture_output=True, text=True, timeout=300,
     )
@@ -318,7 +318,7 @@ class EndToEndTests(unittest.TestCase):
 
 def _run_cmd(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, "-m", "phase1_decomposition", *args],
+        [sys.executable, "-m", "wiki_generator", *args],
         cwd=ROOT, capture_output=True, text=True, timeout=300,
     )
 
@@ -326,17 +326,17 @@ def _run_cmd(*args: str) -> subprocess.CompletedProcess:
 class RankingUnitTests(unittest.TestCase):
     def test_top_is_deterministic_and_tie_broken(self):
         from collections import Counter
-        from phase1_decomposition.libs.digest import ranking as R
+        from wiki_generator.libs.digest import ranking as R
         c = Counter({"b": 2, "a": 2, "c": 5})
         self.assertEqual(R.top(c, 3), [("c", 5), ("a", 2), ("b", 2)])
 
     def test_md_table_escapes_pipes(self):
-        from phase1_decomposition.libs.digest import ranking as R
+        from wiki_generator.libs.digest import ranking as R
         out = R.md_table(["h"], [["a|b"]])
         self.assertIn("a\\|b", "\n".join(out))
 
     def test_symbol_classifiers(self):
-        from phase1_decomposition.libs.digest import ranking as R
+        from wiki_generator.libs.digest import ranking as R
         self.assertTrue(R.is_route({"decorators": ["router.get"]}))
         self.assertTrue(R.is_worker({"decorators": ["shared_task"]}))
         self.assertTrue(R.is_cli({"decorators": ["click.command"]}))
@@ -427,7 +427,7 @@ class DigestTests(unittest.TestCase):
 
     def test_graph_labels_disambiguate_same_file(self):
         # Two symbols in one file must not collapse to one ambiguous label.
-        from phase1_decomposition.libs.digest import planning_graph as G
+        from wiki_generator.libs.digest import planning_graph as G
         nodes = {
             "sym:a": {"node_id": "sym:a", "type": "Function", "name": "f",
                       "path": "x.py"},
@@ -447,7 +447,7 @@ class DigestTests(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(out2, name)), name)
 
     def test_bundle_budget_trim_keeps_required(self):
-        from phase1_decomposition.libs.commands import bundle as bcmd
+        from wiki_generator.libs.commands import bundle as bcmd
         full = bcmd.assemble_package(self.out, os.path.join(self.tmp, "b_full"), 250_000)
         req, total = full["required_tokens"], full["total_tokens"]
         self.assertFalse(full["failed"])
@@ -463,7 +463,7 @@ class DigestTests(unittest.TestCase):
             self.assertIn("planner-digest/README_FOR_PLANNER.md", trimmed["included"])
 
     def test_bundle_fail_loud_when_required_over_budget(self):
-        from phase1_decomposition.libs.commands import bundle as bcmd
+        from wiki_generator.libs.commands import bundle as bcmd
         rep = bcmd.assemble_package(self.out, os.path.join(self.tmp, "b_fail"), 1)
         self.assertTrue(rep["failed"])
         self.assertFalse(rep["within_budget"])
@@ -485,7 +485,7 @@ class DigestTests(unittest.TestCase):
 
 class NormalizePlanUnitTests(unittest.TestCase):
     def test_parse_minimal(self):
-        from phase1_decomposition.libs.plan_normalization import parse
+        from wiki_generator.libs.plan_normalization import parse
         text = (
             "prose\n\n"
             "```text\nplans/document-plan.json\n```\n\n"
@@ -499,13 +499,13 @@ class NormalizePlanUnitTests(unittest.TestCase):
         self.assertEqual(rp.section_plans[0]["section_id"], "a")
 
     def test_parse_ambiguous_document_plan_raises(self):
-        from phase1_decomposition.libs.plan_normalization import parse
+        from wiki_generator.libs.plan_normalization import parse
         text = ('```json\n{"sections":[]}\n```\n\n```json\n{"sections":[]}\n```\n')
         with self.assertRaises(parse.ParseError):
             parse.parse(text)
 
     def test_parse_missing_section_plans_raises(self):
-        from phase1_decomposition.libs.plan_normalization import parse
+        from wiki_generator.libs.plan_normalization import parse
         text = ('```text\nplans/document-plan.json\n```\n'
                 '```json\n{"sections":[{"id":"a","title":"A"}]}\n```\n')
         with self.assertRaises(parse.ParseError):
@@ -514,7 +514,7 @@ class NormalizePlanUnitTests(unittest.TestCase):
     def test_parse_format4_markdown_headings(self):
         # Accepted raw format #4: DocumentPlan/SectionPlans markdown headings with
         # raw (unfenced) JSON beneath them.
-        from phase1_decomposition.libs.plan_normalization import parse
+        from wiki_generator.libs.plan_normalization import parse
         text = (
             "# Plan\n\n"
             "## DocumentPlan\n\n"
@@ -531,7 +531,7 @@ class NormalizePlanUnitTests(unittest.TestCase):
         # Gemini sometimes writes the filename on the SAME fence line as the
         # language, e.g. "```text plans/document-plan.json" with the content in
         # that one fence. The label must be read from the info string.
-        from phase1_decomposition.libs.plan_normalization import parse
+        from wiki_generator.libs.plan_normalization import parse
         text = (
             "intro\n\n"
             "```text plans/document-plan.json\n"
@@ -547,7 +547,7 @@ class NormalizePlanUnitTests(unittest.TestCase):
         self.assertEqual(rp.section_plans[0]["section_id"], "a")
 
     def test_digest_artifact_requires_on_disk(self):
-        from phase1_decomposition.libs.plan_normalization.lookups import Lookups
+        from wiki_generator.libs.plan_normalization.lookups import Lookups
         lk = Lookups("/nonexistent")
         lk._artifact_basenames = {"openapi.json"}
         # basename matches the allowlist but no such file exists -> unresolved
@@ -555,9 +555,9 @@ class NormalizePlanUnitTests(unittest.TestCase):
                          "no_match")
 
     def test_title_fallback_no_double_consume(self):
-        from phase1_decomposition.libs.plan_normalization import normalize as N
-        from phase1_decomposition.libs.plan_normalization.parse import RawPlan
-        from phase1_decomposition.libs.plan_normalization.lookups import Lookups
+        from wiki_generator.libs.plan_normalization import normalize as N
+        from wiki_generator.libs.plan_normalization.parse import RawPlan
+        from wiki_generator.libs.plan_normalization.lookups import Lookups
         lk = Lookups("/nonexistent")
         doc = {"repo": "x", "sections": [{"id": "a", "title": "Alpha"},
                                          {"title": "Shared Title"}]}
@@ -572,7 +572,7 @@ class NormalizePlanUnitTests(unittest.TestCase):
                             for w in by["shared-title"]["normalization_warnings"]))
 
     def test_slugify_and_unique_ids(self):
-        from phase1_decomposition.libs.plan_normalization import normalize as N
+        from wiki_generator.libs.plan_normalization import normalize as N
         self.assertEqual(N._slugify("RAG Pipeline & Tasks"), "rag-pipeline-tasks")
         used = set()
         self.assertEqual(N._section_id("overview", "Overview", used), "overview")
@@ -580,7 +580,7 @@ class NormalizePlanUnitTests(unittest.TestCase):
         self.assertEqual(N._section_id("API Routes", "API Routes", used), "api-routes")
 
     def test_symbol_resolution_logic(self):
-        from phase1_decomposition.libs.plan_normalization.lookups import Lookups
+        from wiki_generator.libs.plan_normalization.lookups import Lookups
         lk = Lookups("/nonexistent")
         lk._by_id = {"sid1": {}, "sid2": {}}
         lk._sym_alias = {"dup": {"sid1", "sid2"}, "uniq": {"sid1"}}
@@ -593,7 +593,7 @@ class NormalizePlanUnitTests(unittest.TestCase):
         self.assertEqual(lk.resolve_symbol("missing").resolution, "no_match")
 
     def test_file_resolution_and_anchor_confidence(self):
-        from phase1_decomposition.libs.plan_normalization.lookups import Lookups
+        from wiki_generator.libs.plan_normalization.lookups import Lookups
         lk = Lookups("/nonexistent")
         lk.files = {"a/b/c.py", "d/c.py", "x/y.py"}
         lk.line_counts = {"x/y.py": 10}
@@ -607,7 +607,7 @@ class NormalizePlanUnitTests(unittest.TestCase):
         self.assertEqual(lk.resolve_file("x/y.py:Heading").anchor_confidence, "file_only")
 
     def test_norm(self):
-        from phase1_decomposition.libs.plan_normalization.lookups import _norm
+        from wiki_generator.libs.plan_normalization.lookups import _norm
         self.assertEqual(_norm("Auth / security"), "auth_security")
         self.assertEqual(_norm("Tasks / workers"), "tasks_workers")
         self.assertEqual(_norm("Config keys (code)"), "config_keys_code")
@@ -707,7 +707,7 @@ class NormalizePlanE2ETests(unittest.TestCase):
         self.assertEqual(types, {"symbol", "query_pack", "contract"})
 
     def test_query_pack_aliases_map_to_canonical(self):
-        from phase1_decomposition.libs.plan_normalization.lookups import Lookups
+        from wiki_generator.libs.plan_normalization.lookups import Lookups
         lk = Lookups.load(self.out)
         cases = {
             "Web routes": "web_routes", "Auth / security": "auth_security",
@@ -739,6 +739,38 @@ class NormalizePlanE2ETests(unittest.TestCase):
                      "unresolved-references.jsonl"):
             with open(os.path.join(a, name)) as f1, open(os.path.join(b, name)) as f2:
                 self.assertEqual(f1.read(), f2.read(), name)
+
+
+class PlanCommandTests(unittest.TestCase):
+    """Phase 2 Step 1 `plan` command — the config-check paths run without the
+    google-genai SDK or any GCP credentials."""
+
+    def test_build_user_content_orders_kickoff_then_bundle(self):
+        from wiki_generator.libs.commands.plan import build_user_content
+        out = build_user_content("KICK", "BUNDLE-TEXT")
+        self.assertIn("KICK", out)
+        self.assertIn("BUNDLE-TEXT", out)
+        self.assertLess(out.index("KICK"), out.index("BUNDLE-TEXT"))
+
+    def test_plan_missing_bundle_file_exits_2(self):
+        tmp = tempfile.mkdtemp(prefix="p1plan_")
+        p = _run_cmd("plan", "--bundle", tmp, "--project", "dummy")
+        self.assertEqual(p.returncode, 2, p.stderr)
+        self.assertIn("planner-upload-bundle.md", p.stderr)
+
+    def test_plan_missing_project_exits_2(self):
+        tmp = tempfile.mkdtemp(prefix="p1plan2_")
+        pkg = os.path.join(tmp, "planner-digest")
+        os.makedirs(pkg)
+        with open(os.path.join(pkg, "planner-upload-bundle.md"), "w") as f:
+            f.write("# bundle\n")
+        env = dict(os.environ)
+        env.pop("GOOGLE_CLOUD_PROJECT", None)
+        proc = subprocess.run(
+            [sys.executable, "-m", "wiki_generator", "plan", "--bundle", tmp],
+            cwd=ROOT, capture_output=True, text=True, timeout=120, env=env)
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn("project", proc.stderr.lower())
 
 
 if __name__ == "__main__":

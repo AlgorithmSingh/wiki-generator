@@ -111,10 +111,10 @@ def _derive_from_routes(ctx: RunContext, routes: list[dict], repo_name: str) -> 
             "title": f"{repo_name} (derived)",
             "version": "0.0.0",
             "description": "Derived statically from route decorators by "
-                           "phase1_decomposition. NOT authoritative — no app code "
+                           "wiki_generator. NOT authoritative — no app code "
                            "was executed; request/response schemas are unknown.",
         },
-        "x-derived-by": "phase1_decomposition static route analysis",
+        "x-derived-by": "wiki_generator static route analysis",
         "x-frameworks": sorted(frameworks),
         "paths": dict(sorted(paths.items())),
     }

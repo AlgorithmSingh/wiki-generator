@@ -6,7 +6,7 @@ Build/refresh the upload with **Step 4**:
 
 ```bash
 cd /Users/ankitsingh/Documents/deep-wiki/7-phase1-decomposition-2
-python3 -m phase1_decomposition bundle \
+python3 -m wiki_generator bundle \
   --in /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 \
   --budget-tokens 250000
 ```
@@ -66,7 +66,7 @@ Save the raw response to
 it deterministically (no LLM) into machine-resolvable plan artifacts:
 
 ```bash
-python3 -m phase1_decomposition normalize-plan \
+python3 -m wiki_generator normalize-plan \
   --bundle /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 \
   --raw-response /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2/plans/phase2-gemini-response.md
 ```

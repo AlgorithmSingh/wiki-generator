@@ -9,7 +9,7 @@ top-level ``ARTIFACT_GUIDE.md``.
 
 Run:
 
-    python -m phase1_decomposition decompose --repo <repo> --out <out>
+    python -m wiki_generator decompose --repo <repo> --out <out>
 """
 from __future__ import annotations
 
@@ -19,4 +19,4 @@ __version__ = "0.1.0"
 SCHEMA_VERSION = "1"
 
 # Identifies the producer in ARTIFACT_GUIDE.md / run-metadata.json.
-GENERATOR = f"phase1_decomposition v{__version__} (schema {SCHEMA_VERSION})"
+GENERATOR = f"wiki_generator v{__version__} (schema {SCHEMA_VERSION})"

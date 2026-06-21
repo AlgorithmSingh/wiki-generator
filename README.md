@@ -13,7 +13,9 @@ Phase 1  Step 1 decompose  -> raw artifact bundle
          Step 2 condense    -> derived/planning-*.md condensates
          Step 3 digest      -> derived/planning-digest.md
          Step 4 bundle      -> planner-digest/planner-upload-bundle.md (one upload)
-Phase 2  Step 1 (external)  -> Gemini/Kimi plan: plans/phase2-<provider>-response.md
+Phase 2  Step 1 plan        -> Gemini/Kimi plan: plans/phase2-<provider>-response.md
+                               (Vertex AI Gemini 2.5 Pro; the one LLM step.
+                                or run the Gem by hand and save the reply)
          Step 2 normalize-plan -> plans/document-plan.json + section-plans.jsonl
 Phase 3  (later)            -> deterministic section evidence retrieval
 ```
@@ -28,7 +30,7 @@ This implements `PHASE1_DECOMPOSITION_PLAN.md` (Step 1),
 The package follows a **simple core / deep libs** split:
 
 ```
-phase1_decomposition/
+wiki_generator/
   core/cli.py            thin argument parser + dispatcher — no logic
   libs/                  every deep module lives here
     util · ids · config · paths · tools · chunker · rgpacks · context · pipeline
@@ -53,24 +55,30 @@ lanes use external tools **when present** and degrade gracefully when not.
 python -m venv .venv
 .venv/bin/pip install -e .            # or: pip install pyyaml packaging
 
-.venv/bin/python -m phase1_decomposition decompose \
+.venv/bin/python -m wiki_generator decompose \
   --repo /path/to/python/repo \
   --out  /path/to/phase1-output
 
 # Step 2 — write planning condensates into <bundle>/derived/
-.venv/bin/python -m phase1_decomposition condense \
+.venv/bin/python -m wiki_generator condense \
   --in /path/to/phase1-output --budget-tokens 250000
 
 # Step 3 — write derived/planning-digest.md (also runs Step 4 by default)
-.venv/bin/python -m phase1_decomposition digest \
+.venv/bin/python -m wiki_generator digest \
   --in /path/to/phase1-output --budget-tokens 250000
 
 # Step 4 — assemble the single-file planner upload bundle
-.venv/bin/python -m phase1_decomposition bundle \
+.venv/bin/python -m wiki_generator bundle \
   --in /path/to/phase1-output --budget-tokens 250000
 
-# Phase 2 Step 2 — normalize a planning LLM response (after Gemini/Kimi runs)
-.venv/bin/python -m phase1_decomposition normalize-plan \
+# Phase 2 Step 1 — run the planning LLM (Vertex AI Gemini 2.5 Pro). The one LLM
+# step; needs the [vertex] extra + GCP credentials (see below). Optional — you can
+# instead run the Gem by hand and save the reply to plans/phase2-gemini-response.md.
+.venv/bin/python -m wiki_generator plan \
+  --bundle /path/to/phase1-output --project my-gcp-project --location us-central1
+
+# Phase 2 Step 2 — normalize the planning response (deterministic, no LLM)
+.venv/bin/python -m wiki_generator normalize-plan \
   --bundle /path/to/phase1-output \
   --raw-response /path/to/phase1-output/plans/phase2-gemini-response.md
 ```
@@ -85,8 +93,29 @@ Optional capabilities:
 ```bash
 .venv/bin/pip install -e '.[embeddings]'   # rag/vectors.faiss (faiss + model2vec)
 .venv/bin/pip install -e '.[grepast]'      # AST-context query previews
+.venv/bin/pip install -e '.[vertex]'       # `plan` command (Vertex AI Gemini, google-genai)
 # brew install universal-ctags semgrep ast-grep   # richer symbol/query lanes
 ```
+
+### Phase 2 Step 1 — `plan` (Vertex AI Gemini 2.5 Pro)
+
+`plan` is the **only** command that calls an LLM. It sends the planner
+instructions + kickoff prompt + the Step 4 upload bundle to `gemini-2.5-pro` on
+Vertex AI and writes the raw response to `plans/phase2-gemini-response.md`.
+
+```bash
+pip install -e '.[vertex]'                     # the google-genai SDK
+gcloud auth application-default login           # Application Default Credentials
+export GOOGLE_CLOUD_PROJECT=my-gcp-project      # or pass --project
+export GOOGLE_CLOUD_LOCATION=us-central1         # or pass --location
+python -m wiki_generator plan --bundle /path/to/phase1-output
+```
+
+Nothing GCP-specific is hardcoded — project/location come from `--project` /
+`--location` or those env vars, and auth uses ADC. By default it picks up
+`gemini-gem/GEM_INSTRUCTIONS.md` and `gemini-gem/KICKOFF_PROMPT.md` if present
+(override with `--system` / `--prompt`), else uses built-in defaults. It does not
+auto-run `normalize-plan` — run that next.
 
 ## What it produces
 
@@ -177,7 +206,7 @@ Use `--strict` to exit non-zero when anything is unresolved.
 
 ## Identifier scheme
 
-All lanes share one id scheme (`phase1_decomposition/libs/ids.py`) so artifacts cross-link:
+All lanes share one id scheme (`wiki_generator/libs/ids.py`) so artifacts cross-link:
 
 | id | shape | example |
 |---|---|---|
@@ -229,6 +258,22 @@ A chunk references the `span_ids` it overlaps; a Python span carries its
 | `--out <dir>` | `<bundle>/planner-digest` | upload-package directory (`digest`/`bundle`) |
 | `--budget-tokens N` | 250000 | target upload token budget (`ceil(chars/4)` estimate) |
 | `--no-bundle` | off | (`digest` only) stop after `planning-digest.md`; skip Step 4 |
+
+`plan` flags (Phase 2 Step 1; needs the `[vertex]` extra + GCP credentials):
+
+| flag | default | meaning |
+|---|---|---|
+| `--bundle <dir>` | — | path to the Phase 1 decomposition bundle (required) |
+| `--bundle-file <f>` | `<bundle>/planner-digest/planner-upload-bundle.md` | explicit upload file |
+| `--out <dir>` | `<bundle>/plans` | where to write `phase2-<provider>-response.md` |
+| `--model <id>` | gemini-2.5-pro | Vertex AI model id |
+| `--project <id>` | `$GOOGLE_CLOUD_PROJECT` | GCP project (required, via flag or env) |
+| `--location <loc>` | `$GOOGLE_CLOUD_LOCATION` or us-central1 | Vertex AI location |
+| `--system <file>` | gemini-gem/GEM_INSTRUCTIONS.md or built-in | system instructions |
+| `--prompt <file>` | gemini-gem/KICKOFF_PROMPT.md or built-in | kickoff prompt |
+| `--provider <name>` | gemini | label used in the output filename |
+| `--temperature N` | 0.2 | sampling temperature |
+| `--max-output-tokens N` | 65535 | response cap |
 
 `normalize-plan` flags:
 

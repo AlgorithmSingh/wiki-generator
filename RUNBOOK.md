@@ -40,23 +40,47 @@ OUT=/absolute/path/to/output/bundle        # created if missing
 ```bash
 # Step 1 — raw artifact bundle (inventory, symbols, RAG/BM25, static graph,
 #          queries, contracts, tests, derived summaries). No LLM.
-python3 -m phase1_decomposition decompose --repo "$REPO" --out "$OUT"
+python3 -m wiki_generator decompose --repo "$REPO" --out "$OUT"
 
 # Step 2 — planner-facing condensates into <OUT>/derived/
-python3 -m phase1_decomposition condense --in "$OUT" --budget-tokens 250000
+python3 -m wiki_generator condense --in "$OUT" --budget-tokens 250000
 
 # Step 3 — derived/planning-digest.md (this also runs Step 4 by default)
-python3 -m phase1_decomposition digest --in "$OUT" --budget-tokens 250000
+python3 -m wiki_generator digest --in "$OUT" --budget-tokens 250000
 
 # Step 4 — the single upload file (idempotent; only needed if you ran digest
 #          with --no-bundle, or want to rebuild it on its own)
-python3 -m phase1_decomposition bundle --in "$OUT" --budget-tokens 250000
+python3 -m wiki_generator bundle --in "$OUT" --budget-tokens 250000
 ```
 
 Result to upload: **`$OUT/planner-digest/planner-upload-bundle.md`**
 (per-file token table: `$OUT/planner-digest/upload-list.md`).
 
-## 3. Phase 2 Step 1 — run the planning Gem (external, the only LLM step)
+## 3. Phase 2 Step 1 — run the planning LLM (the only LLM step)
+
+Two ways; pick one.
+
+### Option A — automated: Vertex AI Gemini 2.5 Pro (`plan` command)
+
+One-time setup: the optional SDK + GCP credentials.
+
+```bash
+pip install -e '.[vertex]'                  # google-genai SDK
+gcloud auth application-default login        # Application Default Credentials
+export GOOGLE_CLOUD_PROJECT=my-gcp-project
+export GOOGLE_CLOUD_LOCATION=us-central1
+```
+
+```bash
+python3 -m wiki_generator plan --bundle "$OUT"
+# or: --project my-gcp-project --location us-central1
+```
+
+This sends the planner instructions + kickoff + the upload bundle to
+`gemini-2.5-pro` and writes `$OUT/plans/phase2-gemini-response.md`. It does NOT
+auto-run normalize-plan.
+
+### Option B — manual: a Gemini Gem in the browser
 
 1. Create/open the Gemini Gem with `gemini-gem/GEM_INSTRUCTIONS.md` as its
    Instructions (one-time).
@@ -73,7 +97,7 @@ mkdir -p "$OUT/plans"
 ## 4. Phase 2 Step 2 — normalize the plan (deterministic, no LLM)
 
 ```bash
-python3 -m phase1_decomposition normalize-plan \
+python3 -m wiki_generator normalize-plan \
   --bundle       "$OUT" \
   --raw-response "$OUT/plans/phase2-gemini-response.md"
 # add --strict to exit non-zero on any unresolved reference
@@ -101,25 +125,28 @@ guessed). Phase 3 will consume `document-plan.json` + `section-plans.jsonl`.
 ## Appendix — exact commands used for RAGFlow
 
 ```bash
-cd /Users/ankitsingh/Documents/deep-wiki/7-phase1-decomposition-2
+cd /Users/ankitsingh/Documents/deep-wiki/10-porting/wiki-generator
 
-python3 -m phase1_decomposition decompose \
+python3 -m wiki_generator decompose \
   --repo /Users/ankitsingh/Documents/deep-wiki/6-repo-analysis-packet-test/ragflow \
   --out  /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2
 
-python3 -m phase1_decomposition condense \
+python3 -m wiki_generator condense \
   --in /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 --budget-tokens 250000
 
-python3 -m phase1_decomposition digest \
+python3 -m wiki_generator digest \
   --in /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 --budget-tokens 250000
 
-python3 -m phase1_decomposition bundle \
+python3 -m wiki_generator bundle \
   --in /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 --budget-tokens 250000
 
-# (upload planner-digest/planner-upload-bundle.md to the Gem, save reply to
-#  plans/phase2-gemini-response.md, then:)
+# Phase 2 Step 1 — either run the Gem by hand (save reply to
+# plans/phase2-gemini-response.md), or use Vertex AI:
+python3 -m wiki_generator plan \
+  --bundle /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 \
+  --project "$GOOGLE_CLOUD_PROJECT" --location us-central1
 
-python3 -m phase1_decomposition normalize-plan \
+python3 -m wiki_generator normalize-plan \
   --bundle       /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 \
   --raw-response /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2/plans/phase2-gemini-response.md
 ```
