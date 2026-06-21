@@ -5,7 +5,7 @@ Bundle: `/Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2`
 Build/refresh the upload with **Step 4**:
 
 ```bash
-cd /Users/ankitsingh/Documents/deep-wiki/7-phase1-decomposition-2
+cd /Users/ankitsingh/Documents/deep-wiki/10-porting/wiki-generator
 python3 -m wiki_generator bundle \
   --in /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 \
   --budget-tokens 250000

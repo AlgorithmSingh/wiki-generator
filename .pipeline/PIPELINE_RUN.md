@@ -1,5 +1,12 @@
 # Python-specific-agents pipeline run
 
+> **Historical snapshot.** This `.pipeline/` directory records the original
+> build run, before the package was renamed and moved. It refers to the old
+> package name `phase1_decomposition` and a flat layout; the current code is
+> the `wiki_generator` package under `src/`. Kept for provenance — see
+> `README.md` / `RUNBOOK.md` for current docs.
+
+
 Source pipeline: `05-python-specific-agents` (27-stage Python-first generation
 sequence + conditional repair loop), applied to this package.
 

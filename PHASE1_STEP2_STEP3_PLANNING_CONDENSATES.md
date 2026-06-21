@@ -89,32 +89,28 @@ The planner does not need the raw graph or full symbol table. It needs compact s
 
 ## Implementation location
 
-This should be implemented in the **same Python package** as Step 1:
+Implemented in the **same Python package** as Step 1 — the `wiki_generator`
+package under `src/` (`src/wiki_generator/`). Step 2/3 consumes the exact artifact
+formats Step 1 produces, so it reuses the same package, paths, JSONL utilities,
+artifact conventions, and tests rather than forking a separate codebase.
+
+Code shape (as implemented):
 
 ```text
-/Users/ankitsingh/Documents/deep-wiki/7-phase1-decomposition/wiki_generator/
+src/wiki_generator/
+  cli.py                             # decompose/condense/digest/bundle/plan/normalize-plan
+  libs/
+    commands/                        # command bodies (condense.py, digest.py, bundle.py, …)
+    digest/
+      loader.py                      # read the Step 1 artifact bundle
+      planning_symbols.py            # Step 2: derived/planning-symbols.md
+      planning_graph.py              # Step 2: derived/planning-graph.md
+      planning_runtime_surfaces.py   # Step 2: derived/planning-runtime-surfaces.md
+      planning_tests.py              # Step 2: derived/planning-tests.md
+      planning_gaps.py               # Step 2: derived/planning-gaps.md
+      planning_digest.py             # Step 3: derived/planning-digest.md
+      upload_package.py              # Step 4: planner-digest/* + upload-list.md + bundle
 ```
-
-Do not create a completely separate codebase unless there is a strong reason. Step 2/3 consumes the exact artifact formats produced by Step 1, so it should reuse the same package, paths, JSONL utilities, artifact conventions, and tests.
-
-Recommended code shape:
-
-```text
-wiki_generator/
-  cli.py                         # add condense/digest subcommands
-  digest/
-    __init__.py
-    loader.py                    # read Step 1 artifact bundle
-    planning_symbols.py          # Step 2: derived/planning-symbols.md
-    planning_graph.py            # Step 2: derived/planning-graph.md
-    planning_runtime_surfaces.py # Step 2: derived/planning-runtime-surfaces.md
-    planning_tests.py            # Step 2: derived/planning-tests.md
-    planning_gaps.py             # Step 2: derived/planning-gaps.md
-    planning_digest.py           # Step 3: derived/planning-digest.md
-    upload_package.py            # Step 3: planner-digest/* + upload-list.md
-```
-
-The directory `/Users/ankitsingh/Documents/deep-wiki/7-phase1-decomposition-2/` is for the planning documents/handoff for this work, not the preferred implementation package.
 
 ## Command shape
 

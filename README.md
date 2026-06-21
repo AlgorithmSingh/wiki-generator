@@ -1,12 +1,12 @@
-# Phase 1 — Repo Decomposition (+ Phase 2 plan normalization)
+# wiki-generator
 
-Turn a Python repository into a deterministic **repo-analysis artifact bundle** of
-standard / standard-adjacent artifacts (Step 1), **condense** it into small
-planner-facing digests an LLM can actually read (Steps 2/3), and **bundle** those
-into one uploadable file (Step 4). After the Phase 2 planning LLM responds,
-**normalize-plan** turns its output into machine-resolvable plan artifacts for
-Phase 3. Every step is deterministic and **LLM-free** (the planning itself is the
-only LLM call, and it happens outside this tool).
+Plan a documentation Wiki for a Python repository. `wiki-generator` turns a repo
+into a deterministic **repo-analysis artifact bundle** (Step 1), **condenses** it
+into small planner-facing digests an LLM can actually read (Steps 2/3), **bundles**
+those into one uploadable file (Step 4), runs a **planning LLM** over it
+(Phase 2 Step 1), and **normalizes** the LLM's plan into machine-resolvable
+artifacts for the later retrieval phase (Phase 2 Step 2). Everything except the
+single `plan` step is deterministic and **LLM-free**.
 
 ```text
 Phase 1  Step 1 decompose  -> raw artifact bundle
@@ -58,38 +58,33 @@ external tools **when present** and degrade gracefully when not.
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install -e .            # required (src layout)
+source .venv/bin/activate
+pip install -e .                      # required (src layout)
 ```
 
-After install, use either the `wiki-generator` console command or
-`python -m wiki_generator`:
+After install, run with the `wiki-generator` console command (equivalent to
+`python -m wiki_generator`):
 
 ```bash
-wiki-generator decompose \
-  --repo /path/to/python/repo \
-  --out  /path/to/phase1-output
+# Step 1 — raw artifact bundle
+wiki-generator decompose --repo /path/to/python/repo --out /path/to/phase1-output
 
-# Step 2 — write planning condensates into <bundle>/derived/
-.venv/bin/python -m wiki_generator condense \
-  --in /path/to/phase1-output --budget-tokens 250000
+# Step 2 — planning condensates into <bundle>/derived/
+wiki-generator condense --in /path/to/phase1-output --budget-tokens 250000
 
-# Step 3 — write derived/planning-digest.md (also runs Step 4 by default)
-.venv/bin/python -m wiki_generator digest \
-  --in /path/to/phase1-output --budget-tokens 250000
+# Step 3 — derived/planning-digest.md (also runs Step 4 by default)
+wiki-generator digest --in /path/to/phase1-output --budget-tokens 250000
 
-# Step 4 — assemble the single-file planner upload bundle
-.venv/bin/python -m wiki_generator bundle \
-  --in /path/to/phase1-output --budget-tokens 250000
+# Step 4 — the single-file planner upload bundle
+wiki-generator bundle --in /path/to/phase1-output --budget-tokens 250000
 
-# Phase 2 Step 1 — run the planning LLM (Vertex AI Gemini 2.5 Pro). The one LLM
-# step; needs the [vertex] extra + GCP credentials (see below). Optional — you can
-# instead run the Gem by hand and save the reply to plans/phase2-gemini-response.md.
-.venv/bin/python -m wiki_generator plan \
-  --bundle /path/to/phase1-output --project my-gcp-project --location us-central1
+# Phase 2 Step 1 — run the planning LLM (Vertex AI Gemini 2.5 Pro; the one LLM
+# step; needs the [vertex] extra + GCP credentials — see below). Optional: run the
+# Gem by hand instead and save the reply to plans/phase2-gemini-response.md.
+wiki-generator plan --bundle /path/to/phase1-output --project my-gcp-project --location us-central1
 
 # Phase 2 Step 2 — normalize the planning response (deterministic, no LLM)
-.venv/bin/python -m wiki_generator normalize-plan \
-  --bundle /path/to/phase1-output \
+wiki-generator normalize-plan --bundle /path/to/phase1-output \
   --raw-response /path/to/phase1-output/plans/phase2-gemini-response.md
 ```
 
@@ -101,9 +96,9 @@ resolves the planner's references against the Phase 1 indexes.
 Optional capabilities:
 
 ```bash
-.venv/bin/pip install -e '.[embeddings]'   # rag/vectors.faiss (faiss + model2vec)
-.venv/bin/pip install -e '.[grepast]'      # AST-context query previews
-.venv/bin/pip install -e '.[vertex]'       # `plan` command (Vertex AI Gemini, google-genai)
+pip install -e '.[embeddings]'   # rag/vectors.faiss (faiss + model2vec)
+pip install -e '.[grepast]'      # AST-context query previews
+pip install -e '.[vertex]'       # `plan` command (Vertex AI Gemini, google-genai)
 # brew install universal-ctags semgrep ast-grep   # richer symbol/query lanes
 ```
 
@@ -118,7 +113,7 @@ pip install -e '.[vertex]'                     # the google-genai SDK
 gcloud auth application-default login           # Application Default Credentials
 export GOOGLE_CLOUD_PROJECT=my-gcp-project      # or pass --project
 export GOOGLE_CLOUD_LOCATION=us-central1         # or pass --location
-python -m wiki_generator plan --bundle /path/to/phase1-output
+wiki-generator plan --bundle /path/to/phase1-output
 ```
 
 Nothing GCP-specific is hardcoded — project/location come from `--project` /
@@ -245,8 +240,10 @@ A chunk references the `span_ids` it overlaps; a Python span carries its
 - **Deterministic.** Re-running on the same repo produces byte-identical data
   artifacts; only the timestamp/timing in `ARTIFACT_GUIDE.md` / `run-metadata.json`
   changes.
-- **No LLM, no packet.** The compact `RepoAnalysisPacket` / `DocumentPlan` are
-  intentionally left to Phase 2.
+- **One LLM step.** Phase 1 (decompose/condense/digest/bundle) and Phase 2
+  normalization are deterministic and LLM-free; only the `plan` command calls an
+  LLM (Vertex AI Gemini). The normalized `DocumentPlan` is produced by
+  `normalize-plan` from that response — the tool never invents plan content.
 
 ## Flags
 
@@ -297,6 +294,8 @@ A chunk references the `span_ids` it overlaps; a Python span carries its
 
 ## Tests
 
+Stdlib-only; run after `pip install -e .`:
+
 ```bash
-.venv/bin/python -m unittest discover -s tests -v
+python -m unittest discover -s tests -v     # or: pytest
 ```
