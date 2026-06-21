@@ -269,7 +269,7 @@ Recommended package shape:
 
 ```text
 wiki_generator/
-  core/cli.py                 # add bundle subcommand
+  cli.py                      # add bundle subcommand
   libs/commands/bundle.py     # command wrapper
   libs/digest/upload_package.py
   libs/markdown.py            # boundary/header helpers if useful

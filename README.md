@@ -27,35 +27,45 @@ This implements `PHASE1_DECOMPOSITION_PLAN.md` (Step 1),
 
 ## Architecture
 
-The package follows a **simple core / deep libs** split:
+`src/` layout with a **thin entry / deep libs** split:
 
 ```
-wiki_generator/
-  core/cli.py            thin argument parser + dispatcher — no logic
-  libs/                  every deep module lives here
-    util · ids · config · paths · tools · chunker · rgpacks · context · pipeline
-    lanes/               Step 1 decomposition lanes (inventory…derived)
-    digest/              Step 2/3 condensates: loader, ranking, planning_*  + upload_package (Step 4)
-    plan_normalization/  Phase 2 Step 2: parse · lookups · normalize · writer
-    commands/            command bodies: decompose · condense · digest · bundle · normalize_plan
+wiki-generator/            repo root (distribution name: wiki-generator)
+  src/
+    wiki_generator/        import package
+      cli.py               thin argument parser + dispatcher — no logic
+      __main__.py          python -m wiki_generator
+      libs/                every deep module lives here
+        util · ids · config · paths · tools · chunker · rgpacks · context · pipeline
+        lanes/               Step 1 decomposition lanes (inventory…derived)
+        digest/              Step 2/3 condensates: loader, ranking, planning_*  + upload_package (Step 4)
+        plan_normalization/  Phase 2 Step 2: parse · lookups · normalize · writer
+        commands/            command bodies: decompose · condense · digest · bundle · plan · normalize_plan
+  tests/  pyproject.toml  README.md  RUNBOOK.md  gemini-gem/
 ```
 
-`core` only knows how to parse flags and call a command in `libs.commands`; `libs`
-never imports `core`. Each digest summarizer reads the bundle through one seam
-(`libs/digest/loader.py`) and ranks through one seam (`libs/digest/ranking.py`).
-Plan normalization resolves every reference through one seam
-(`libs/plan_normalization/lookups.py`, the `Lookups` class).
+`cli.py` only knows how to parse flags and call a command in `libs.commands`;
+`libs` never imports `cli`. Each digest summarizer reads the bundle through one
+seam (`libs/digest/loader.py`) and ranks through one seam
+(`libs/digest/ranking.py`). Plan normalization resolves every reference through
+one seam (`libs/plan_normalization/lookups.py`, the `Lookups` class).
 
 ## Install / run
 
-The package uses the Python standard library plus `PyYAML` and `packaging`. Some
-lanes use external tools **when present** and degrade gracefully when not.
+This is a `src/`-layout package, so **install it first** (editable is fine). It
+uses the Python standard library plus `PyYAML` and `packaging`; some lanes use
+external tools **when present** and degrade gracefully when not.
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install -e .            # or: pip install pyyaml packaging
+.venv/bin/pip install -e .            # required (src layout)
+```
 
-.venv/bin/python -m wiki_generator decompose \
+After install, use either the `wiki-generator` console command or
+`python -m wiki_generator`:
+
+```bash
+wiki-generator decompose \
   --repo /path/to/python/repo \
   --out  /path/to/phase1-output
 

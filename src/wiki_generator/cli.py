@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import argparse
 
-from ..libs.commands import bundle as bundle_cmd
-from ..libs.commands import condense as condense_cmd
-from ..libs.commands import decompose as decompose_cmd
-from ..libs.commands import digest as digest_cmd
-from ..libs.commands import normalize_plan as normalize_plan_cmd
-from ..libs.commands import plan as plan_cmd
+from .libs.commands import bundle as bundle_cmd
+from .libs.commands import condense as condense_cmd
+from .libs.commands import decompose as decompose_cmd
+from .libs.commands import digest as digest_cmd
+from .libs.commands import normalize_plan as normalize_plan_cmd
+from .libs.commands import plan as plan_cmd
 
 _TOGGLE = ("auto", "on", "off")
 DEFAULT_BUDGET_TOKENS = 250_000

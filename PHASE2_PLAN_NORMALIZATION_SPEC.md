@@ -371,7 +371,7 @@ Recommended package shape:
 
 ```text
 wiki_generator/
-  core/cli.py                         # add normalize-plan subcommand
+  cli.py                              # add normalize-plan subcommand
   libs/commands/normalize_plan.py     # command wrapper
   libs/plan_normalization/
     __init__.py

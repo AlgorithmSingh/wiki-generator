@@ -32,15 +32,10 @@ vertex = [
 ]
 
 [project.scripts]
-wiki-generator = "wiki_generator.core.cli:main"
+wiki-generator = "wiki_generator.cli:main"
 
 [tool.setuptools]
-packages = [
-    "wiki_generator",
-    "wiki_generator.core",
-    "wiki_generator.libs",
-    "wiki_generator.libs.lanes",
-    "wiki_generator.libs.digest",
-    "wiki_generator.libs.commands",
-    "wiki_generator.libs.plan_normalization",
-]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -12,7 +12,11 @@ import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+SRC = os.path.join(ROOT, "src")
+# src layout: import the package from src/. After `pip install -e .` the editable
+# install also satisfies this; adding src lets the suite run without a global
+# install too (the package never sits at the repo root).
+sys.path.insert(0, SRC)
 
 from wiki_generator.libs import config, ids  # noqa: E402
 from wiki_generator.libs import chunker  # noqa: E402
@@ -67,11 +71,20 @@ def _make_repo(d: str) -> None:
             f.write(content)
 
 
+def _subenv(**extra) -> dict:
+    """Child-process env with src/ on PYTHONPATH so `-m wiki_generator` resolves
+    (works with or without an editable install)."""
+    env = dict(os.environ)
+    env["PYTHONPATH"] = SRC + os.pathsep + env.get("PYTHONPATH", "")
+    env.update(extra)
+    return env
+
+
 def _run(repo: str, out: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-m", "wiki_generator", "decompose",
          "--repo", repo, "--out", out],
-        cwd=ROOT, capture_output=True, text=True, timeout=300,
+        cwd=ROOT, capture_output=True, text=True, timeout=300, env=_subenv(),
     )
 
 
@@ -319,7 +332,7 @@ class EndToEndTests(unittest.TestCase):
 def _run_cmd(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-m", "wiki_generator", *args],
-        cwd=ROOT, capture_output=True, text=True, timeout=300,
+        cwd=ROOT, capture_output=True, text=True, timeout=300, env=_subenv(),
     )
 
 
@@ -764,7 +777,7 @@ class PlanCommandTests(unittest.TestCase):
         os.makedirs(pkg)
         with open(os.path.join(pkg, "planner-upload-bundle.md"), "w") as f:
             f.write("# bundle\n")
-        env = dict(os.environ)
+        env = _subenv()
         env.pop("GOOGLE_CLOUD_PROJECT", None)
         proc = subprocess.run(
             [sys.executable, "-m", "wiki_generator", "plan", "--bundle", tmp],

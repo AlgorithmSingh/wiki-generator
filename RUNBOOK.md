@@ -16,17 +16,20 @@ Phase 3  (later)             -> deterministic section evidence retrieval
 
 ## 0. Setup (once)
 
-Requires Python 3.11+ (`python3`), plus PyYAML + packaging. `git` and `ripgrep`
-(`rg`) on PATH are recommended; everything else degrades gracefully.
+Requires Python 3.11+. This is a `src/`-layout package, so **install it first**
+(editable). `git` and `ripgrep` (`rg`) on PATH are recommended; everything else
+degrades gracefully.
 
 ```bash
-cd /path/to/wiki-generator           # this tool's directory
+cd /path/to/wiki-generator           # the repo root
 python3 -m venv .venv
-.venv/bin/pip install -e .           # or: pip install pyyaml packaging
-python3 -m unittest discover -s tests   # optional sanity check (expect: OK)
+source .venv/bin/activate
+pip install -e .                     # required (src layout)
+python -m unittest discover -s tests # optional sanity check (expect: OK)
 ```
 
-You can run with a plain `python3` (stdlib only) if you don't want a venv.
+After install you can use either `wiki-generator <cmd>` (console script) or
+`python -m wiki_generator <cmd>`. The commands below use the latter; both work.
 
 ## 1. Pick the repo and an output directory
 
