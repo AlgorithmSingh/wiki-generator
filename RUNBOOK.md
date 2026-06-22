@@ -1,3 +1,10 @@
+# Variables to set
+   cd /Users/ankitsingh/Documents/deep-wiki/10-porting/wiki-generator                                                      
+                                                                                                                           
+   export REPO=/Users/ankitsingh/Documents/deep-wiki/6-repo-analysis-packet-test/ragflow                                   
+   export OUT=/Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2                                       
+
+
 # Runbook — generate a DeepWiki plan for any repo
 
 End-to-end commands for the full pipeline. Phase 1 is deterministic and LLM-free;
@@ -35,6 +42,33 @@ python -m unittest discover -s tests # optional sanity check (expect: OK)
 After install you can use either `wiki-generator <cmd>` (console script) or
 `python -m wiki_generator <cmd>`. The commands below use the latter; both work.
 
+### Python 3.12 + vectors-required scripts
+
+For the current preferred workflow, use the per-step scripts in `scripts/`. They
+create/use a Python 3.12 venv. Step 5 installs `.[embeddings]`, verifies
+`faiss` / `numpy` / `model2vec`, and runs with `--vectors on`, so vectors are
+**not optional**.
+
+```bash
+cd /Users/ankitsingh/Documents/deep-wiki/10-porting/wiki-generator
+
+scripts/00_setup_python312_vectors.sh --recreate-venv
+
+scripts/phase1_step1_decompose.sh --repo "$REPO" --out "$OUT"
+scripts/phase1_step2_condense.sh --out "$OUT"
+scripts/phase1_step3_digest.sh --out "$OUT"
+scripts/phase1_step4_bundle.sh --out "$OUT"
+scripts/phase1_step5_build_retrieval.sh --out "$OUT" --rebuild \
+  --smoke-query "authentication and login flow"
+
+# Phase 2 Step 1 is optional/LLM-backed. Use either the browser Gem, or:
+scripts/phase2_step1_plan.sh --out "$OUT" --project my-gcp-project --location us-central1
+
+# After a raw planner response exists:
+scripts/phase2_step2_normalize_plan.sh --out "$OUT" \
+  --raw-response "$OUT/plans/phase2-gemini-response.md"
+```
+
 ## 1. Pick the repo and an output directory
 
 ```bash
@@ -47,16 +81,16 @@ OUT=/absolute/path/to/output/bundle        # created if missing
 ```bash
 # Step 1 — raw artifact bundle (inventory, symbols, RAG/BM25, static graph,
 #          queries, contracts, tests, derived summaries). No LLM.
-python3 -m wiki_generator decompose --repo "$REPO" --out "$OUT"
+#          Vectors are built in Step 5, so keep decomposition embeddings off.
+python3 -m wiki_generator decompose --repo "$REPO" --out "$OUT" --embeddings off
 
 # Step 2 — planner-facing condensates into <OUT>/derived/
 python3 -m wiki_generator condense --in "$OUT" --budget-tokens 250000
 
-# Step 3 — derived/planning-digest.md (this also runs Step 4 by default)
-python3 -m wiki_generator digest --in "$OUT" --budget-tokens 250000
+# Step 3 — derived/planning-digest.md only. Step 4 stays separate.
+python3 -m wiki_generator digest --in "$OUT" --budget-tokens 250000 --no-bundle
 
-# Step 4 — the single upload file (idempotent; only needed if you ran digest
-#          with --no-bundle, or want to rebuild it on its own)
+# Step 4 — the single upload file
 python3 -m wiki_generator bundle --in "$OUT" --budget-tokens 250000
 ```
 
@@ -71,16 +105,14 @@ needed for the planner upload, so it can run independently of Step 4 — its onl
 dependency is Step 1's `rag/chunks.jsonl` + `rag/spans.jsonl`.
 
 ```bash
-# Lexical-symbolic (default): BM25 verified/rebuilt; vectors skipped if the
-# embeddings extra isn't installed (recorded with the exact reason).
-python3 -m wiki_generator build-retrieval --in "$OUT" --vectors auto
-
-# Hybrid: require local vectors (fails non-zero if faiss/model2vec are missing).
+# Hybrid/vector mode is required in this workflow.
 pip install -e '.[embeddings]'
-python3 -m wiki_generator build-retrieval --in "$OUT" --vectors on
+python3 - <<'PY'
+import faiss, numpy, model2vec
+print('vector deps ok')
+PY
 
-# Optional: prove the substrate answers a query, and force a clean rebuild.
-python3 -m wiki_generator build-retrieval --in "$OUT" --rebuild \
+python3 -m wiki_generator build-retrieval --in "$OUT" --vectors on --rebuild \
   --smoke-query "authentication and login flow"
 ```
 
@@ -100,6 +132,21 @@ recommended mode before starting Phase 3.
 
 If FAISS won't install, verify the environment first (Python/arch/wheel) — see
 the preflight in `PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md`.
+
+Quick handoff verification on an existing bundle, with vectors required:
+
+```bash
+cd /Users/ankitsingh/Documents/deep-wiki/10-porting/wiki-generator
+
+scripts/phase1_step5_build_retrieval.sh \
+  --out /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 \
+  --rebuild \
+  --run-tests-first \
+  --smoke-query "authentication and login flow"
+
+cat /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2/rag/retrieval-substrate-report.md
+cat /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2/rag/retrieval-capabilities.json
+```
 
 ## 3. Phase 2 Step 1 — run the planning LLM (the only LLM step)
 
@@ -166,10 +213,9 @@ hints (intentional) or genuinely ambiguous names (kept with candidates — never
 guessed). Phase 3 will consume `document-plan.json` + `section-plans.jsonl`.
 
 Before Phase 3, run **Step 5 (`build-retrieval`, section 2.5)** so the bundle has
-an explicit retrieval readiness contract (`rag/retrieval-capabilities.json`). It
-verifies/rebuilds BM25 over the corpus and adds vectors when FAISS/model2vec are
-available, then reports whether Phase 3 will run in `hybrid` or `lexical-symbolic`
-mode.
+an explicit retrieval readiness contract (`rag/retrieval-capabilities.json`). In
+the preferred script workflow, Step 5 requires FAISS/model2vec and fails if
+vectors cannot be built; a passing run should report `hybrid` mode.
 
 ---
 
@@ -178,33 +224,24 @@ mode.
 ```bash
 cd /Users/ankitsingh/Documents/deep-wiki/10-porting/wiki-generator
 
-python3 -m wiki_generator decompose \
-  --repo /Users/ankitsingh/Documents/deep-wiki/6-repo-analysis-packet-test/ragflow \
-  --out  /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2
+export REPO=/Users/ankitsingh/Documents/deep-wiki/6-repo-analysis-packet-test/ragflow
+export OUT=/Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2
 
-python3 -m wiki_generator condense \
-  --in /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 --budget-tokens 250000
-
-python3 -m wiki_generator digest \
-  --in /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 --budget-tokens 250000
-
-python3 -m wiki_generator bundle \
-  --in /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 --budget-tokens 250000
-
-# Step 5 — build/verify the retrieval substrate (lexical-symbolic unless the
-# embeddings extra is installed).
-python3 -m wiki_generator build-retrieval \
-  --in /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 --vectors auto
+scripts/00_setup_python312_vectors.sh --recreate-venv
+scripts/phase1_step1_decompose.sh --repo "$REPO" --out "$OUT"
+scripts/phase1_step2_condense.sh --out "$OUT" --budget-tokens 250000
+scripts/phase1_step3_digest.sh --out "$OUT" --budget-tokens 250000
+scripts/phase1_step4_bundle.sh --out "$OUT" --budget-tokens 250000
+scripts/phase1_step5_build_retrieval.sh --out "$OUT" --rebuild \
+  --smoke-query "authentication and login flow"
 
 # Phase 2 Step 1 — either run the Gem by hand (save reply to
 # plans/phase2-gemini-response.md), or use Vertex AI:
-python3 -m wiki_generator plan \
-  --bundle /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 \
+scripts/phase2_step1_plan.sh --out "$OUT" \
   --project "$GOOGLE_CLOUD_PROJECT" --location us-central1
 
-python3 -m wiki_generator normalize-plan \
-  --bundle       /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 \
-  --raw-response /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2/plans/phase2-gemini-response.md
+scripts/phase2_step2_normalize_plan.sh --out "$OUT" \
+  --raw-response "$OUT/plans/phase2-gemini-response.md"
 ```
 
 RAGFlow scale (reference): 3,928 files, 15,618 symbols, 52,349 graph edges,
