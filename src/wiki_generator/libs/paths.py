@@ -140,6 +140,27 @@ class Paths:
     def vector_metadata(self) -> str:
         return os.path.join(self.rag, "vector-metadata.json")
 
+    # --- Step 5 retrieval-substrate outputs ------------------------------------
+    @property
+    def vector_metadata_jsonl(self) -> str:
+        return os.path.join(self.rag, "vector-metadata.jsonl")
+
+    @property
+    def retrieval_capabilities(self) -> str:
+        return os.path.join(self.rag, "retrieval-capabilities.json")
+
+    @property
+    def retrieval_report(self) -> str:
+        return os.path.join(self.rag, "retrieval-substrate-report.md")
+
+    @property
+    def vector_build_report(self) -> str:
+        return os.path.join(self.rag, "vector-build-report.md")
+
+    @property
+    def retrieval_smoke(self) -> str:
+        return os.path.join(self.rag, "retrieval-smoke-tests.jsonl")
+
     @property
     def nodes_jsonl(self) -> str:
         return os.path.join(self.static, "nodes.jsonl")

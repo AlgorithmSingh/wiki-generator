@@ -9,10 +9,14 @@ Phase 1  Step 1 decompose   -> raw artifact bundle
          Step 2 condense     -> derived/planning-*.md condensates
          Step 3 digest       -> derived/planning-digest.md (also runs Step 4)
          Step 4 bundle       -> planner-digest/planner-upload-bundle.md (one upload)
+         Step 5 build-retrieval -> rag/retrieval-capabilities.json (+ BM25 / optional vectors)
 Phase 2  Step 1 (external)   -> Gemini/Kimi plan -> plans/phase2-<provider>-response.md
          Step 2 normalize-plan -> plans/document-plan.json + section-plans.jsonl
 Phase 3  (later)             -> deterministic section evidence retrieval
 ```
+
+Step 5 (`build-retrieval`) is independent of the planner upload — it only needs
+Step 1's corpus, so run it any time after `decompose`, but before Phase 3.
 
 ## 0. Setup (once)
 
@@ -58,6 +62,44 @@ python3 -m wiki_generator bundle --in "$OUT" --budget-tokens 250000
 
 Result to upload: **`$OUT/planner-digest/planner-upload-bundle.md`**
 (per-file token table: `$OUT/planner-digest/upload-list.md`).
+
+## 2.5 Phase 1 Step 5 — build the retrieval substrate (deterministic, no LLM)
+
+Verifies or rebuilds the BM25 index over the corpus, optionally builds local
+vectors, and writes the Phase 3 capability contract + readiness report. Not
+needed for the planner upload, so it can run independently of Step 4 — its only
+dependency is Step 1's `rag/chunks.jsonl` + `rag/spans.jsonl`.
+
+```bash
+# Lexical-symbolic (default): BM25 verified/rebuilt; vectors skipped if the
+# embeddings extra isn't installed (recorded with the exact reason).
+python3 -m wiki_generator build-retrieval --in "$OUT" --vectors auto
+
+# Hybrid: require local vectors (fails non-zero if faiss/model2vec are missing).
+pip install -e '.[embeddings]'
+python3 -m wiki_generator build-retrieval --in "$OUT" --vectors on
+
+# Optional: prove the substrate answers a query, and force a clean rebuild.
+python3 -m wiki_generator build-retrieval --in "$OUT" --rebuild \
+  --smoke-query "authentication and login flow"
+```
+
+Outputs in `$OUT/rag/`:
+
+```
+retrieval-capabilities.json   machine-readable contract for Phase 3 (modes + counts + fingerprint)
+retrieval-substrate-report.md PASS/FAIL + recommended mode (hybrid | lexical-symbolic)
+vector-build-report.md        vector status, model, count, or skip/fail reason
+vectors.faiss + vector-metadata.json[l]   only when vectors are built
+retrieval-smoke-tests.jsonl   only with --smoke-query
+```
+
+Exit codes: `0` PASS, `1` FAIL (e.g. `--vectors on` with no backend, or a BM25
+row-count mismatch), `2` missing/unreadable corpus. Review the report's
+recommended mode before starting Phase 3.
+
+If FAISS won't install, verify the environment first (Python/arch/wheel) — see
+the preflight in `PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md`.
 
 ## 3. Phase 2 Step 1 — run the planning LLM (the only LLM step)
 
@@ -123,6 +165,12 @@ Review `normalization-report.md` (resolution counts) and
 hints (intentional) or genuinely ambiguous names (kept with candidates — never
 guessed). Phase 3 will consume `document-plan.json` + `section-plans.jsonl`.
 
+Before Phase 3, run **Step 5 (`build-retrieval`, section 2.5)** so the bundle has
+an explicit retrieval readiness contract (`rag/retrieval-capabilities.json`). It
+verifies/rebuilds BM25 over the corpus and adds vectors when FAISS/model2vec are
+available, then reports whether Phase 3 will run in `hybrid` or `lexical-symbolic`
+mode.
+
 ---
 
 ## Appendix — exact commands used for RAGFlow
@@ -142,6 +190,11 @@ python3 -m wiki_generator digest \
 
 python3 -m wiki_generator bundle \
   --in /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 --budget-tokens 250000
+
+# Step 5 — build/verify the retrieval substrate (lexical-symbolic unless the
+# embeddings extra is installed).
+python3 -m wiki_generator build-retrieval \
+  --in /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 --vectors auto
 
 # Phase 2 Step 1 — either run the Gem by hand (save reply to
 # plans/phase2-gemini-response.md), or use Vertex AI:

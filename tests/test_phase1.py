@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -784,6 +785,347 @@ class PlanCommandTests(unittest.TestCase):
             cwd=ROOT, capture_output=True, text=True, timeout=120, env=env)
         self.assertEqual(proc.returncode, 2, proc.stderr)
         self.assertIn("project", proc.stderr.lower())
+
+
+class _FakeVectorBackend:
+    """In-test vector backend so the hybrid/skip/fail paths run without faiss.
+
+    ``build`` writes the vector count to ``index_path`` and ``count`` reads it
+    back, so the count-verification logic is exercised end to end. ``count_delta``
+    simulates a FAISS/metadata divergence.
+    """
+
+    def __init__(self, available=True, reason=None, count_delta=0):
+        self._available = available
+        self._reason = reason
+        self._count_delta = count_delta
+
+    def probe(self):
+        from wiki_generator.libs.retrieval.vectors import ProbeResult
+        return ProbeResult(self._available, self._reason)
+
+    def build(self, texts, index_path, *, model, batch_size, max_seq_length):
+        with open(index_path, "w", encoding="utf-8") as f:
+            f.write(str(len(texts)))
+        return len(texts)
+
+    def count(self, index_path):
+        with open(index_path, encoding="utf-8") as f:
+            return int(f.read()) + self._count_delta
+
+
+class BuildRetrievalUnitTests(unittest.TestCase):
+    def test_build_options_fail_without_vectors_implies_on(self):
+        from wiki_generator.libs.commands import build_retrieval as brcmd
+        import argparse
+        ns = argparse.Namespace(
+            in_dir="/x", bm25="on", vectors="auto", embedding_model=None,
+            batch_size=None, rebuild=False, smoke_query=None,
+            fail_without_vectors=True)
+        opts = brcmd.build_options(ns)
+        self.assertEqual(opts.vectors_mode, "on")
+        self.assertEqual(opts.batch_size, 2048)
+        self.assertTrue(opts.embedding_model)  # falls back to default
+
+    def test_build_options_passthrough(self):
+        from wiki_generator.libs.commands import build_retrieval as brcmd
+        import argparse
+        ns = argparse.Namespace(
+            in_dir="/x", bm25="off", vectors="auto", embedding_model="m/x",
+            batch_size=8, rebuild=True, smoke_query="q", fail_without_vectors=False)
+        opts = brcmd.build_options(ns)
+        self.assertEqual(opts.vectors_mode, "auto")
+        self.assertEqual(opts.bm25_mode, "off")
+        self.assertEqual(opts.embedding_model, "m/x")
+        self.assertEqual(opts.batch_size, 8)
+        self.assertTrue(opts.rebuild)
+        self.assertEqual(opts.smoke_query, "q")
+
+    def test_build_options_rejects_bad_mode(self):
+        from wiki_generator.libs.retrieval import BuildOptions
+        with self.assertRaises(ValueError):
+            BuildOptions(bundle_root="/x", vectors_mode="bogus")
+
+    def test_corpus_fingerprint_order_independent(self):
+        from wiki_generator.libs.retrieval import fingerprints as fp
+        a = [{"chunk_id": "c1", "sha256": "aa"}, {"chunk_id": "c2", "sha256": "bb"}]
+        b = list(reversed(a))
+        self.assertEqual(fp.corpus_fingerprint(a), fp.corpus_fingerprint(b))
+        c = [{"chunk_id": "c1", "sha256": "aa"}, {"chunk_id": "c2", "sha256": "CHANGED"}]
+        self.assertNotEqual(fp.corpus_fingerprint(a), fp.corpus_fingerprint(c))
+        self.assertTrue(fp.is_stale(None, "x"))
+        self.assertFalse(fp.is_stale("x", "x"))
+
+    def test_fts_match_query(self):
+        from wiki_generator.libs.retrieval import bm25
+        self.assertEqual(bm25.fts_match_query("foo bar"), '"foo" OR "bar"')
+        self.assertIsNone(bm25.fts_match_query("   "))
+        # punctuation can't become an FTS operator
+        self.assertEqual(bm25.fts_match_query("a-b"), '"a" OR "b"')
+
+    def test_fingerprint_corpus_vs_index_agree_with_null_sha(self):
+        # corpus-side (str-normalized) and index-side (SQLite COALESCE) must
+        # produce the SAME fingerprint even when a chunk has a null sha256.
+        from wiki_generator.libs.retrieval import bm25, fingerprints
+        db = os.path.join(tempfile.mkdtemp(prefix="p1fp_"), "bm25.sqlite")
+        chunks = [
+            {"chunk_id": "c1", "path": "a.py",
+             "range": {"start_line": 1, "end_line": 2}, "sha256": None, "text": "x"},
+            {"chunk_id": "c2", "path": "b.py",
+             "range": {"start_line": 1, "end_line": 2}, "sha256": "abc", "text": "y"},
+        ]
+        bm25.build_index(db, [], chunks, [])
+        state = bm25.read_index_state(db)
+        self.assertEqual(state.fingerprint, fingerprints.corpus_fingerprint(chunks))
+
+    def test_missing_corpus_raises(self):
+        from wiki_generator.libs import retrieval
+        empty = tempfile.mkdtemp(prefix="p1br_empty_")
+        with self.assertRaises(retrieval.MissingCorpusError):
+            retrieval.run(retrieval.BuildOptions(bundle_root=empty))
+
+    def test_missing_corpus_exit_2(self):
+        empty = tempfile.mkdtemp(prefix="p1br_empty2_")
+        p = _run_cmd("build-retrieval", "--in", empty)
+        self.assertEqual(p.returncode, 2, p.stderr)
+
+
+class BuildRetrievalE2ETests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp(prefix="p1br_")
+        cls.repo = os.path.join(cls.tmp, "repo")
+        cls.master = os.path.join(cls.tmp, "out")
+        os.makedirs(cls.repo)
+        _make_repo(cls.repo)
+        cls.dec = _run(cls.repo, cls.master)
+
+    def _fresh(self) -> str:
+        """An isolated copy of the decomposed bundle (so a test that mutates the
+        corpus or writes vector files never affects another test)."""
+        dst = tempfile.mkdtemp(prefix="p1br_run_")
+        out = os.path.join(dst, "bundle")
+        shutil.copytree(self.master, out)
+        self.addCleanup(shutil.rmtree, dst, ignore_errors=True)
+        return out
+
+    def _opts(self, out, **kw):
+        from wiki_generator.libs.retrieval import BuildOptions
+        return BuildOptions(bundle_root=out, **kw)
+
+    def _caps(self, out):
+        with open(os.path.join(out, "rag", "retrieval-capabilities.json")) as f:
+            return json.load(f)
+
+    def test_decompose_ok(self):
+        self.assertEqual(self.dec.returncode, 0, self.dec.stderr)
+
+    def test_bm25_verifies_after_decompose(self):
+        from wiki_generator.libs import retrieval
+        out = self._fresh()
+        res = retrieval.run(self._opts(out, vectors_mode="off"))
+        self.assertTrue(res.ok)
+        # decompose already built the index with the shared builder -> verify
+        self.assertEqual(res.bm25.status, "verified")
+        self.assertTrue(res.bm25.ok)
+        self.assertEqual(res.bm25.row_count, res.bm25.chunk_count)
+        self.assertEqual(res.retrieval_mode, "lexical-symbolic")
+        caps = self._caps(out)
+        self.assertTrue(caps["capabilities"]["bm25"])
+        self.assertTrue(caps["capabilities"]["file_lookup"])
+        self.assertTrue(caps["capabilities"]["symbol_lookup"])
+        self.assertFalse(caps["capabilities"]["vectors"])
+        for name in ("retrieval-capabilities.json", "retrieval-substrate-report.md"):
+            self.assertTrue(os.path.exists(os.path.join(out, "rag", name)), name)
+
+    def test_vectors_auto_skips_gracefully(self):
+        from wiki_generator.libs import retrieval
+        out = self._fresh()
+        res = retrieval.run(self._opts(out, vectors_mode="auto"),
+                            backend=_FakeVectorBackend(available=False,
+                                                       reason="no faiss here"))
+        self.assertTrue(res.ok)  # auto-skip still passes
+        self.assertEqual(res.vectors.status, "skipped")
+        self.assertIn("no faiss here", res.vectors.reason)
+        self.assertEqual(res.retrieval_mode, "lexical-symbolic")
+        self.assertFalse(self._caps(out)["capabilities"]["vectors"])
+
+    def test_vectors_on_fails_when_unavailable(self):
+        from wiki_generator.libs import retrieval
+        out = self._fresh()
+        res = retrieval.run(self._opts(out, vectors_mode="on"),
+                            backend=_FakeVectorBackend(available=False,
+                                                       reason="missing libs"))
+        self.assertFalse(res.ok)
+        self.assertEqual(res.vectors.status, "failed")
+
+    def test_vectors_on_fails_via_cli_without_faiss(self):
+        out = self._fresh()
+        p = _run_cmd("build-retrieval", "--in", out, "--vectors", "on")
+        self.assertEqual(p.returncode, 1, p.stderr)
+        self.assertIn("FAIL", p.stderr)
+
+    def test_vectors_auto_passes_via_cli_without_faiss(self):
+        out = self._fresh()
+        p = _run_cmd("build-retrieval", "--in", out, "--vectors", "auto")
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_hybrid_build_with_backend(self):
+        from wiki_generator.libs import retrieval
+        out = self._fresh()
+        res = retrieval.run(self._opts(out, vectors_mode="on"),
+                            backend=_FakeVectorBackend(available=True))
+        self.assertTrue(res.ok)
+        self.assertEqual(res.vectors.status, "built")
+        self.assertEqual(res.retrieval_mode, "hybrid")
+        self.assertEqual(res.vectors.count, res.bm25.chunk_count)
+        caps = self._caps(out)
+        self.assertTrue(caps["capabilities"]["vectors"])
+        self.assertEqual(caps["retrieval_mode"], "hybrid")
+        with open(os.path.join(out, "rag", "vector-metadata.json")) as f:
+            md = json.load(f)
+        self.assertEqual(md["schema_version"], "vector-metadata-v1")
+        self.assertEqual(len(md["vectors"]), res.vectors.count)
+        row = md["vectors"][0]
+        for k in ("ordinal", "chunk_id", "span_ids", "path", "range", "sha256"):
+            self.assertIn(k, row)
+        self.assertTrue(os.path.exists(os.path.join(out, "rag", "vector-build-report.md")))
+
+    def test_vector_count_divergence_fails(self):
+        from wiki_generator.libs import retrieval
+        out = self._fresh()
+        res = retrieval.run(self._opts(out, vectors_mode="on"),
+                            backend=_FakeVectorBackend(available=True, count_delta=1))
+        self.assertFalse(res.ok)
+        self.assertEqual(res.vectors.status, "failed")
+        self.assertIn("diverge", res.vectors.reason)
+
+    def test_stale_index_triggers_rebuild(self):
+        from wiki_generator.libs import retrieval
+        out = self._fresh()
+        retrieval.run(self._opts(out, vectors_mode="off"))  # verify baseline
+        chunks_path = os.path.join(out, "rag", "chunks.jsonl")
+        rows = _read_jsonl(chunks_path)
+        rows[0]["sha256"] = "0" * 64  # same row count, changed content hash
+        with open(chunks_path, "w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        res = retrieval.run(self._opts(out, vectors_mode="off"))
+        self.assertEqual(res.bm25.status, "rebuilt")
+        self.assertIn("stale", res.bm25.reason)
+        self.assertTrue(res.bm25.ok)
+
+    def test_rebuild_flag_forces_rebuild(self):
+        from wiki_generator.libs import retrieval
+        out = self._fresh()
+        res = retrieval.run(self._opts(out, vectors_mode="off", rebuild=True))
+        self.assertEqual(res.bm25.status, "rebuilt")
+        self.assertTrue(res.bm25.ok)
+
+    def test_bm25_off_records_disabled(self):
+        from wiki_generator.libs import retrieval
+        out = self._fresh()
+        res = retrieval.run(self._opts(out, bm25_mode="off", vectors_mode="off"))
+        self.assertTrue(res.ok)  # lexical-symbolic still viable via symbols/rg
+        self.assertEqual(res.bm25.status, "disabled")
+        self.assertFalse(self._caps(out)["capabilities"]["bm25"])
+
+    def test_smoke_query_deterministic(self):
+        from wiki_generator.libs import retrieval
+        out = self._fresh()
+        opts = self._opts(out, vectors_mode="off", smoke_query="item service work")
+        smoke_path = os.path.join(out, "rag", "retrieval-smoke-tests.jsonl")
+        retrieval.run(opts)
+        with open(smoke_path) as f:
+            first = f.read()
+        retrieval.run(opts)
+        with open(smoke_path) as f:
+            second = f.read()
+        self.assertEqual(first, second)
+        rows = [json.loads(ln) for ln in first.splitlines() if ln.strip()]
+        self.assertEqual(rows[0]["mode"], "bm25")
+        self.assertEqual(rows[0]["query"], "item service work")
+
+    def test_capabilities_deterministic_across_verify_runs(self):
+        from wiki_generator.libs import retrieval
+        out = self._fresh()
+        opts = self._opts(out, vectors_mode="off")
+        caps_path = os.path.join(out, "rag", "retrieval-capabilities.json")
+        retrieval.run(opts)  # first run may build/verify
+        with open(caps_path) as f:
+            a = f.read()
+        retrieval.run(opts)
+        with open(caps_path) as f:
+            b = f.read()
+        self.assertEqual(a, b)
+
+    # --- review-driven regression tests --------------------------------------
+    def test_decompose_writes_v1_vector_metadata(self):
+        # decompose now delegates vectors to the shared Step 5 builder, so its
+        # vector-metadata.json is the same vector-metadata-v1 contract.
+        with open(os.path.join(self.master, "rag", "vector-metadata.json")) as f:
+            md = json.load(f)
+        self.assertEqual(md["schema_version"], "vector-metadata-v1")
+
+    def test_failed_vector_build_leaves_no_orphan_faiss(self):
+        from wiki_generator.libs import retrieval
+        out = self._fresh()
+        faiss_path = os.path.join(out, "rag", "vectors.faiss")
+        res = retrieval.run(self._opts(out, vectors_mode="on"),
+                            backend=_FakeVectorBackend(available=True, count_delta=1))
+        self.assertEqual(res.vectors.status, "failed")
+        # the index the backend wrote before the count check must be cleaned up
+        self.assertFalse(os.path.exists(faiss_path), "orphan vectors.faiss left behind")
+
+    def test_empty_corpus_skips_vectors_and_passes(self):
+        from wiki_generator.libs import retrieval
+        out = self._fresh()
+        with open(os.path.join(out, "rag", "chunks.jsonl"), "w"):
+            pass  # empty corpus
+        res = retrieval.run(self._opts(out, vectors_mode="auto"),
+                            backend=_FakeVectorBackend(available=True))
+        self.assertTrue(res.ok)
+        self.assertEqual(res.vectors.status, "skipped")
+        self.assertEqual(res.retrieval_mode, "lexical-symbolic")
+        self.assertFalse(self._caps(out)["capabilities"]["vectors"])
+
+    def test_stale_jsonl_metadata_cleaned_on_skip(self):
+        from wiki_generator.libs.retrieval import BuildOptions
+        from wiki_generator.libs import retrieval
+        out = self._fresh()
+        jsonl = os.path.join(out, "rag", "vector-metadata.jsonl")
+        # force JSONL metadata by lowering the threshold, then build with vectors
+        built = retrieval.run(
+            BuildOptions(bundle_root=out, vectors_mode="on",
+                         metadata_jsonl_threshold=1),
+            backend=_FakeVectorBackend(available=True))
+        self.assertTrue(built.ok)
+        self.assertTrue(os.path.exists(jsonl), "expected jsonl metadata")
+        # a later skip/disable run must not leave the orphan jsonl behind
+        retrieval.run(self._opts(out, vectors_mode="off"))
+        self.assertFalse(os.path.exists(jsonl), "stale vector-metadata.jsonl left behind")
+
+    def test_malformed_chunk_exits_2(self):
+        out = self._fresh()
+        with open(os.path.join(out, "rag", "chunks.jsonl"), "w") as f:
+            f.write(json.dumps({"chunk_id": "c1", "path": "x.py"}) + "\n")  # no range
+        p = _run_cmd("build-retrieval", "--in", out)
+        self.assertEqual(p.returncode, 2, p.stderr)
+
+    def test_duplicate_chunk_id_exits_2(self):
+        from wiki_generator.libs import retrieval
+        out = self._fresh()
+        row = {"chunk_id": "dup", "path": "x.py",
+               "range": {"start_line": 1, "end_line": 2}, "sha256": "a"}
+        with open(os.path.join(out, "rag", "chunks.jsonl"), "w") as f:
+            f.write(json.dumps(row) + "\n" + json.dumps(row) + "\n")
+        with self.assertRaises(retrieval.MissingCorpusError):
+            retrieval.run(self._opts(out, vectors_mode="off"))
+
+    def test_batch_size_zero_exits_2(self):
+        out = self._fresh()
+        p = _run_cmd("build-retrieval", "--in", out, "--batch-size", "0")
+        self.assertEqual(p.returncode, 2, p.stderr)
 
 
 if __name__ == "__main__":

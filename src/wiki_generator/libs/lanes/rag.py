@@ -10,41 +10,17 @@ Artifacts:
 """
 from __future__ import annotations
 
-import json as _json
 import os
-import sqlite3
 
 from .. import config as C
 from .. import ids
 from .. import chunker
 from ..context import RunContext
-from ..util import (clip, read_text, sha256_text, write_json, write_jsonl, log,
+from ..retrieval import bm25, vectors
+from ..retrieval.loader import Corpus
+from ..retrieval.options import BuildOptions
+from ..util import (clip, read_text, sha256_text, write_jsonl, log,
                     module_header_last)
-
-_BM25_SCHEMA = """
-CREATE TABLE files (
-  path TEXT PRIMARY KEY, name TEXT, ext TEXT, size_bytes INTEGER, line_count INTEGER,
-  language TEXT, category TEXT, top_dir TEXT, sha256 TEXT,
-  is_generated INTEGER, is_vendor INTEGER
-);
-CREATE TABLE chunks (
-  chunk_id TEXT PRIMARY KEY, path TEXT, start_line INTEGER, end_line INTEGER,
-  chunk_type TEXT, language TEXT, category TEXT, symbol_name TEXT,
-  heading_path TEXT, section_name TEXT, span_ids TEXT, token_estimate INTEGER,
-  sha256 TEXT, text TEXT
-);
-CREATE INDEX idx_chunks_path ON chunks(path);
-CREATE INDEX idx_chunks_type ON chunks(chunk_type);
-CREATE TABLE symbols (
-  symbol_id TEXT, name TEXT, kind TEXT, path TEXT,
-  start_line INTEGER, end_line INTEGER, signature TEXT, parent_symbol_id TEXT
-);
-CREATE INDEX idx_symbols_name ON symbols(name);
-CREATE VIRTUAL TABLE chunks_fts USING fts5(
-  text, symbol_name, heading_path, path,
-  content='chunks', content_rowid='rowid', tokenize='porter unicode61'
-);
-"""
 
 
 def _python_spans(rec, parser, lines) -> list[dict]:
@@ -122,111 +98,33 @@ def _dedupe_chunk_ids(chunks) -> None:
 
 
 def _build_bm25(ctx: RunContext, inv: dict, chunks: list[dict], symbols: list[dict]) -> int:
-    db = ctx.paths.bm25_sqlite
-    if os.path.exists(db):
-        os.remove(db)
-    con = sqlite3.connect(db)
-    try:
-        con.executescript(_BM25_SCHEMA)
-        con.executemany(
-            "INSERT OR IGNORE INTO files VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            [(r["path"], r["name"], r["ext"], r["size_bytes"], r["line_count"],
-              r["language"], r["category"], r["top_dir"], r["sha256"],
-              int(r["is_generated"]), int(r["is_vendor"])) for r in inv["files"]],
-        )
-        rows = []
-        for c in chunks:
-            rows.append((
-                c["chunk_id"], c["path"], c["range"]["start_line"], c["range"]["end_line"],
-                c["chunk_type"], c["language"], c["category"], c.get("symbol_name"),
-                c.get("heading_path"), c.get("section_name"),
-                _json.dumps(c.get("span_ids") or []), c.get("token_estimate"),
-                c.get("sha256"), c.get("text", ""),
-            ))
-        con.executemany(
-            "INSERT OR IGNORE INTO chunks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
-        con.executemany(
-            "INSERT INTO symbols VALUES (?,?,?,?,?,?,?,?)",
-            [(s["symbol_id"], s["name"], s["kind"], s["path"],
-              s["range"]["start_line"], s["range"]["end_line"],
-              s.get("signature"), s.get("parent_symbol_id")) for s in symbols],
-        )
-        con.execute(
-            "INSERT INTO chunks_fts(rowid, text, symbol_name, heading_path, path) "
-            "SELECT rowid, text, COALESCE(symbol_name,''), COALESCE(heading_path,''), path "
-            "FROM chunks")
-        con.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('optimize')")
-        con.commit()
-    finally:
-        con.close()
-    return len(chunks)
+    # Delegates to the shared builder so decompose and `build-retrieval` (Step 5)
+    # always write the identical FTS5 schema — see libs/retrieval/bm25.py.
+    return bm25.build_index(ctx.paths.bm25_sqlite, inv["files"], chunks, symbols)
 
 
-def _build_vectors(ctx: RunContext, chunks: list[dict]) -> dict:
-    """Optional model2vec + FAISS index. Returns {built, count, ...}."""
-    want = ctx.opts.embeddings
-    available = ctx.tools.embeddings.available
-    if want == "off" or (want == "auto" and not available):
-        note = "disabled" if want == "off" else ctx.tools.embeddings.note
-        write_json(ctx.paths.vector_metadata, {
-            "built": False, "reason": note, "model": C.EMBED_MODEL})
+def _build_vectors(ctx: RunContext, chunks: list[dict]) -> vectors.VectorResult:
+    """Optional model2vec + FAISS index. Delegates to the shared Step 5 builder
+    (``libs/retrieval/vectors.py``) so decompose and ``build-retrieval`` emit
+    byte-identical vector artifacts — same embed text, FAISS mechanism,
+    ``vector-metadata-v1`` schema, and chunk ordering — then maps the result onto
+    this run's artifact index / warning collectors."""
+    opts = BuildOptions(bundle_root=ctx.out, vectors_mode=ctx.opts.embeddings,
+                        embedding_model=C.EMBED_MODEL)
+    corpus = Corpus(root=ctx.out, paths=ctx.paths, chunks=chunks)
+    res = vectors.build_or_verify(corpus, opts, vectors.FaissModel2VecBackend())
+    if res.built:
+        ctx.record(ctx.paths.vectors_faiss, produced_by="model2vec + faiss",
+                   description="local semantic vectors over chunks", rows=res.count)
+        ctx.record(ctx.paths.vector_metadata, produced_by="model2vec + faiss",
+                   description="embedding model / vector-metadata-v1")
+        ctx.count("rag/vectors", res.count)
+    else:
         ctx.record(ctx.paths.vector_metadata, produced_by="(skipped)",
-                   description="vector index metadata", skipped=True, note=note)
-        ctx.warn(f"vector lane skipped ({note}); rag/vectors.faiss not written. "
-                 f"BM25 + ripgrep still provide retrieval.")
-        return {"built": False}
-    if want == "on" and not available:
-        note = f"--embeddings on but libraries missing: {ctx.tools.embeddings.note}"
-        write_json(ctx.paths.vector_metadata, {"built": False, "reason": note})
-        ctx.record(ctx.paths.vector_metadata, produced_by="(skipped)",
-                   description="vector index metadata", skipped=True, note=note)
-        ctx.warn(note)
-        return {"built": False}
-    try:
-        import faiss            # type: ignore
-        import numpy as np      # type: ignore
-        from model2vec import StaticModel  # type: ignore
-    except Exception as e:  # noqa: BLE001
-        ctx.warn(f"vector lane import failed at build time: {e}")
-        write_json(ctx.paths.vector_metadata, {"built": False, "reason": str(e)})
-        return {"built": False}
-
-    model = StaticModel.from_pretrained(C.EMBED_MODEL)
-    ids_list, meta, texts = [], [], []
-    for c in chunks:
-        ctxline = " ".join(filter(None, [c["path"], c.get("symbol_name"),
-                                         c.get("heading_path"), c.get("docstring")]))
-        texts.append((ctxline + "\n" + c.get("text", ""))[:C.EMBED_TEXT_CHARS])
-        ids_list.append(c["chunk_id"])
-        meta.append({"chunk_id": c["chunk_id"], "path": c["path"],
-                     "start_line": c["range"]["start_line"],
-                     "end_line": c["range"]["end_line"],
-                     "chunk_type": c["chunk_type"]})
-    if not texts:
-        write_json(ctx.paths.vector_metadata, {"built": False, "reason": "no chunks"})
-        return {"built": False}
-    log(f"vector: embedding {len(texts)} chunks with {C.EMBED_MODEL} ...")
-    parts = []
-    for i in range(0, len(texts), 2048):
-        v = np.asarray(model.encode(texts[i:i + 2048], max_length=512), dtype="float32")
-        norms = np.linalg.norm(v, axis=1, keepdims=True)
-        norms[norms == 0] = 1.0
-        parts.append(v / norms)
-    mat = np.vstack(parts).astype("float32")
-    index = faiss.IndexFlatIP(mat.shape[1])
-    index.add(mat)
-    faiss.write_index(index, ctx.paths.vectors_faiss)
-    write_json(ctx.paths.vector_metadata, {
-        "built": True, "model": C.EMBED_MODEL, "dim": int(mat.shape[1]),
-        "count": len(ids_list), "metric": "cosine (IndexFlatIP, L2-normalized)",
-        "ids": ids_list, "meta": meta,
-    })
-    ctx.record(ctx.paths.vectors_faiss, produced_by="model2vec + faiss",
-               description="local semantic vectors over chunks", rows=len(ids_list))
-    ctx.record(ctx.paths.vector_metadata, produced_by="model2vec + faiss",
-               description="embedding model / dim / chunk-id map")
-    ctx.count("rag/vectors", len(ids_list))
-    return {"built": True, "count": len(ids_list), "dim": int(mat.shape[1])}
+                   description="vector index metadata", skipped=True, note=res.reason)
+        ctx.warn(f"vector lane {res.status}: {res.reason}; rag/vectors.faiss not "
+                 "written. BM25 + ripgrep still provide retrieval.")
+    return res
 
 
 def build(ctx: RunContext, inv: dict, sym: dict, rg_data) -> dict:
@@ -255,7 +153,9 @@ def build(ctx: RunContext, inv: dict, sym: dict, rg_data) -> dict:
 
     _dedupe_chunk_ids(all_chunks)
     all_spans.sort(key=lambda s: (s["path"], s["range"]["start_line"], s["span_type"]))
-    all_chunks.sort(key=lambda c: (c["path"], c["range"]["start_line"]))
+    # 3-key sort (chunk_id tiebreak) matches retrieval.vectors._ordered_chunks, so
+    # chunks.jsonl order and the embedding/FAISS row order agree across producers.
+    all_chunks.sort(key=lambda c: (c["path"], c["range"]["start_line"], c["chunk_id"]))
 
     n_spans = write_jsonl(ctx.paths.spans_jsonl, all_spans)
     ctx.count("rag/spans.jsonl", n_spans)
@@ -284,5 +184,6 @@ def build(ctx: RunContext, inv: dict, sym: dict, rg_data) -> dict:
     vec = _build_vectors(ctx, all_chunks)
 
     log(f"rag: {n_spans} spans, {n_chunks} chunks, {n_bm} bm25 rows, "
-        f"{n_raw} raw rg, vectors={'yes' if vec.get('built') else 'no'}")
-    return {"spans": n_spans, "chunks": n_chunks, "vectors": vec}
+        f"{n_raw} raw rg, vectors={'yes' if vec.built else 'no'}")
+    return {"spans": n_spans, "chunks": n_chunks,
+            "vectors": {"built": vec.built, "count": vec.count}}

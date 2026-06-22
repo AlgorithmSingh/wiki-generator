@@ -8,6 +8,7 @@ module stays deliberately small.
     python -m wiki_generator condense      --in <bundle> [--budget-tokens N]
     python -m wiki_generator digest        --in <bundle> [--out <dir>] [--budget-tokens N]
     python -m wiki_generator bundle        --in <bundle> [--out <dir>] [--budget-tokens N]
+    python -m wiki_generator build-retrieval --in <bundle> [--bm25 ...] [--vectors ...]
     python -m wiki_generator plan          --bundle <bundle> [--project P --location L]  (Vertex AI; LLM step)
     python -m wiki_generator normalize-plan --bundle <bundle> --raw-response <file> [--out <dir>]
 """
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 
+from .libs.commands import build_retrieval as build_retrieval_cmd
 from .libs.commands import bundle as bundle_cmd
 from .libs.commands import condense as condense_cmd
 from .libs.commands import decompose as decompose_cmd
@@ -84,6 +86,30 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--budget-tokens", type=int, default=DEFAULT_BUDGET_TOKENS,
                    help="target upload token budget (default 250000)")
 
+    br = sub.add_parser(
+        "build-retrieval",
+        help="Step 5: build/verify the retrieval substrate (BM25 + optional "
+             "vectors) and write the Phase 3 capability contract")
+    br.add_argument("--in", dest="in_dir", required=True,
+                    help="path to an existing decomposition bundle")
+    br.add_argument("--bm25", choices=_TOGGLE, default="on",
+                    help="BM25 lexical index. on/auto=build or verify (default), "
+                         "off=skip")
+    br.add_argument("--vectors", choices=_TOGGLE, default="auto",
+                    help="vector lane. auto=build if faiss+model2vec importable, "
+                         "else skip with a reason (default); on=require (fail if "
+                         "unavailable); off=skip")
+    br.add_argument("--embedding-model", dest="embedding_model", default=None,
+                    help="local embedding model (default minishlab/potion-base-8M)")
+    br.add_argument("--batch-size", dest="batch_size", type=int, default=None,
+                    help="embedding batch size (default 2048)")
+    br.add_argument("--rebuild", action="store_true",
+                    help="delete and rebuild existing retrieval indexes")
+    br.add_argument("--smoke-query", dest="smoke_query", default=None,
+                    help="optional query to test the substrate after build")
+    br.add_argument("--fail-without-vectors", dest="fail_without_vectors",
+                    action="store_true", help="alias for --vectors on")
+
     pl = sub.add_parser("plan",
                         help="Phase 2 Step 1: run the planning LLM (Vertex AI "
                              "Gemini 2.5 Pro) on the upload bundle. The only LLM "
@@ -142,6 +168,8 @@ def main(argv: list[str] | None = None) -> int:
         return digest_cmd.run(args)
     if args.command == "bundle":
         return bundle_cmd.run(args)
+    if args.command == "build-retrieval":
+        return build_retrieval_cmd.run(args)
     if args.command == "plan":
         return plan_cmd.run(args)
     if args.command == "normalize-plan":

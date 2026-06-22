@@ -3,16 +3,18 @@
 Plan a documentation Wiki for a Python repository. `wiki-generator` turns a repo
 into a deterministic **repo-analysis artifact bundle** (Step 1), **condenses** it
 into small planner-facing digests an LLM can actually read (Steps 2/3), **bundles**
-those into one uploadable file (Step 4), runs a **planning LLM** over it
-(Phase 2 Step 1), and **normalizes** the LLM's plan into machine-resolvable
-artifacts for the later retrieval phase (Phase 2 Step 2). Everything except the
-single `plan` step is deterministic and **LLM-free**.
+those into one uploadable file (Step 4), **builds the retrieval substrate** Phase 3
+will query (Step 5), runs a **planning LLM** over the upload bundle (Phase 2 Step 1),
+and **normalizes** the LLM's plan into machine-resolvable artifacts for the
+retrieval phase (Phase 2 Step 2). Everything except the single `plan` step is
+deterministic and **LLM-free**.
 
 ```text
 Phase 1  Step 1 decompose  -> raw artifact bundle
          Step 2 condense    -> derived/planning-*.md condensates
          Step 3 digest      -> derived/planning-digest.md
          Step 4 bundle      -> planner-digest/planner-upload-bundle.md (one upload)
+         Step 5 build-retrieval -> rag/retrieval-capabilities.json (BM25 + optional vectors)
 Phase 2  Step 1 plan        -> Gemini/Kimi plan: plans/phase2-<provider>-response.md
                                (Vertex AI Gemini 2.5 Pro; the one LLM step.
                                 or run the Gem by hand and save the reply)
@@ -20,9 +22,14 @@ Phase 2  Step 1 plan        -> Gemini/Kimi plan: plans/phase2-<provider>-respons
 Phase 3  (later)            -> deterministic section evidence retrieval
 ```
 
+Step 5 is numbered after Step 4 because it is **not** needed for the planner
+upload; its only hard dependency is Step 1's corpus, so it can run any time after
+`decompose` (in practice, before Phase 3).
+
 This implements `PHASE1_DECOMPOSITION_PLAN.md` (Step 1),
 `PHASE1_STEP2_STEP3_PLANNING_CONDENSATES.md` (Steps 2/3),
-`PHASE1_STEP4_PLANNER_UPLOAD_BUNDLE_SPEC.md` (Step 4), and
+`PHASE1_STEP4_PLANNER_UPLOAD_BUNDLE_SPEC.md` (Step 4),
+`PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md` (Step 5), and
 `PHASE2_PLAN_NORMALIZATION_SPEC.md` (Phase 2 Step 2).
 
 ## Architecture
@@ -39,8 +46,9 @@ wiki-generator/            repo root (distribution name: wiki-generator)
         util · ids · config · paths · tools · chunker · rgpacks · context · pipeline
         lanes/               Step 1 decomposition lanes (inventory…derived)
         digest/              Step 2/3 condensates: loader, ranking, planning_*  + upload_package (Step 4)
+        retrieval/           Step 5 substrate: loader · fingerprints · bm25 · vectors · capabilities · report · smoke
         plan_normalization/  Phase 2 Step 2: parse · lookups · normalize · writer
-        commands/            command bodies: decompose · condense · digest · bundle · plan · normalize_plan
+        commands/            command bodies: decompose · condense · digest · bundle · build_retrieval · plan · normalize_plan
   tests/  pyproject.toml  README.md  RUNBOOK.md  gemini-gem/
 ```
 
@@ -48,7 +56,12 @@ wiki-generator/            repo root (distribution name: wiki-generator)
 `libs` never imports `cli`. Each digest summarizer reads the bundle through one
 seam (`libs/digest/loader.py`) and ranks through one seam
 (`libs/digest/ranking.py`). Plan normalization resolves every reference through
-one seam (`libs/plan_normalization/lookups.py`, the `Lookups` class).
+one seam (`libs/plan_normalization/lookups.py`, the `Lookups` class). The Step 5
+retrieval substrate owns BM25 in one place (`libs/retrieval/bm25.py` — the
+decompose `rag` lane delegates to it, so the FTS5 schema never drifts) and hides
+the optional embedding libraries behind an injectable `VectorBackend`
+(`libs/retrieval/vectors.py`), so the whole build/skip/fail path is testable
+without faiss installed.
 
 ## Install / run
 
@@ -77,6 +90,11 @@ wiki-generator digest --in /path/to/phase1-output --budget-tokens 250000
 
 # Step 4 — the single-file planner upload bundle
 wiki-generator bundle --in /path/to/phase1-output --budget-tokens 250000
+
+# Step 5 — build/verify the retrieval substrate for Phase 3 (deterministic, no LLM).
+# BM25 is rebuilt/verified; vectors are built only if the embeddings extra is
+# installed (--vectors auto), otherwise skipped with an explicit reason.
+wiki-generator build-retrieval --in /path/to/phase1-output --vectors auto
 
 # Phase 2 Step 1 — run the planning LLM (Vertex AI Gemini 2.5 Pro; the one LLM
 # step; needs the [vertex] extra + GCP credentials — see below). Optional: run the
@@ -189,6 +207,34 @@ raw backend indexes are deliberately excluded and kept for Phase 3 retrieval. If
 budget is exceeded, `bundle` trims optional/supporting files first (never the README or
 the six condensates); if those required files alone exceed the budget it fails loudly.
 
+### Retrieval substrate outputs (Step 5 `build-retrieval`)
+
+`build-retrieval` verifies or rebuilds the searchable indexes over the Step 1
+corpus and writes the contract Phase 3 reads to choose retrieval tactics per
+section. It never writes EvidencePackets or Wiki prose, never calls an LLM, and
+never makes a network call.
+
+```
+phase1-output/rag/
+  bm25.sqlite                    verified, or rebuilt if missing/stale/row-count mismatch
+  retrieval-capabilities.json    machine-readable contract: chunk/span counts, which retrieval
+                                 modes are available, index row counts + content fingerprint
+  retrieval-substrate-report.md  human-readable readiness: PASS/FAIL + recommended Phase 3 mode
+                                 (hybrid if vectors built, else lexical-symbolic)
+  vector-build-report.md         vector lane status, model, count, or exact skip/fail reason
+  vectors.faiss                  only when vectors are built (--vectors on/auto with faiss)
+  vector-metadata.json[l]        one metadata row per vector (chunk_id/span_ids/path/range/sha256);
+                                 JSONL past ~20k vectors (path recorded in capabilities)
+  retrieval-smoke-tests.jsonl    only with --smoke-query: top-k hits proving the substrate answers
+```
+
+A run is **lexical-symbolic** (BM25 + ripgrep + symbols + graph + contracts +
+tests) when the embedding libraries are absent, and **hybrid** (adds vector
+retrieval) when they are installed. `--vectors auto` skips vectors with a recorded
+reason; `--vectors on` (alias `--fail-without-vectors`) exits non-zero if faiss/
+model2vec are unavailable or the vector/metadata counts diverge. Reruns on the
+same corpus are deterministic.
+
 ### Phase 2 normalization outputs (`normalize-plan`)
 
 After the planning LLM responds (saved as `plans/phase2-<provider>-response.md`),
@@ -265,6 +311,19 @@ A chunk references the `span_ids` it overlaps; a Python span carries its
 | `--out <dir>` | `<bundle>/planner-digest` | upload-package directory (`digest`/`bundle`) |
 | `--budget-tokens N` | 250000 | target upload token budget (`ceil(chars/4)` estimate) |
 | `--no-bundle` | off | (`digest` only) stop after `planning-digest.md`; skip Step 4 |
+
+`build-retrieval` flags (Step 5):
+
+| flag | default | meaning |
+|---|---|---|
+| `--in <bundle>` | — | path to an existing decomposition bundle (required) |
+| `--bm25 auto\|on\|off` | on | BM25 index; on/auto = build or verify, off = skip |
+| `--vectors auto\|on\|off` | auto | vectors; auto = build if faiss+model2vec importable else skip with reason, on = require (fail if unavailable), off = disabled by user |
+| `--embedding-model NAME` | minishlab/potion-base-8M | local embedding model |
+| `--batch-size N` | 2048 | embedding batch size |
+| `--rebuild` | off | delete and rebuild existing retrieval indexes |
+| `--smoke-query TEXT` | — | run a query against the substrate after build and record top hits |
+| `--fail-without-vectors` | off | alias for `--vectors on` |
 
 `plan` flags (Phase 2 Step 1; needs the `[vertex]` extra + GCP credentials):
 
