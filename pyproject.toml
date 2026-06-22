@@ -31,6 +31,17 @@ vertex = [
     "google-genai>=1.0",
 ]
 
+# Development / test dependency group (PEP 735). The suite itself is stdlib
+# `unittest` (no runtime test dependency); these are the heavy extras the vector
+# lane's tests exercise under the pinned Python 3.12 (see .python-version). Run
+# the full suite with `uv run --group dev python -m unittest discover -s tests`.
+[dependency-groups]
+dev = [
+    "faiss-cpu",
+    "numpy",
+    "model2vec",
+]
+
 [project.scripts]
 wiki-generator = "wiki_generator.cli:main"
 
