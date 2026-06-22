@@ -42,6 +42,8 @@ def _api_summary(bundle: Bundle) -> list[str]:
     out: list[str] = []
     spec = bundle.openapi or {}
     paths = spec.get("paths") or {}
+    if not isinstance(paths, dict):       # tolerate a malformed/external spec
+        paths = {}
     frameworks = spec.get("x-frameworks") or []
     method = "derived" if R.is_derived_contract(spec) else "discovered"
     out.append(f"- Contract source: **{method}**; frameworks: "

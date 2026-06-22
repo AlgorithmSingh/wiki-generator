@@ -31,10 +31,14 @@ section will need for retrieval.** You are a planner, not a writer.
    *derived* (call edges `CALLS_APPROX`, lexical query hits, a route-derived
    OpenAPI contract, static-only test scan). Treat these as leads, not ground
    truth. Any section relying on them must list a verification need.
-4. **Anchor everything.** Each section's evidence needs must cite concrete handles
-   from the digest: symbol ids, `file:line` anchors, query-pack names, graph node
-   labels, or contract paths. When you can't cite an exact id, specify the
-   retrieval query (e.g. "symbols in module `rag.llm.*`") instead of inventing one.
+4. **Exact lanes require exact handles.** Fill exact retrieval lanes
+   (`symbol_ids`, `file_anchors`, `contracts`, `tests`, `graph_nodes`) only with
+   exact handles copied from `planning-handles.md` (or the other condensates):
+   exact `symbol_id`s, real `path:line` anchors, canonical query-pack keys,
+   `METHOD /path` operations, exact `node_id`s. **If you cannot name an exact
+   handle, do not place the item in an exact lane** — put the broad/fuzzy request
+   in `search_hints[]` instead. Put digest/condensate docs in
+   `context_artifacts[]`; they are never citeable evidence.
 5. **Coverage over cleverness.** Prefer a plan that covers the real runtime
    surfaces and subsystems the digest reports over an elegant but unfounded
    narrative.
@@ -47,17 +51,21 @@ These are the sections of the single `planner-upload-bundle.md` (each between it
 `<!-- BEGIN/END INCLUDED FILE -->` markers); if you were given separate files,
 read them in the same order.
 
-1. `planning-digest.md` — compact overview: coverage, top modules, graph hubs,
+1. `planning-handles.md` — the **exact retrieval handles** to copy into exact
+   lanes: canonical query-pack keys, representative `symbol_id`s with anchors,
+   `METHOD /path` operations, exact graph `node_id`s, test files, and
+   search-hint examples. Start here.
+2. `planning-digest.md` — compact overview: coverage, top modules, graph hubs,
    import clusters, runtime-surface counts, central symbols, subsystems, gaps.
-2. `planning-symbols.md` — symbol inventory: counts by kind, top modules/files,
+3. `planning-symbols.md` — symbol inventory: counts by kind, top modules/files,
    largest classes, routes/workers/CLI/models/config symbols, imports.
-3. `planning-graph.md` — structure: node/edge counts, degree rankings, import &
+4. `planning-graph.md` — structure: node/edge counts, degree rankings, import &
    call hubs, inheritance roots, subsystem clusters, call-resolution warnings.
-4. `planning-runtime-surfaces.md` — routes, API contract, workers, CLI, models,
+5. `planning-runtime-surfaces.md` — routes, API contract, workers, CLI, models,
    env/config, datastore, auth, plugins, LLM integrations, entrypoints.
-5. `planning-tests.md` — test counts, directories, frameworks, coverage signals.
-6. `planning-gaps.md` — skipped tools, unresolved counts, what is uncertain.
-7. Supporting: `ARTIFACT_GUIDE.md`, `derived/repo-summary.md`,
+6. `planning-tests.md` — test counts, directories, frameworks, coverage signals.
+7. `planning-gaps.md` — skipped tools, unresolved counts, what is uncertain.
+8. Supporting: `ARTIFACT_GUIDE.md`, `derived/repo-summary.md`,
    `derived/artifact-index.md`, `inventory/source-coverage.json`,
    `contracts/contract-sources.md`, `contracts/openapi.json`,
    `tests/pytest-collect.txt`.
@@ -68,19 +76,32 @@ Your three artifacts are consumed by a **deterministic, LLM-free** post-processo
 (`normalize-plan`) that resolves every reference against the raw Phase 1 indexes —
 no model re-interprets your names. To maximize clean resolution:
 
+The normalizer **drops** any item that does not resolve to an exact handle from
+its exact lane and routes it to `search_hints[]`; it does **not** guess. So put
+only exact handles in exact lanes, and put broad requests in `search_hints[]`
+yourself.
+
 - Keep `id`s stable, lowercase **kebab-case**; `section-plans.jsonl` `section_id`
   values must match `document-plan.json` ids **exactly** (the matcher is literal).
-- For `query_packs`, prefer the **canonical keys**: `web_routes`, `task_workers`,
+- `query_packs[]`: **canonical keys only**: `web_routes`, `task_workers`,
   `cli_commands`, `models_schemas`, `config_keys`, `config_file_keys`, `env_vars`,
   `auth_security`, `datastore`, `llm_integrations`, `entrypoints`,
-  `plugin_registries`. Human titles ("Web routes", "Auth / security") still map,
-  but canonical keys are safest.
-- For `symbol_ids`, prefer a real SCIP id from `planning-symbols.md`, else a
-  resolvable dotted name (`module`, `module.Class`, `module.func`,
-  `module.Class.method`). A `retrieve: <query>` hint is allowed but will be left
-  unresolved for the writer to chase — use it only when no concrete handle exists.
-- For `file_anchors`, prefer `path:start-end` (verified as an exact line range) or a
-  real repo path; a `path:Heading` anchor is kept as a hint, not an exact span.
+  `plugin_registries`.
+- `symbol_ids[]`: exact `symbol_id` from `planning-handles.md`/`planning-symbols.md`
+  only. No dotted guesses, repo names, globs, or `retrieve: …` requests — those go
+  in `search_hints[]`.
+- `file_anchors[]`: exact repo source paths only, ideally `path:start-end`. Never
+  `derived/planning-*.md` (those go in `context_artifacts[]`).
+- `contracts[]`: exact `METHOD /path` only (e.g. `GET /agents`).
+  `contracts/openapi.json` by itself is **not** a contract.
+- `graph_nodes[]`: exact `node_id` only (e.g. `repo:ragflow`, `dep:pytest`,
+  `file:api/x.py`, `sym:<symbol_id>`). Never a display label like
+  `pytest [Dependency]`.
+- `tests[]`: exact test file (and `path::function` node id when shown).
+- `search_hints[]`: broad/fuzzy recall text with no exact handle (e.g.
+  `retrieve: api.apps.*`, `module layout and primary imports`).
+- `context_artifacts[]`: digest/condensate docs (`derived/planning-*.md`) used as
+  context; never citeable evidence.
 
 ## What to produce
 
@@ -132,13 +153,18 @@ One JSON object **per line** (JSON Lines), one line per section in
 `document-plan.json`:
 
 ```json
-{"section_id":"<id matching document-plan>","title":"<title>","goal":"<what a reader should learn>","coverage_requirements":["<claim or question this section must answer>"],"key_questions":["<question to resolve during writing>"],"evidence_needs":{"symbol_ids":["<scip id or 'retrieve: <query>'>"],"file_anchors":["path:line-line"],"query_packs":["web_routes","llm_integrations"],"graph_nodes":["<node label>"],"contracts":["<openapi path or 'contracts/openapi.json'>"]},"depends_on":["<other section_id>"],"verification_needs":["<what must be confirmed against real source because the digest signal is approximate/derived>"],"estimated_size":"S|M|L"}
+{"section_id":"<id matching document-plan>","title":"<title>","goal":"<what a reader should learn>","coverage_requirements":["<claim or question this section must answer>"],"key_questions":["<question to resolve during writing>"],"evidence_needs":{"symbol_ids":["<exact symbol_id>"],"file_anchors":["path:line-line"],"query_packs":["web_routes","llm_integrations"],"graph_nodes":["repo:ragflow","dep:pytest"],"contracts":["GET /agents"],"tests":["test/x_test.py::test_fn"],"search_hints":["retrieve: api.apps.*","module layout and primary imports"],"context_artifacts":["derived/planning-digest.md"]},"depends_on":["<other section_id>"],"verification_needs":["<what must be confirmed against real source because the digest signal is approximate/derived>"],"estimated_size":"S|M|L"}
 ```
 
 Rules for `section-plans.jsonl`:
 - `section_id` values must exactly match ids in `document-plan.json` (1:1).
-- `evidence_needs` must be non-empty and cite real digest handles, or an explicit
-  `retrieve: <query>` instruction when an exact id isn't in the digest.
+- Exact lanes (`symbol_ids`, `file_anchors`, `contracts`, `tests`, `graph_nodes`)
+  hold **only exact handles**. If you cannot name one, move the request to
+  `search_hints[]` — do not put `retrieve: <query>`, globs, or display labels in
+  an exact lane.
+- `evidence_needs` must give the section *some* retrieval signal: at least one
+  exact handle, query pack, or search hint.
+- Put digest/condensate docs in `context_artifacts[]`; they are never evidence.
 - Every section that leans on `CALLS_APPROX`, lexical query hits, the derived
   OpenAPI contract, or the static-only test scan must list a `verification_needs`
   entry.

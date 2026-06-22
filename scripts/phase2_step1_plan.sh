@@ -37,7 +37,11 @@ Options:
   --system PATH            system instructions file
   --prompt PATH            kickoff prompt file
   --temperature N          sampling temperature
-  --max-output-tokens N    max output tokens
+  --max-output-tokens N    max output tokens (default: model/CLI default, 65535).
+                           Use a realistic cap for the full JSON/JSONL plan: at
+                           least 1024 for smoke tests, 8192+ for full e2e runs.
+                           Tiny caps stop the response with MAX_TOKENS and are a
+                           test-config failure, not a planner-quality result.
 EOF
   common_options_help
 }
@@ -80,6 +84,14 @@ done
 
 require_dir "--out" "$OUT"
 require_nonempty "--project or GOOGLE_CLOUD_PROJECT" "$PROJECT"
+
+# Guard against tiny output caps: gemini-2.5-pro stops with MAX_TOKENS on a tiny
+# cap, which is a test-config failure, not a planner result. Require >= 1024.
+if [[ -n "$MAX_OUTPUT_TOKENS" && "$MAX_OUTPUT_TOKENS" =~ ^[0-9]+$ \
+      && "$((10#$MAX_OUTPUT_TOKENS))" -lt 1024 ]]; then
+  fail "--max-output-tokens $MAX_OUTPUT_TOKENS is too small for a full plan; "\
+"use at least 1024 (8192+ recommended for full e2e runs)"
+fi
 
 install_vertex
 

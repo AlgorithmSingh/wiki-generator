@@ -87,6 +87,8 @@ _STATIC_QPACK_ALIASES = {
 
 _RANGE_RE = re.compile(r"^(\d+)(?:\s*-\s*(\d+))?$")
 _METHOD_PATH_RE = re.compile(r"^([A-Za-z]+)\s+(/\S*)$")
+# A graph display label: ``pytest [Dependency]`` / ``api/x.py [File]``.
+_DISPLAY_LABEL_RE = re.compile(r"^(.*?)\s*\[([A-Za-z][A-Za-z ]*)\]\s*$")
 
 
 def _norm(s: str) -> str:
@@ -124,6 +126,14 @@ class FileRes:
     candidates: list[str] = field(default_factory=list)
 
 
+@dataclass
+class NodeRes:
+    input: str
+    node_id: str | None
+    resolution: str            # exact | display_label | unique_name | ambiguous | no_match
+    candidates: list[str] = field(default_factory=list)
+
+
 class Lookups:
     def __init__(self, root: str):
         self.root = root
@@ -138,6 +148,8 @@ class Lookups:
         self._openapi_paths: dict[str, set[str]] = {}   # path -> {methods}
         self._test_files: set[str] = set()
         self._artifact_basenames: set[str] = set()
+        self._node_ids: set[str] = set()                # exact graph node_id values
+        self._node_alias: dict[str, set[str]] = {}      # norm(name)[|norm(type)] -> {node_id}
 
     # --- loading ---------------------------------------------------------------
     @classmethod
@@ -158,6 +170,7 @@ class Lookups:
         self._load_qpacks(p("queries", "rules", "rg"))
         self._load_openapi(p("contracts", "openapi.json"))
         self._load_tests(p("tests", "test-files.jsonl"))
+        self._load_nodes(p("static", "nodes.jsonl"))
         self._artifact_basenames = {
             "planning-digest.md", "planning-symbols.md", "planning-graph.md",
             "planning-runtime-surfaces.md", "planning-tests.md", "planning-gaps.md",
@@ -249,6 +262,24 @@ class Lookups:
             fp = row.get("path")
             if fp:
                 self._test_files.add(fp)
+
+    def _load_nodes(self, path: str) -> None:
+        """Load static/nodes.jsonl so graph display labels can be resolved to an
+        exact ``node_id``. We index exact ids plus ``norm(name)`` and
+        ``norm(name)|norm(type)`` aliases (a label is ``Name [Type]``)."""
+        alias: dict[str, set[str]] = defaultdict(set)
+        for row in _read_jsonl(path):
+            nid = row.get("node_id")
+            if not nid:
+                continue
+            self._node_ids.add(nid)
+            name = row.get("name") or ""
+            ntype = row.get("type") or ""
+            if name:
+                alias[_norm(name)].add(nid)
+                if ntype:
+                    alias[f"{_norm(name)}|{_norm(ntype)}"].add(nid)
+        self._node_alias = dict(alias)
 
     # --- resolvers -------------------------------------------------------------
     def resolve_query_pack(self, ref: str) -> str | None:
@@ -345,16 +376,64 @@ class Lookups:
         return {"input": ref, "resolution": "hint"}
 
     def resolve_test(self, ref) -> dict:
+        # A test reference may carry a pytest node id: ``path::Class::test_fn``.
+        # Resolve on the file part; keep the function/node id as ``function``.
         text = (ref if isinstance(ref, str) else str(ref)).strip()
-        if text in self._test_files:
-            return {"input": ref, "path": text, "resolution": "test_file"}
+        file_part, sep, fn = text.partition("::")
+        file_part = file_part.strip()
+        function = fn.strip() or None if sep else None
+
+        def hit(path, resolution):
+            out = {"input": ref, "path": path, "resolution": resolution}
+            if function:
+                out["function"] = function
+            return out
+
+        if file_part in self._test_files:
+            return hit(file_part, "test_file")
         cands = sorted(p for p in self._test_files
-                       if p.endswith("/" + text) or os.path.basename(p) == text)
+                       if p.endswith("/" + file_part)
+                       or os.path.basename(p) == file_part)
         if len(cands) == 1:
-            return {"input": ref, "path": cands[0], "resolution": "unique_suffix"}
+            return hit(cands[0], "unique_suffix")
         if len(cands) > 1:
-            return {"input": ref, "path": None, "resolution": "ambiguous",
-                    "candidates": cands[:25]}
-        if text in self.files:
-            return {"input": ref, "path": text, "resolution": "file_exists"}
+            out = {"input": ref, "path": None, "resolution": "ambiguous",
+                   "candidates": cands[:25]}
+            if function:
+                out["function"] = function
+            return out
+        if file_part in self.files:
+            return hit(file_part, "file_exists")
         return {"input": ref, "resolution": "hint"}
+
+    def resolve_graph_node(self, ref) -> NodeRes:
+        """Resolve a graph reference to an exact ``node_id`` from static/nodes.jsonl.
+
+        Accepts an exact id (``dep:pytest``, ``file:api/x.py``, ``sym:...``), a
+        bare handle that becomes one with a known prefix, or a display label
+        (``pytest [Dependency]``). A display label or bare name resolves only
+        when it maps to exactly one node; otherwise the verdict is ambiguous or
+        no_match (never a guess)."""
+        text = (ref if isinstance(ref, str) else str(ref)).strip()
+        if not text:
+            return NodeRes(ref, None, "no_match")
+        if text in self._node_ids:
+            return NodeRes(ref, text, "exact")
+        for cand in (f"sym:{text}", f"file:{text}", f"dep:{text}", f"repo:{text}"):
+            if cand in self._node_ids:
+                return NodeRes(ref, cand, "exact")
+        m = _DISPLAY_LABEL_RE.match(text)
+        if m:
+            name, ntype = m.group(1).strip(), m.group(2).strip()
+            hits = self._node_alias.get(f"{_norm(name)}|{_norm(ntype)}")
+            if hits:
+                if len(hits) == 1:
+                    return NodeRes(ref, next(iter(hits)), "display_label")
+                return NodeRes(ref, None, "ambiguous", sorted(hits))
+            return NodeRes(ref, None, "no_match")
+        hits = self._node_alias.get(_norm(text))
+        if hits:
+            if len(hits) == 1:
+                return NodeRes(ref, next(iter(hits)), "unique_name")
+            return NodeRes(ref, None, "ambiguous", sorted(hits))
+        return NodeRes(ref, None, "no_match")

@@ -10,12 +10,14 @@ import argparse
 import os
 
 from ..digest import loader
-from ..digest import planning_gaps, planning_graph, planning_runtime_surfaces
-from ..digest import planning_symbols, planning_tests
+from ..digest import planning_gaps, planning_graph, planning_handles
+from ..digest import planning_runtime_surfaces, planning_symbols, planning_tests
 from ..util import log, token_estimate, write_text
 
-# condensate filename -> builder module
+# condensate filename -> builder module. planning-handles.md leads so the exact
+# retrieval handles sit at the front of the planner bundle (right after README).
 CONDENSATES = [
+    ("planning-handles.md", planning_handles),
     ("planning-symbols.md", planning_symbols),
     ("planning-graph.md", planning_graph),
     ("planning-runtime-surfaces.md", planning_runtime_surfaces),

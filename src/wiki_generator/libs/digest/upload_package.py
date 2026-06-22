@@ -10,11 +10,11 @@ earlier steps already produced. Writes:
     planner-digest/planner-upload-bundle.md  the one file to upload (concatenation)
     planner-digest/planning-*.md             byte-identical copies of derived/ condensates
 
-File order is fixed (see ``ORDER``). When the upload would exceed the token
+File order is fixed (see ``CONDENSATES``). When the upload would exceed the token
 budget, OPTIONAL/supporting files are trimmed from the end first; the README and
-the six planning condensates are never trimmed. If those required files alone
-exceed the budget the run fails loudly (``failed=True``) and the reason is
-written to ``upload-list.md``.
+the planning condensates are never trimmed. If those required files alone exceed
+the budget the run fails loudly (``failed=True``) and the reason is written to
+``upload-list.md``.
 """
 from __future__ import annotations
 
@@ -31,7 +31,10 @@ UPLOAD_LIST_NAME = "upload-list.md"
 
 # Step 2 condensates + the Step 3 digest, in reading order. These are copied into
 # planner-digest/ and are the required set — never trimmed (alongside the README).
+# planning-handles.md leads: the exact retrieval handles come right after the
+# README and before the broad summaries, so the planner sees them first.
 CONDENSATES = [
+    "planning-handles.md",
     "planning-digest.md",
     "planning-symbols.md",
     "planning-graph.md",
@@ -145,14 +148,35 @@ def _readme(repo_root: str, source_bundle: str, generated_at: str,
           "`tests/test-files.jsonl`). See `upload-list.md` for the exact set.",
           "",
           "## Your task (Phase 2)", "",
+          "You are producing a retrieval **work order**, not final Wiki prose. "
           "Decide what the documentation Wiki should contain and what evidence "
-          "each section will need in the later retrieval phase.",
+          "each section needs in the later retrieval phase.",
           "",
           "- **Do not** write the final Wiki.",
           "- **Do not** invent evidence.",
           "- Plan sections and their evidence needs only.",
-          "- Use exact paths / anchors / symbol ids when available.",
           "- Flag uncertainty whenever a signal is approximate or missing.",
+          "",
+          "### Exact lanes require exact handles", "",
+          "Use exact handles from `planning-handles.md` (or the other "
+          "condensates) when filling exact retrieval lanes. **If you cannot name "
+          "an exact handle, do not place the item in that exact lane** — move it "
+          "to `search_hints[]` instead.",
+          "",
+          "- `symbols[]`: exact `symbol_id` only. No dotted guesses, repo names, "
+          "globs, or `retrieve: …` requests.",
+          "- `files[]`: exact repo source files only. Never put "
+          "`derived/planning-*.md` here.",
+          "- `contracts[]`: exact `METHOD /path` only. `contracts/openapi.json` "
+          "by itself is **not** a contract.",
+          "- `tests[]`: exact test file and function/node id when available.",
+          "- `graph_nodes[]`: exact `node_id` only (e.g. `dep:pytest`). Never a "
+          "display label like `pytest [Dependency]`.",
+          "- `query_packs[]`: canonical keys only.",
+          "- `search_hints[]`: broad/fuzzy recall text such as "
+          "`retrieve: api.apps.*`, `module layout`, or `test function markers`.",
+          "- `context_artifacts[]`: digest/condensate docs used to understand the "
+          "repo; they are **never** citeable source evidence.",
           "",
           "Produce:",
           "",
@@ -163,8 +187,10 @@ def _readme(repo_root: str, source_bundle: str, generated_at: str,
           "```",
           "",
           "For each section include its coverage requirements and the retrieval "
-          "needs (symbol ids / file anchors / query packs / contracts / tests) it "
-          "will depend on, plus any known gaps or verification needs.",
+          "needs (exact `symbol_id`s / file anchors / canonical query packs / "
+          "`METHOD /path` contracts / tests / exact `node_id`s), plus "
+          "`search_hints[]` for broad recall, `context_artifacts[]` for digest "
+          "docs, and any known gaps or verification needs.",
           ""]
     return "\n".join(L) + "\n"
 

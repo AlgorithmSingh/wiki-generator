@@ -51,4 +51,10 @@ def build_query_text(section: dict) -> str:
         if t.get("resolution") in ("ambiguous", "hint"):
             _push(seen, parts, t.get("input"))
 
+    # Explicit search hints: broad recall text the normalizer routed here from a
+    # non-exact exact-lane reference, or that the planner supplied directly. They
+    # only steer BM25/vector recall — never exact symbol/file/contract evidence.
+    for h in needs.get("search_hints") or []:
+        _push(seen, parts, h.get("text") if isinstance(h, dict) else h)
+
     return " ".join(parts)

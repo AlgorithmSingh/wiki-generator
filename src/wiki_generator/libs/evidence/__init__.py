@@ -87,6 +87,17 @@ def _section_sha(bundle, sid) -> str | None:
     return f"sha256:{util.sha256_text(raw)}" if raw is not None else None
 
 
+def _context_artifact_paths(needs) -> list:
+    """Repo-relative paths of the section's planner-context docs (traceability
+    only — these are never citeable as evidence)."""
+    out: list = []
+    for ca in needs.get("context_artifacts") or []:
+        path = ca.get("path") if isinstance(ca, dict) else ca
+        if path and path not in out:
+            out.append(path)
+    return out
+
+
 def _work_order(section) -> dict:
     needs = section.get("retrieval_needs") or {}
     return {
@@ -102,6 +113,7 @@ def _work_order(section) -> dict:
             "tests": [t.get("path") or t.get("input") for t in needs.get("tests") or []],
             "graph_nodes": list(needs.get("graph_nodes") or []),
         },
+        "context_artifacts": _context_artifact_paths(needs),
     }
 
 
@@ -121,7 +133,8 @@ def _missing_packet(bundle, sid, index, options) -> dict:
         "work_order": {"purpose": "", "required_topics": [],
                        "expected_evidence_types": [],
                        "retrieval_needs": {"query_packs": [], "symbols": [], "files": [],
-                                           "contracts": [], "tests": [], "graph_nodes": []}},
+                                           "contracts": [], "tests": [], "graph_nodes": []},
+                       "context_artifacts": []},
         "evidence": evidence,
         "lane_summary": lane_summary,
         "coverage": {"satisfied": [], "missing": [], "warnings": []},

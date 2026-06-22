@@ -27,6 +27,7 @@ exact per-file token table is in `planner-digest/upload-list.md`.
 
 ```
 8-phase1-decomposition-diy-test2/planner-digest/README_FOR_PLANNER.md
+8-phase1-decomposition-diy-test2/planner-digest/planning-handles.md
 8-phase1-decomposition-diy-test2/planner-digest/planning-digest.md
 8-phase1-decomposition-diy-test2/planner-digest/planning-symbols.md
 8-phase1-decomposition-diy-test2/planner-digest/planning-graph.md

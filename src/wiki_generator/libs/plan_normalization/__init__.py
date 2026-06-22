@@ -61,5 +61,6 @@ def run(bundle_dir: str, raw_path: str, out_dir: str, *, strict: bool = False,
         "unresolved_by_type": counts["unresolved_by_type"],
         "strict": strict,
         "strict_pass": strict_pass,
+        "readiness_pass": written["readiness_pass"],
         "warnings": len(result.warnings),
     }

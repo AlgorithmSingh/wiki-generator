@@ -102,8 +102,14 @@ def _write_plans(out: str) -> None:
          "goal": "Give a high-level overview of the demo FastAPI service and items.",
          "rationale": None, "required_topics": ["demo service overview", "items"],
          "key_questions": ["What does the service do?"],
-         "retrieval_needs": {"query_packs": [], "symbols": [], "files": [],
-                             "contracts": [], "tests": [], "graph_nodes": []},
+         "retrieval_needs": {
+             "query_packs": [], "symbols": [], "files": [], "contracts": [],
+             "tests": [], "graph_nodes": [],
+             "search_hints": [{"text": "demo service entrypoint and item model",
+                               "scope": ["source"], "reason": "planner search hint"}],
+             "context_artifacts": [{"path": "derived/planning-digest.md",
+                                    "role": "planner_context",
+                                    "citeable_as_evidence": False}]},
          "expected_evidence_types": [], "depends_on": [], "verification_needs": [],
          "estimated_size": None, "known_gaps": [], "normalization_warnings": []},
         {"schema_version": "phase2-section-plan-v1",
@@ -240,8 +246,23 @@ class Phase3E2ETests(unittest.TestCase):
                          "section_plans_cover_order", "capabilities_consistent",
                          "bm25_readable", "vectors_readable_count_consistent",
                          "packets_schema_valid", "evidence_ids_unique",
-                         "evidence_anchors_resolve", "no_plan_only_evidence"):
+                         "evidence_anchors_resolve", "no_plan_only_evidence",
+                         "no_context_artifact_evidence"):
             self.assertIn(required, names)
+
+    def test_context_artifacts_preserved_but_never_cited(self):
+        out = self._fresh()
+        _run_cmd("retrieve-evidence", "--bundle", out)
+        p = _packet(self._ev(out), "overview")
+        # preserved in work_order for traceability ...
+        self.assertIn("derived/planning-digest.md",
+                      p["work_order"]["context_artifacts"])
+        # ... but never cited as evidence, and never counted as a 'files' anchor.
+        for e in p["evidence"]:
+            src = e["source"]
+            self.assertFalse(str(src.get("artifact", "")).startswith("derived/planning-"))
+            self.assertNotIn("derived/planning-digest.md", str(src.get("path", "")))
+            self.assertNotIn("derived/planning-digest.md", str(src.get("artifact", "")))
 
     def test_combined_jsonl_one_packet_per_section_in_order(self):
         out = self._fresh()
@@ -453,6 +474,56 @@ class Phase3FailureTests(unittest.TestCase):
         sl = next(s for s in v["section_results"] if s["section_id"] == "service-layer")
         self.assertEqual(sl["status"], "fail")
 
+    def test_ragflow_section_passes_after_readiness_normalization(self):
+        # Regression for the RAGFlow failure: a section whose ORIGINAL plan put a
+        # vague symbol / openapi.json-only contract / digest file in exact lanes.
+        # After the Phase 2 readiness fix it carries only resolvable handles, with
+        # the broad request in search_hints[] and the digest in context_artifacts[],
+        # and expected_evidence_types reduced to what resolves. Phase 3 must PASS —
+        # this is exactly the bad_underspecified_normalized_plan that is now closed.
+        out = self._fresh()
+        syms = {json.loads(l)["name"]: json.loads(l)["symbol_id"]
+                for l in open(os.path.join(out, "symbols", "symbols.jsonl"))}
+        sec = {
+            "schema_version": "phase2-section-plan-v1", "section_id": "api-routes",
+            "title": "API Routes", "order": 1, "parent": None, "priority": None,
+            "purpose": "Document the HTTP API routes.", "goal": "Describe the routes.",
+            "rationale": None, "required_topics": ["api routes"],
+            "key_questions": ["what routes?"],
+            "retrieval_needs": {
+                "query_packs": ["web_routes"],
+                "symbols": [{"input": "list_items", "symbol_id": syms["list_items"],
+                             "resolution": "exact", "candidates": []}],
+                "files": [], "contracts": [], "tests": [], "graph_nodes": [],
+                "search_hints": [{"text": "retrieve: api.apps.* route handlers",
+                                  "scope": ["query_pack:web_routes"],
+                                  "reason": "non-exact contract (hint)"}],
+                "context_artifacts": [{"path": "derived/planning-digest.md",
+                                       "role": "planner_context",
+                                       "citeable_as_evidence": False}]},
+            "expected_evidence_types": ["symbols", "queries"],
+            "depends_on": [], "verification_needs": [], "estimated_size": None,
+            "known_gaps": [], "normalization_warnings": []}
+        doc = json.load(open(os.path.join(out, "plans", "document-plan.json")))
+        doc["section_order"] = ["api-routes"]
+        with open(os.path.join(out, "plans", "document-plan.json"), "w") as f:
+            json.dump(doc, f, indent=2)
+        with open(os.path.join(out, "plans", "section-plans.jsonl"), "w") as f:
+            f.write(json.dumps(sec) + "\n")
+
+        res = _run_cmd("retrieve-evidence", "--bundle", out)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        v = json.load(open(os.path.join(out, "evidence", "retrieval-validation.json")))
+        self.assertEqual(v["status"], "pass")
+        self.assertIsNone(v["failure_category"])
+        checks = {c["name"]: c["status"] for c in v["contract_checks"]}
+        self.assertEqual(checks.get("no_context_artifact_evidence"), "pass")
+        p = json.load(open(os.path.join(out, "evidence", "packets", "api-routes.json")))
+        self.assertIn("derived/planning-digest.md", p["work_order"]["context_artifacts"])
+        for e in p["evidence"]:
+            self.assertFalse(str(e["source"].get("artifact", "")).startswith("derived/"))
+            self.assertNotIn("derived/planning-", str(e["source"].get("path", "")))
+
 
 # ---------------------------------------------------------------------------
 class Phase3HybridVectorTests(unittest.TestCase):
@@ -547,6 +618,18 @@ class Phase3UnitTests(unittest.TestCase):
         # 'Routes' (title) case-insensitively dedupes purpose 'routes' and the
         # required_topic 'routes'; first occurrence's casing is preserved.
         self.assertEqual(q, "Routes Handlers what routes")
+
+    def test_query_text_folds_search_hints(self):
+        from wiki_generator.libs.evidence.query_text import build_query_text
+        section = {"title": "Routes", "purpose": "", "goal": "",
+                   "required_topics": [], "key_questions": [],
+                   "verification_needs": [],
+                   "retrieval_needs": {"search_hints": [
+                       {"text": "api.apps route handlers"},
+                       {"text": "Routes"},        # case-insensitively deduped vs title
+                       "module layout"]}}          # tolerate a bare string too
+        q = build_query_text(section)
+        self.assertEqual(q, "Routes api.apps route handlers module layout")
 
     def test_validate_packet_flags_missing_anchor_and_dup_id(self):
         from wiki_generator.libs.evidence.schema import validate_packet

@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from ..context_docs import looks_like_context_artifact as _looks_like_context_artifact
 from .lookups import Lookups
 from .parse import RawPlan
 
@@ -18,6 +19,29 @@ _CLEAN_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 PLAN_SCHEMA = "phase2-plan-v1"
 SECTION_SCHEMA = "phase2-section-plan-v1"
+
+
+def _contract_ref(c):
+    """A ``METHOD /path`` handle string from a contract item that may be a dict."""
+    if not isinstance(c, dict):
+        return c
+    ref = c.get("operation_ref") or c.get("input")
+    if not ref and c.get("method") and c.get("path"):
+        ref = f"{c['method']} {c['path']}"
+    return ref if ref is not None else c.get("path")
+
+
+def _test_ref(t):
+    """A test-file (optionally ``path::function``) handle string from a dict item."""
+    if not isinstance(t, dict):
+        return t
+    if t.get("input"):
+        return t["input"]
+    path = t.get("path")
+    fn = t.get("function") or t.get("nodeid")
+    if path and fn:
+        return f"{path}::{fn}"
+    return path
 
 
 @dataclass
@@ -73,8 +97,42 @@ def _as_list(v) -> list:
 
 def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
                    unresolved: list[dict], warnings: list[str]) -> dict:
-    qpacks, symbols, files, contracts, tests = [], [], [], [], []
+    """Resolve a section's evidence needs into exact retrieval lanes.
 
+    Readiness contract: an exact lane (``symbols``/``files``/``contracts``/
+    ``tests``/``graph_nodes``) keeps ONLY resolvable handles. Anything that does
+    not resolve to an exact handle — vague text, a non-exact contract, a graph
+    display label, an unresolved path — is recorded in ``unresolved`` and routed
+    to ``search_hints[]`` (BM25/vector recall text). Planner-context docs
+    (``derived/planning-*.md``) are routed to ``context_artifacts[]`` and never
+    become citeable ``files`` evidence.
+    """
+    qpacks, symbols, files, contracts, tests, graph_nodes = [], [], [], [], [], []
+    search_hints: list[dict] = []
+    context_artifacts: list[dict] = []
+    hint_seen: set[str] = set()
+    ca_seen: set[str] = set()
+
+    def add_hint(text, scope, reason) -> None:
+        if text is None:
+            return
+        t = str(text).strip()
+        if not t or t.casefold() in hint_seen:
+            return
+        hint_seen.add(t.casefold())
+        search_hints.append({"text": t, "scope": list(scope), "reason": reason})
+
+    def add_context_artifact(path, role: str = "planner_context") -> None:
+        if not path:
+            return
+        p = str(path).strip()
+        if not p or p in ca_seen:
+            return
+        ca_seen.add(p)
+        context_artifacts.append({"path": p, "role": role,
+                                  "citeable_as_evidence": False})
+
+    # --- query packs --------------------------------------------------------
     for q in _as_list(ev.get("query_packs")):
         ref = q if isinstance(q, str) else str(q)
         key = lk.resolve_query_pack(ref)
@@ -84,57 +142,119 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
             unresolved.append({"section_id": section_id, "type": "query_pack",
                                "input": q, "reason": "no_match", "candidates": []})
             warnings.append(f"[{section_id}] unresolved query pack: {ref!r}")
+            add_hint(ref, ["queries"], "unknown query pack")
 
+    # --- symbols (exact symbol_id / unique alias only) ----------------------
     sym_in = ev.get("symbols")
     if sym_in is None:
         sym_in = ev.get("symbol_ids")
     for sy in _as_list(sym_in):
         ref = sy.get("input") if isinstance(sy, dict) else sy
         r = lk.resolve_symbol(str(ref))
-        symbols.append({"input": ref, "symbol_id": r.symbol_id,
-                        "resolution": r.resolution, "candidates": r.candidates})
-        if r.resolution in ("no_match", "ambiguous"):
+        if r.resolution in ("exact", "unique_alias"):
+            symbols.append({"input": ref, "symbol_id": r.symbol_id,
+                            "resolution": r.resolution, "candidates": r.candidates})
+        else:
+            reason = "ambiguous" if r.resolution == "ambiguous" else "no_match"
             unresolved.append({"section_id": section_id, "type": "symbol",
-                               "input": ref,
-                               "reason": "ambiguous" if r.resolution == "ambiguous"
-                               else "no_match", "candidates": r.candidates})
+                               "input": ref, "reason": reason,
+                               "candidates": r.candidates})
             warnings.append(f"[{section_id}] {r.resolution} symbol: {ref!r}")
+            add_hint(ref, ["source"], f"unresolved symbol ({r.resolution})")
 
+    # --- files (real source files; digests -> context_artifacts) ------------
     files_in = ev.get("files")
     if files_in is None:
         files_in = ev.get("file_anchors")
     for fa in _as_list(files_in):
         ref = fa.get("input") if isinstance(fa, dict) else fa
-        r = lk.resolve_file(str(ref))
-        files.append({"input": ref, "path": r.path, "anchor": r.anchor,
-                      "anchor_confidence": r.anchor_confidence,
-                      "resolution": r.resolution, "candidates": r.candidates})
-        if r.resolution in ("no_match", "ambiguous"):
+        ctx_path = _looks_like_context_artifact(ref)
+        if ctx_path is None:
+            r = lk.resolve_file(str(ref))
+            if r.resolution == "digest_artifact":
+                ctx_path = r.path or str(ref)
+        else:
+            r = None
+        if ctx_path is not None:
+            add_context_artifact(ctx_path)
             unresolved.append({"section_id": section_id, "type": "file",
-                               "input": ref,
-                               "reason": "ambiguous" if r.resolution == "ambiguous"
-                               else "no_match", "candidates": r.candidates})
+                               "input": ref, "reason": "context_only",
+                               "candidates": []})
+            warnings.append(
+                f"[{section_id}] planner-context doc moved out of files[]: {ref!r}")
+            continue
+        if r.resolution in ("file_exists", "unique_suffix"):
+            files.append({"input": ref, "path": r.path, "anchor": r.anchor,
+                          "anchor_confidence": r.anchor_confidence,
+                          "resolution": r.resolution, "candidates": r.candidates})
+            if r.anchor is not None and r.anchor_confidence in (
+                    "file_only", "unresolved"):
+                add_hint(r.anchor, ["source"],
+                         "loose file anchor (lexical hint, not an exact span)")
+        else:
+            reason = "ambiguous" if r.resolution == "ambiguous" else "no_match"
+            unresolved.append({"section_id": section_id, "type": "file",
+                               "input": ref, "reason": reason,
+                               "candidates": r.candidates})
             warnings.append(f"[{section_id}] {r.resolution} file: {ref!r}")
+            add_hint(ref, ["source"], f"unresolved file ({r.resolution})")
 
+    # --- contracts (exact METHOD /path only) --------------------------------
     for c in _as_list(ev.get("contracts")):
-        res = lk.resolve_contract(c)
-        contracts.append(res)
-        if res["resolution"] == "no_match":
+        ref = _contract_ref(c)
+        res = lk.resolve_contract(ref)
+        if res["resolution"] == "exact":
+            contracts.append(res)
+        else:
             unresolved.append({"section_id": section_id, "type": "contract",
-                               "input": c, "reason": "no_match", "candidates": []})
-            warnings.append(f"[{section_id}] unresolved contract: {c!r}")
+                               "input": ref, "reason": res["resolution"],
+                               "candidates": res.get("methods", [])})
+            warnings.append(
+                f"[{section_id}] non-exact contract ({res['resolution']}): {ref!r}")
+            add_hint(ref, ["source", "query_pack:web_routes"],
+                     f"non-exact contract ({res['resolution']})")
 
+    # --- tests (exact test file / unique suffix) ----------------------------
     for t in _as_list(ev.get("tests")):
-        res = lk.resolve_test(t)
-        tests.append(res)
-        if res["resolution"] == "ambiguous":
+        ref = _test_ref(t)
+        res = lk.resolve_test(ref)
+        if res["resolution"] in ("test_file", "unique_suffix", "file_exists"):
+            tests.append(res)
+        else:
             unresolved.append({"section_id": section_id, "type": "test",
-                               "input": t, "reason": "ambiguous",
+                               "input": ref, "reason": res["resolution"],
                                "candidates": res.get("candidates", [])})
-            warnings.append(f"[{section_id}] ambiguous test: {t!r}")
+            warnings.append(
+                f"[{section_id}] non-exact test ({res['resolution']}): {ref!r}")
+            add_hint(ref, ["tests"], f"non-exact test ({res['resolution']})")
 
-    graph_nodes = [g if isinstance(g, str) else str(g)
-                   for g in _as_list(ev.get("graph_nodes"))]
+    # --- graph nodes (exact node_id only; display labels -> hints) ----------
+    for g in _as_list(ev.get("graph_nodes")):
+        ref = (g.get("node_id") or g.get("input")) if isinstance(g, dict) else g
+        r = lk.resolve_graph_node(ref)
+        if r.resolution in ("exact", "display_label", "unique_name"):
+            graph_nodes.append(r.node_id)
+        else:
+            unresolved.append({"section_id": section_id, "type": "graph",
+                               "input": ref, "reason": r.resolution,
+                               "candidates": r.candidates})
+            warnings.append(
+                f"[{section_id}] unresolved graph node ({r.resolution}): {ref!r}")
+            add_hint(ref, ["graph"], f"unresolved graph node ({r.resolution})")
+
+    # --- planner-provided non-exact lanes (already correctly placed) --------
+    for h in _as_list(ev.get("search_hints")):
+        if isinstance(h, dict):
+            add_hint(h.get("text") or h.get("input"), h.get("scope") or [],
+                     h.get("reason") or "planner search hint")
+        else:
+            add_hint(h, [], "planner search hint")
+    for ca in _as_list(ev.get("context_artifacts")):
+        if isinstance(ca, dict):
+            add_context_artifact(ca.get("path") or ca.get("input"),
+                                 ca.get("role") or "planner_context")
+        else:
+            add_context_artifact(ca)
 
     return {
         "query_packs": _dedup(qpacks),
@@ -142,15 +262,27 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
         "files": files,
         "contracts": contracts,
         "tests": tests,
-        "graph_nodes": graph_nodes,
+        "graph_nodes": _dedup(graph_nodes),
+        "search_hints": search_hints,
+        "context_artifacts": context_artifacts,
     }
 
 
 def _expected_types(needs: dict) -> list[str]:
+    """Derive expected evidence types from resolvable work only.
+
+    Every exact lane has already been pruned to resolvable handles, so a
+    non-empty lane means resolvable work exists. ``graph`` additionally applies
+    when a resolvable symbol or file can seed the graph lane (spec rule 5), not
+    only when explicit graph nodes are present.
+    """
     order = [("symbols", "symbols"), ("files", "files"),
              ("query_packs", "queries"), ("contracts", "contracts"),
              ("tests", "tests"), ("graph_nodes", "graph")]
-    return [label for key, label in order if needs.get(key)]
+    out = [label for key, label in order if needs.get(key)]
+    if "graph" not in out and (needs.get("symbols") or needs.get("files")):
+        out.append("graph")
+    return out
 
 
 def _build_section(nid: str, order: int, meta: dict | None, plan: dict | None,

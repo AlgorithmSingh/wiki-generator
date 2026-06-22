@@ -50,6 +50,11 @@ def run(args: argparse.Namespace) -> int:
     detail = (" (" + ", ".join(f"{k}: {v}" for k, v in sorted(by_type.items())) + ")"
               if by_type else "")
     log(f"  unresolved references: {report['unresolved_total']}{detail}")
+    readiness = "PASS" if report.get("readiness_pass") else "FAIL"
+    log(f"  Phase 3 readiness: {readiness} (see phase3-readiness-report.md)")
+    if readiness == "FAIL":
+        log("  note: readiness FAIL — fix upstream planner/normalization before "
+            "Phase 3 (or run Phase 3 only to test failure behavior)")
 
     if report["strict"] and not report["strict_pass"]:
         log(f"normalize-plan: STRICT FAIL — {report['unresolved_total']} "

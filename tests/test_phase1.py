@@ -370,9 +370,9 @@ class DigestTests(unittest.TestCase):
         cls.con = _run_cmd("condense", "--in", cls.out)
         cls.dig = _run_cmd("digest", "--in", cls.out)
 
-    CONDENSATES = ["planning-symbols.md", "planning-graph.md",
-                   "planning-runtime-surfaces.md", "planning-tests.md",
-                   "planning-gaps.md"]
+    CONDENSATES = ["planning-handles.md", "planning-symbols.md",
+                   "planning-graph.md", "planning-runtime-surfaces.md",
+                   "planning-tests.md", "planning-gaps.md"]
 
     def test_commands_exit_ok(self):
         self.assertEqual(self.dec.returncode, 0, self.dec.stderr)
@@ -403,8 +403,9 @@ class DigestTests(unittest.TestCase):
         self.assertIn("<!-- BEGIN INCLUDED FILE: planner-digest/README_FOR_PLANNER.md -->",
                       text)
         labels = ["planner-digest/README_FOR_PLANNER.md",
-                  "derived/planning-digest.md", "derived/planning-symbols.md",
-                  "derived/planning-graph.md", "derived/planning-runtime-surfaces.md",
+                  "derived/planning-handles.md", "derived/planning-digest.md",
+                  "derived/planning-symbols.md", "derived/planning-graph.md",
+                  "derived/planning-runtime-surfaces.md",
                   "derived/planning-tests.md", "derived/planning-gaps.md"]
         positions = []
         for label in labels:
@@ -495,6 +496,74 @@ class DigestTests(unittest.TestCase):
             text = f.read()
         for raw in ("symbols/symbols.jsonl", "static/edges.jsonl", "rag/chunks.jsonl"):
             self.assertNotIn(f"BEGIN INCLUDED FILE: {raw}", text)
+
+
+class PlanningHandlesTests(unittest.TestCase):
+    """Phase 1 readiness: derived/planning-handles.md exact-handle catalog."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp(prefix="p1handles_")
+        cls.repo = os.path.join(cls.tmp, "repo")
+        cls.out = os.path.join(cls.tmp, "out")
+        os.makedirs(cls.repo)
+        _make_repo(cls.repo)
+        cls.dec = _run(cls.repo, cls.out)
+        cls.con = _run_cmd("condense", "--in", cls.out)
+        cls.dig = _run_cmd("digest", "--in", cls.out)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def _handles(self, where: str) -> str:
+        with open(os.path.join(self.out, where, "planning-handles.md"),
+                  encoding="utf-8") as f:
+            return f.read()
+
+    def test_generated_in_derived_and_packaged(self):
+        self.assertEqual(self.con.returncode, 0, self.con.stderr)
+        self.assertEqual(self.dig.returncode, 0, self.dig.stderr)
+        self.assertTrue(os.path.exists(
+            os.path.join(self.out, "derived", "planning-handles.md")))
+        self.assertTrue(os.path.exists(
+            os.path.join(self.out, "planner-digest", "planning-handles.md")))
+
+    def test_exact_handles_present(self):
+        text = self._handles("derived")
+        self.assertIn("web_routes", text)                              # query pack
+        self.assertIn("python pkg.api.routes/list_items().", text)      # route symbol
+        self.assertIn("python pkg.svc/Item#", text)                     # model symbol
+        self.assertIn("GET /items", text)                               # contract op
+        self.assertIn("repo:repo", text)                                # repo node
+        self.assertIn("dep:fastapi", text)                              # dep node
+        self.assertIn("tests/test_svc.py", text)                        # test file
+        self.assertIn("search_hints[]", text)
+        self.assertIn("context_artifacts[]", text)
+
+    def test_no_raw_artifact_bodies(self):
+        # The catalog holds copyable handles, never raw JSONL rows from the indexes.
+        text = self._handles("derived")
+        for forbidden in ('"span_id"', '"sha256"', '"chunk_id"', '"start_line"'):
+            self.assertNotIn(forbidden, text)
+
+    def test_included_in_bundle_after_readme_before_summaries(self):
+        with open(os.path.join(self.out, "planner-digest",
+                               "planner-upload-bundle.md"), encoding="utf-8") as f:
+            text = f.read()
+        readme = text.index("BEGIN INCLUDED FILE: planner-digest/README_FOR_PLANNER.md")
+        handles = text.index("BEGIN INCLUDED FILE: derived/planning-handles.md")
+        digest = text.index("BEGIN INCLUDED FILE: derived/planning-digest.md")
+        self.assertLess(readme, handles)   # right after the README
+        self.assertLess(handles, digest)   # before the broad summaries
+
+    def test_readme_documents_lane_discipline(self):
+        with open(os.path.join(self.out, "planner-digest",
+                               "README_FOR_PLANNER.md"), encoding="utf-8") as f:
+            readme = f.read()
+        self.assertIn("search_hints[]", readme)
+        self.assertIn("context_artifacts[]", readme)
+        self.assertIn("not** a contract", readme)
 
 
 class NormalizePlanUnitTests(unittest.TestCase):
@@ -626,6 +695,157 @@ class NormalizePlanUnitTests(unittest.TestCase):
         self.assertEqual(_norm("Tasks / workers"), "tasks_workers")
         self.assertEqual(_norm("Config keys (code)"), "config_keys_code")
 
+    def test_graph_node_resolution_logic(self):
+        from wiki_generator.libs.plan_normalization.lookups import Lookups
+        lk = Lookups("/nonexistent")
+        lk._node_ids = {"repo:demo", "dep:pytest", "file:a/b.py", "sym:python m/F#"}
+        lk._node_alias = {"pytest|dependency": {"dep:pytest"}, "pytest": {"dep:pytest"},
+                          "demo|repository": {"repo:demo"}, "demo": {"repo:demo"}}
+        self.assertEqual(lk.resolve_graph_node("dep:pytest").resolution, "exact")
+        self.assertEqual(lk.resolve_graph_node("repo:demo").node_id, "repo:demo")
+        # bare handle gains its known prefix
+        self.assertEqual(lk.resolve_graph_node("python m/F#").node_id, "sym:python m/F#")
+        # a display label resolves to the exact node_id, never stays a label
+        r = lk.resolve_graph_node("pytest [Dependency]")
+        self.assertEqual((r.resolution, r.node_id), ("display_label", "dep:pytest"))
+        # a label with no matching node does not guess
+        self.assertEqual(lk.resolve_graph_node("ghost [Dependency]").resolution, "no_match")
+
+    def test_context_artifact_detection(self):
+        from wiki_generator.libs.plan_normalization.normalize import (
+            _looks_like_context_artifact as L)
+        self.assertEqual(L("derived/planning-digest.md"), "derived/planning-digest.md")
+        self.assertEqual(L("planning-handles.md"), "planning-handles.md")
+        self.assertEqual(L("planner-digest/README_FOR_PLANNER.md"),
+                         "planner-digest/README_FOR_PLANNER.md")
+        self.assertIsNone(L("pkg/svc.py"))
+        self.assertIsNone(L("api/apps/base_app.py"))
+
+    def test_resolve_needs_routes_unresolved_out_of_exact_lanes(self):
+        from wiki_generator.libs.plan_normalization import normalize as N
+        from wiki_generator.libs.plan_normalization.lookups import Lookups
+        lk = Lookups("/nonexistent")
+        lk._by_id = {"python m/F#": {}}
+        lk.files = {"pkg/svc.py"}
+        lk.qpack_canonical = {"web_routes"}
+        lk._openapi_paths = {"/items": {"GET"}}
+        lk._node_ids = {"dep:fastapi"}
+        lk._node_alias = {"fastapi|dependency": {"dep:fastapi"}}
+        ev = {"symbols": ["bogus.sym", "python m/F#"],
+              "files": ["derived/planning-graph.md", "pkg/svc.py"],
+              "contracts": ["contracts/openapi.json", "GET /items"],
+              "graph_nodes": ["fastapi [Dependency]", "ghost [Dependency]"],
+              "query_packs": ["web_routes", "bogus pack"]}
+        unresolved, warnings = [], []
+        needs = N._resolve_needs("s", ev, lk, unresolved, warnings)
+        # exact lanes keep only resolvable handles
+        self.assertEqual([s["symbol_id"] for s in needs["symbols"]], ["python m/F#"])
+        self.assertEqual([f["path"] for f in needs["files"]], ["pkg/svc.py"])
+        self.assertEqual([c["resolution"] for c in needs["contracts"]], ["exact"])
+        self.assertEqual(needs["graph_nodes"], ["dep:fastapi"])
+        self.assertEqual(needs["query_packs"], ["web_routes"])
+        # digests -> context_artifacts; everything unresolvable -> search_hints
+        self.assertEqual([c["path"] for c in needs["context_artifacts"]],
+                         ["derived/planning-graph.md"])
+        hint_texts = {h["text"] for h in needs["search_hints"]}
+        self.assertIn("bogus.sym", hint_texts)
+        self.assertIn("contracts/openapi.json", hint_texts)
+        self.assertIn("ghost [Dependency]", hint_texts)
+        self.assertIn("bogus pack", hint_texts)
+        # expected_evidence_types derives only from what resolved
+        self.assertEqual(N._expected_types(needs),
+                         ["symbols", "files", "queries", "contracts", "graph"])
+        # never a citeable digest in files[], never a label in graph_nodes[]
+        self.assertNotIn("derived/planning-graph.md",
+                         [f["input"] for f in needs["files"]])
+        self.assertNotIn("fastapi [Dependency]", needs["graph_nodes"])
+
+    def test_resolve_test_splits_pytest_node_id(self):
+        from wiki_generator.libs.plan_normalization.lookups import Lookups
+        lk = Lookups("/nonexistent")
+        lk._test_files = {"test/playwright/conftest.py"}
+        r = lk.resolve_test("test/playwright/conftest.py::pytest_sessionstart")
+        self.assertEqual(r["resolution"], "test_file")
+        self.assertEqual(r["path"], "test/playwright/conftest.py")
+        self.assertEqual(r["function"], "pytest_sessionstart")
+
+    def test_object_shaped_contract_and_test_resolve(self):
+        from wiki_generator.libs.plan_normalization import normalize as N
+        from wiki_generator.libs.plan_normalization.lookups import Lookups
+        lk = Lookups("/nonexistent")
+        lk._openapi_paths = {"/items": {"GET"}}
+        lk._test_files = {"tests/test_svc.py"}
+        # the spec's SectionPlan example uses object-shaped contracts/tests
+        ev = {"contracts": [{"method": "GET", "path": "/items"}],
+              "tests": [{"path": "tests/test_svc.py", "function": "test_work"}]}
+        needs = N._resolve_needs("s", ev, lk, [], [])
+        self.assertEqual([c["resolution"] for c in needs["contracts"]], ["exact"])
+        self.assertEqual([t["resolution"] for t in needs["tests"]], ["test_file"])
+        self.assertEqual(needs["tests"][0].get("function"), "test_work")
+
+    def test_expected_types_graph_from_symbol_or_file_seed(self):
+        from wiki_generator.libs.plan_normalization.normalize import _expected_types
+        # a resolvable symbol/file can seed the graph lane (spec rule 5)
+        self.assertIn("graph", _expected_types(
+            {"symbols": [{"symbol_id": "x"}], "files": [], "query_packs": [],
+             "contracts": [], "tests": [], "graph_nodes": []}))
+        # ... but a query-pack-only section does not claim graph
+        self.assertNotIn("graph", _expected_types(
+            {"symbols": [], "files": [], "query_packs": ["web_routes"],
+             "contracts": [], "tests": [], "graph_nodes": []}))
+
+    def _result(self, section, unresolved):
+        from wiki_generator.libs.plan_normalization.normalize import Result
+        return Result(document_plan={"repo": {"root": "/r"},
+                                     "section_order": [section["section_id"]]},
+                      sections=[section], unresolved=unresolved, warnings=[],
+                      raw_document_plan={}, raw_section_plans=[])
+
+    def test_readiness_passes_when_only_a_digest_was_relocated(self):
+        from wiki_generator.libs.plan_normalization import writer
+        sec = {"section_id": "s", "title": "S", "purpose": "p",
+               "required_topics": [], "key_questions": [],
+               "retrieval_needs": {
+                   "query_packs": ["web_routes"], "symbols": [], "files": [],
+                   "contracts": [], "tests": [], "graph_nodes": [],
+                   "search_hints": [],
+                   "context_artifacts": [{"path": "derived/planning-digest.md",
+                                          "role": "planner_context",
+                                          "citeable_as_evidence": False}]},
+               "expected_evidence_types": ["queries"]}
+        # the normalizer relocated the digest and logged a context_only entry
+        res = self._result(sec, [{"section_id": "s", "type": "file",
+                                  "input": "derived/planning-digest.md",
+                                  "reason": "context_only", "candidates": []}])
+        self.assertTrue(writer.readiness_pass(res))
+
+    def test_readiness_fails_for_section_with_no_retrieval_signal(self):
+        from wiki_generator.libs.plan_normalization import writer
+        sec = {"section_id": "s", "title": "Only a title",
+               "purpose": "a purpose", "required_topics": ["topic"],
+               "key_questions": ["q"],
+               "retrieval_needs": {"query_packs": [], "symbols": [], "files": [],
+                                   "contracts": [], "tests": [], "graph_nodes": [],
+                                   "search_hints": [], "context_artifacts": []},
+               "expected_evidence_types": []}
+        self.assertFalse(writer.readiness_pass(self._result(sec, [])))
+
+    def test_context_docs_broad_vs_narrow_predicates(self):
+        from wiki_generator.libs import context_docs as C
+        # broad (normalizer, on planner file refs): basename + subtree
+        self.assertTrue(C.looks_like_context_artifact("derived/planning-digest.md"))
+        self.assertTrue(C.looks_like_context_artifact("repo-summary.md"))
+        self.assertTrue(C.looks_like_context_artifact(
+            "planner-digest/README_FOR_PLANNER.md"))
+        self.assertIsNone(C.looks_like_context_artifact("pkg/svc.py"))
+        # narrow (validator, on evidence source paths): only the bundle's own
+        # generated namespaces, so a real repo file merely NAMED repo-summary.md
+        # is not falsely flagged as a context citation
+        self.assertTrue(C.is_generated_context_path("derived/planning-digest.md"))
+        self.assertTrue(C.is_generated_context_path("planner-digest/upload-list.md"))
+        self.assertFalse(C.is_generated_context_path("docs/repo-summary.md"))
+        self.assertFalse(C.is_generated_context_path("pkg/svc.py"))
+
 
 class NormalizePlanE2ETests(unittest.TestCase):
     @classmethod
@@ -644,21 +864,27 @@ class NormalizePlanE2ETests(unittest.TestCase):
                     "parent": None, "purpose": "Intro.", "priority": "high"},
                    {"id": "api routes", "title": "API Routes", "order": 2,
                     "parent": None, "purpose": "Routes.", "priority": "high"}]}
+        # overview: a clean section (every handle resolves).
         sp1 = {"section_id": "overview", "title": "Overview", "goal": "Intro",
                "coverage_requirements": ["What"], "key_questions": ["What?"],
                "evidence_needs": {
                    "symbol_ids": ["pkg.svc.work", "python pkg.svc/Item#"],
                    "file_anchors": ["pkg/svc.py", "README.md:Overview"],
                    "query_packs": ["Web routes"],
-                   "graph_nodes": ["demo [Repository]"], "contracts": []},
+                   "graph_nodes": ["repo [Repository]"], "contracts": []},
                "depends_on": [], "verification_needs": [], "estimated_size": "S"}
+        # api-routes: the RAGFlow-style bad section — vague symbol, digest in
+        # files[], display-label graph node, openapi.json-only contract, bogus
+        # query pack. The normalizer must route every one of these out of its
+        # exact lane (readiness FAIL), keeping only the resolvable handles.
         sp2 = {"section_id": "api routes", "title": "API Routes", "goal": "Routes",
                "coverage_requirements": ["Endpoints"], "key_questions": ["?"],
                "evidence_needs": {
-                   "symbol_ids": ["pkg.api.routes.list_items", "does.not.exist"],
-                   "file_anchors": ["routes.py"],
+                   "symbol_ids": ["pkg.api.routes.list_items", "retrieve: api.apps.*"],
+                   "file_anchors": ["routes.py", "derived/planning-digest.md"],
                    "query_packs": ["Auth / security", "totally bogus pack"],
-                   "graph_nodes": [], "contracts": ["GET /items", "POST /nope"]},
+                   "graph_nodes": ["fastapi [Dependency]", "pytest [Dependency]"],
+                   "contracts": ["GET /items", "contracts/openapi.json"]},
                "depends_on": ["overview"], "estimated_size": "M"}
         raw = ("Here are the artifacts:\n\n"
                "```text\nplans/document-plan.json\n```\n\n"
@@ -681,7 +907,8 @@ class NormalizePlanE2ETests(unittest.TestCase):
         self.assertEqual(self.dec.returncode, 0, self.dec.stderr)
         self.assertEqual(self.norm.returncode, 0, self.norm.stderr)
         for name in ("document-plan.json", "document-plan.md", "section-plans.jsonl",
-                     "normalization-report.md", "unresolved-references.jsonl"):
+                     "normalization-report.md", "phase3-readiness-report.md",
+                     "unresolved-references.jsonl"):
             self.assertTrue(os.path.exists(os.path.join(self.plans, name)), name)
 
     def test_document_plan_valid(self):
@@ -707,18 +934,75 @@ class NormalizePlanE2ETests(unittest.TestCase):
         self.assertEqual(files["pkg/svc.py"]["resolution"], "file_exists")
         self.assertEqual(files["README.md:Overview"]["anchor_confidence"], "file_only")
 
-    def test_unresolved_and_contracts(self):
-        secs = self._sections()
-        api = secs["api-routes"]
-        self.assertEqual(api["retrieval_needs"]["query_packs"], ["auth_security"])
-        syms = {s["input"]: s for s in api["retrieval_needs"]["symbols"]}
-        self.assertEqual(syms["does.not.exist"]["resolution"], "no_match")
-        contracts = {c["input"]: c for c in api["retrieval_needs"]["contracts"]}
+    def test_overview_graph_node_resolves(self):
+        ov = self._sections()["overview"]
+        self.assertEqual(ov["retrieval_needs"]["graph_nodes"], ["repo:repo"])
+
+    def test_bad_inputs_routed_out_of_exact_lanes(self):
+        api = self._sections()["api-routes"]
+        nh = api["retrieval_needs"]
+        # query packs: only the canonical key survives
+        self.assertEqual(nh["query_packs"], ["auth_security"])
+        # symbols: vague "retrieve: ..." is gone; the exact one stays
+        sym_inputs = [s["input"] for s in nh["symbols"]]
+        self.assertEqual(sym_inputs, ["pkg.api.routes.list_items"])
+        # contracts: only the exact METHOD /path; openapi.json-only removed
+        contracts = {c["input"]: c for c in nh["contracts"]}
+        self.assertEqual(list(contracts), ["GET /items"])
         self.assertEqual(contracts["GET /items"]["resolution"], "exact")
+        # graph_nodes: the resolvable display label became an exact node_id; the
+        # unresolvable one was dropped
+        self.assertEqual(nh["graph_nodes"], ["dep:fastapi"])
+        # files: the digest doc is NOT an active file work item
+        file_inputs = [f["input"] for f in nh["files"]]
+        self.assertNotIn("derived/planning-digest.md", file_inputs)
+        # context_artifacts: the digest doc, marked non-citeable
+        ca_paths = [c["path"] for c in nh["context_artifacts"]]
+        self.assertIn("derived/planning-digest.md", ca_paths)
+        self.assertTrue(all(c["citeable_as_evidence"] is False
+                            for c in nh["context_artifacts"]))
+        # search_hints: every rerouted item is recall text now
+        hints = {h["text"] for h in nh["search_hints"]}
+        for moved in ("retrieve: api.apps.*", "totally bogus pack",
+                      "pytest [Dependency]", "contracts/openapi.json"):
+            self.assertIn(moved, hints)
+
+    def test_expected_evidence_types_from_resolvable_only(self):
+        api = self._sections()["api-routes"]
+        # symbols(list_items), files(routes.py), queries(auth_security),
+        # contracts(GET /items), graph(dep:fastapi) — NOT tests (none resolved).
+        self.assertEqual(api["expected_evidence_types"],
+                         ["symbols", "files", "queries", "contracts", "graph"])
+
+    def test_unresolved_log_covers_all_lanes(self):
         with open(os.path.join(self.plans, "unresolved-references.jsonl")) as f:
             unresolved = [json.loads(ln) for ln in f if ln.strip()]
         types = {u["type"] for u in unresolved}
-        self.assertEqual(types, {"symbol", "query_pack", "contract"})
+        self.assertEqual(types, {"symbol", "query_pack", "contract", "graph", "file"})
+
+    def test_negative_acceptance_no_bad_items_in_exact_lanes(self):
+        # The RAGFlow negative-acceptance checks (spec): none of these may appear
+        # in any exact lane of any section.
+        for sec in self._sections().values():
+            nh = sec["retrieval_needs"]
+            for s in nh["symbols"]:
+                self.assertNotIn("retrieve:", str(s["input"]))
+            self.assertNotIn("contracts/openapi.json",
+                             [c["input"] for c in nh["contracts"]])
+            self.assertNotIn("pytest [Dependency]", nh["graph_nodes"])
+            for f in nh["files"]:
+                self.assertFalse(str(f.get("path") or "").startswith("derived/planning-"))
+                self.assertNotIn("derived/planning-digest.md", str(f["input"]))
+
+    def test_readiness_report_written_and_fails_for_bad_plan(self):
+        path = os.path.join(self.plans, "phase3-readiness-report.md")
+        self.assertTrue(os.path.exists(path))
+        with open(path, encoding="utf-8") as f:
+            report = f.read()
+        self.assertIn("Status: FAIL", report)
+        self.assertIn("# Phase 3 Readiness Report", report)
+        # the failing section is named with a suggested fix
+        self.assertIn("api-routes", report)
 
     def test_query_pack_aliases_map_to_canonical(self):
         from wiki_generator.libs.plan_normalization.lookups import Lookups
@@ -750,7 +1034,7 @@ class NormalizePlanE2ETests(unittest.TestCase):
         _run_cmd("normalize-plan", "--bundle", self.out,
                  "--raw-response", self.raw_path, "--out", b)
         for name in ("document-plan.json", "section-plans.jsonl",
-                     "unresolved-references.jsonl"):
+                     "phase3-readiness-report.md", "unresolved-references.jsonl"):
             with open(os.path.join(a, name)) as f1, open(os.path.join(b, name)) as f2:
                 self.assertEqual(f1.read(), f2.read(), name)
 
@@ -960,6 +1244,15 @@ class BuildRetrievalE2ETests(unittest.TestCase):
         self.assertEqual(res.vectors.status, "failed")
 
     def test_vectors_on_fails_via_cli_without_faiss(self):
+        try:
+            import faiss  # noqa: F401
+            from model2vec import StaticModel  # noqa: F401
+        except Exception:
+            pass
+        else:
+            self.skipTest(
+                "faiss/model2vec installed; missing-backend behavior is covered "
+                "by the injected-backend unit test")
         out = self._fresh()
         p = _run_cmd("build-retrieval", "--in", out, "--vectors", "on")
         self.assertEqual(p.returncode, 1, p.stderr)

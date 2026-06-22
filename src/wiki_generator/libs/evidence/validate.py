@@ -6,6 +6,7 @@ between a clean pass, a bad/underspecified plan, and a retriever bug.
 """
 from __future__ import annotations
 
+from ..context_docs import is_generated_context_path
 from .schema import (
     CAT_BAD_PLAN, CAT_BUG, EXIT_FOR_CATEGORY, VALIDATION_SCHEMA_VERSION,
     validate_packet,
@@ -92,20 +93,30 @@ def validate_run(bundle, packets, options, *, substrate_warnings) -> tuple[dict,
         "all packets valid" if not schema_errors else f"{len(schema_errors)} error(s)"))
     bug_errors.extend(schema_errors)
 
-    # 5. evidence ids unique, anchors resolve, no plan-only citations.
+    # 5. evidence ids unique, anchors resolve, no plan-only or context citations.
     id_errors: list = []
     anchor_errors: list = []
     plan_only: list = []
+    context_only: list = []
     for p in packets:
         seen: set = set()
+        ctx_paths = set((p.get("work_order") or {}).get("context_artifacts") or [])
         for item in p.get("evidence", []):
             eid = item.get("evidence_id")
             if eid in seen:
                 id_errors.append(f"{p['section_id']}: duplicate evidence_id {eid}")
             seen.add(eid)
             source = item.get("source") or {}
-            if str(source.get("artifact", "")).startswith("plans/"):
+            artifact = str(source.get("artifact", ""))
+            path = str(source.get("path", ""))
+            if artifact.startswith("plans/"):
                 plan_only.append(f"{p['section_id']}: {eid} cites the plan")
+            elif (artifact in ctx_paths or path in ctx_paths
+                  or is_generated_context_path(artifact)
+                  or is_generated_context_path(path)):
+                context_only.append(
+                    f"{p['section_id']}: {eid} cites planner-context artifact "
+                    f"({path or artifact})")
             elif not _anchor_exists(bundle, source):
                 anchor_errors.append(
                     f"{p['section_id']}: {eid} anchor not found ({source})")
@@ -118,9 +129,13 @@ def validate_run(bundle, packets, options, *, substrate_warnings) -> tuple[dict,
     contract_checks.append(_check(
         "no_plan_only_evidence", not plan_only,
         "ok" if not plan_only else f"{len(plan_only)} violation(s)"))
+    contract_checks.append(_check(
+        "no_context_artifact_evidence", not context_only,
+        "ok" if not context_only else f"{len(context_only)} violation(s)"))
     bug_errors.extend(id_errors)
     bug_errors.extend(anchor_errors)
     bug_errors.extend(plan_only)
+    bug_errors.extend(context_only)
 
     # --- per-section results --------------------------------------------------
     section_results: list = []

@@ -76,3 +76,15 @@ fi
 
 log "Phase 2 Step 2: normalize-plan"
 "${cmd[@]}"
+
+# Report the Phase 3 readiness verdict (written by normalize-plan). This is a
+# soft notice here; the hard gate lives in phase3_retrieve_evidence.sh.
+READINESS="${PLAN_OUT:-$OUT/plans}/phase3-readiness-report.md"
+if [[ -f "$READINESS" ]]; then
+  if grep -Eiq '^[*[:space:]]*Status:[*[:space:]]*PASS' "$READINESS"; then
+    log "Phase 3 readiness: PASS — safe to run Phase 3 ($READINESS)"
+  else
+    log "Phase 3 readiness: FAIL — fix planner/normalization before Phase 3"
+    log "  see $READINESS"
+  fi
+fi
