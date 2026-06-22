@@ -73,6 +73,7 @@ class Bundle:
     chunks_by_id: dict = field(default_factory=dict)
     spans_by_id: dict = field(default_factory=dict)
     symbols_by_id: dict = field(default_factory=dict)
+    duplicate_symbol_ids: set = field(default_factory=set)
     symbols_by_parent: dict = field(default_factory=dict)
     files_by_path: dict = field(default_factory=dict)
     chunks_by_path: dict = field(default_factory=dict)
@@ -99,6 +100,9 @@ class Bundle:
 
     def symbol(self, symbol_id):
         return self.symbols_by_id.get(symbol_id)
+
+    def symbol_is_ambiguous(self, symbol_id):
+        return symbol_id in self.duplicate_symbol_ids
 
     def node(self, node_id):
         return self.nodes_by_id.get(node_id)
@@ -219,8 +223,14 @@ def load_bundle(options) -> Bundle:
 
     symbols = _load_lookup_jsonl(b, paths.symbols_jsonl, "symbols/symbols.jsonl",
                                  required_cap="symbol_lookup")
-    _check_no_dupes(symbols, "symbol_id", "symbols/symbols.jsonl")
-    b.symbols_by_id = {s["symbol_id"]: s for s in symbols}
+    b.symbols_by_id, b.duplicate_symbol_ids = _unique_index(symbols, "symbol_id")
+    if b.duplicate_symbol_ids:
+        preview = ", ".join(sorted(b.duplicate_symbol_ids)[:3])
+        more = "" if len(b.duplicate_symbol_ids) <= 3 else \
+            f" (+{len(b.duplicate_symbol_ids) - 3} more)"
+        b.warnings.append(
+            f"duplicate symbol_id rows in symbols/symbols.jsonl: {preview}{more}; "
+            "duplicate symbol IDs are treated as ambiguous")
     b.symbols_by_parent = _group_sorted(
         [s for s in symbols if s.get("parent_symbol_id")],
         key_field="parent_symbol_id", sort=lambda s: (s["range"]["start_line"],
@@ -257,6 +267,17 @@ def load_bundle(options) -> Bundle:
     b.pytest_collect_lines = collect_txt.splitlines() if collect_txt else []
 
     return b
+
+
+def _unique_index(rows, id_key) -> tuple[dict, set]:
+    """Index rows by id, excluding duplicated ids so lookups stay unambiguous."""
+    buckets: dict = {}
+    for row in rows:
+        buckets.setdefault(row.get(id_key), []).append(row)
+    duplicate_ids = {k for k, v in buckets.items() if k is not None and len(v) > 1}
+    indexed = {k: v[0] for k, v in buckets.items()
+               if k is not None and k not in duplicate_ids}
+    return indexed, duplicate_ids
 
 
 def _group_sorted(rows, *, key=None, key_field=None, sort=None) -> dict:

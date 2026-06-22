@@ -45,9 +45,10 @@ def run(bundle, section, options) -> LaneResult:
             continue
         symbol = bundle.symbol(symbol_id)
         if symbol is None:
+            reason = "ambiguous" if bundle.symbol_is_ambiguous(symbol_id) else "missing_reference"
             res.unresolved.append({
                 "section_id": sid, "type": "symbol", "input": item.get("input"),
-                "reason": "missing_reference", "source_field": field, "candidates": [],
+                "reason": reason, "source_field": field, "candidates": [],
             })
             continue
         res.resolved += 1
