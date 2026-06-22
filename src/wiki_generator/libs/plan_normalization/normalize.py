@@ -168,13 +168,8 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
         files_in = ev.get("file_anchors")
     for fa in _as_list(files_in):
         ref = fa.get("input") if isinstance(fa, dict) else fa
+        # A planner-context digest doc is the ONLY thing routed to context_artifacts.
         ctx_path = _looks_like_context_artifact(ref)
-        if ctx_path is None:
-            r = lk.resolve_file(str(ref))
-            if r.resolution == "digest_artifact":
-                ctx_path = r.path or str(ref)
-        else:
-            r = None
         if ctx_path is not None:
             add_context_artifact(ctx_path)
             unresolved.append({"section_id": section_id, "type": "file",
@@ -183,6 +178,7 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
             warnings.append(
                 f"[{section_id}] planner-context doc moved out of files[]: {ref!r}")
             continue
+        r = lk.resolve_file(str(ref))
         if r.resolution in ("file_exists", "unique_suffix"):
             files.append({"input": ref, "path": r.path, "anchor": r.anchor,
                           "anchor_confidence": r.anchor_confidence,
@@ -191,6 +187,27 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
                     "file_only", "unresolved"):
                 add_hint(r.anchor, ["source"],
                          "loose file anchor (lexical hint, not an exact span)")
+        elif r.resolution == "digest_artifact":
+            # resolve_file matched a bundle artifact basename. If it is a genuine
+            # planner-context doc, relocate it; otherwise it is a real evidence
+            # artifact (e.g. contracts/openapi.json — cited by the contract lane)
+            # mistakenly placed in files[], so treat it as a recall hint, NOT a
+            # context_artifact (which would wrongly flag its legitimate citation).
+            cap = _looks_like_context_artifact(r.path)
+            if cap is not None:
+                add_context_artifact(cap)
+                unresolved.append({"section_id": section_id, "type": "file",
+                                   "input": ref, "reason": "context_only",
+                                   "candidates": []})
+                warnings.append(
+                    f"[{section_id}] planner-context doc moved out of files[]: {ref!r}")
+            else:
+                unresolved.append({"section_id": section_id, "type": "file",
+                                   "input": ref, "reason": "no_match",
+                                   "candidates": []})
+                warnings.append(
+                    f"[{section_id}] non-source bundle artifact in files[]: {ref!r}")
+                add_hint(ref, ["source"], "non-source bundle artifact")
         else:
             reason = "ambiguous" if r.resolution == "ambiguous" else "no_match"
             unresolved.append({"section_id": section_id, "type": "file",
@@ -251,10 +268,17 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
             add_hint(h, [], "planner search hint")
     for ca in _as_list(ev.get("context_artifacts")):
         if isinstance(ca, dict):
-            add_context_artifact(ca.get("path") or ca.get("input"),
-                                 ca.get("role") or "planner_context")
+            raw = ca.get("path") or ca.get("input")
+            role = ca.get("role") or "planner_context"
         else:
-            add_context_artifact(ca)
+            raw, role = ca, "planner_context"
+        # Only genuine digest/condensate docs are context_artifacts. A real
+        # evidence artifact a planner mislabels as context (e.g.
+        # contracts/openapi.json) must NOT enter context_artifacts, or the
+        # validator would flag that artifact's legitimate citations.
+        cap = _looks_like_context_artifact(raw) if raw else None
+        if cap is not None:
+            add_context_artifact(cap, role)
 
     return {
         "query_packs": _dedup(qpacks),

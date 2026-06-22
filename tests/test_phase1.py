@@ -760,6 +760,23 @@ class NormalizePlanUnitTests(unittest.TestCase):
                          [f["input"] for f in needs["files"]])
         self.assertNotIn("fastapi [Dependency]", needs["graph_nodes"])
 
+    def test_openapi_json_never_becomes_a_context_artifact(self):
+        # Regression: contracts/openapi.json is the contract-evidence source; a
+        # planner that mislabels it as context (or lists it in files[]) must NOT
+        # turn it into a context_artifact, or Phase 3 would flag the contract
+        # lane's legitimate citation of it (retriever_implementation_bug).
+        from wiki_generator.libs.plan_normalization import normalize as N
+        from wiki_generator.libs.plan_normalization.lookups import Lookups
+        lk = Lookups("/nonexistent")
+        ev = {"context_artifacts": ["contracts/openapi.json",
+                                    "derived/planning-digest.md"],
+              "files": ["contracts/openapi.json"]}
+        needs = N._resolve_needs("s", ev, lk, [], [])
+        ca = [c["path"] for c in needs["context_artifacts"]]
+        self.assertIn("derived/planning-digest.md", ca)        # genuine digest kept
+        self.assertNotIn("contracts/openapi.json", ca)         # evidence artifact dropped
+        self.assertEqual([f["input"] for f in needs["files"]], [])  # not a source file
+
     def test_resolve_test_splits_pytest_node_id(self):
         from wiki_generator.libs.plan_normalization.lookups import Lookups
         lk = Lookups("/nonexistent")
