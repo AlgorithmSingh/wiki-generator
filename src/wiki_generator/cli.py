@@ -11,6 +11,7 @@ module stays deliberately small.
     python -m wiki_generator build-retrieval --in <bundle> [--bm25 ...] [--vectors ...]
     python -m wiki_generator plan          --bundle <bundle> [--project P --location L]  (Vertex AI; LLM step)
     python -m wiki_generator normalize-plan --bundle <bundle> --raw-response <file> [--out <dir>]
+    python -m wiki_generator retrieve-evidence --bundle <bundle> [--out <dir>]   (Phase 3)
 """
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ from .libs.commands import decompose as decompose_cmd
 from .libs.commands import digest as digest_cmd
 from .libs.commands import normalize_plan as normalize_plan_cmd
 from .libs.commands import plan as plan_cmd
+from .libs.commands import retrieve_evidence as retrieve_evidence_cmd
 
 _TOGGLE = ("auto", "on", "off")
 DEFAULT_BUDGET_TOKENS = 250_000
@@ -155,6 +157,22 @@ def build_parser() -> argparse.ArgumentParser:
                    help="record unresolved references and continue (default)")
     n.add_argument("--provider", default="gemini",
                    help="planning provider name, recorded as metadata only")
+
+    re_ = sub.add_parser(
+        "retrieve-evidence",
+        help="Phase 3: retrieve deterministic, citeable evidence packets for "
+             "every planned section (no LLM). All-sections producer.")
+    re_.add_argument("--bundle", required=True,
+                     help="path to the Phase 1/2 bundle root")
+    re_.add_argument("--out", dest="out_dir", default=None,
+                     help="output directory for evidence (default <bundle>/evidence)")
+    re_.add_argument("--max-per-lane", dest="max_per_lane", type=int, default=None,
+                     help="max evidence items kept per lane per section "
+                          "(default: stable implementation constant)")
+    re_.add_argument("--max-total-per-section", dest="max_total_per_section",
+                     type=int, default=None,
+                     help="max evidence items kept per section (default: stable "
+                          "implementation constant)")
     return p
 
 
@@ -174,6 +192,8 @@ def main(argv: list[str] | None = None) -> int:
         return plan_cmd.run(args)
     if args.command == "normalize-plan":
         return normalize_plan_cmd.run(args)
+    if args.command == "retrieve-evidence":
+        return retrieve_evidence_cmd.run(args)
     return 2  # pragma: no cover - argparse enforces a known command
 
 

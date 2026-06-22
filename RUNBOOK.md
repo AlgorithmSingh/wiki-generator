@@ -19,7 +19,8 @@ Phase 1  Step 1 decompose   -> raw artifact bundle
          Step 5 build-retrieval -> rag/retrieval-capabilities.json (+ BM25 / optional vectors)
 Phase 2  Step 1 (external)   -> Gemini/Kimi plan -> plans/phase2-<provider>-response.md
          Step 2 normalize-plan -> plans/document-plan.json + section-plans.jsonl
-Phase 3  (later)             -> deterministic section evidence retrieval
+Phase 3  retrieve-evidence   -> evidence/packets/<section_id>.json (+ manifest,
+                                validation, report) — deterministic, no LLM
 ```
 
 Step 5 (`build-retrieval`) is independent of the planner upload — it only needs
@@ -67,6 +68,8 @@ scripts/phase2_step1_plan.sh --out "$OUT" --project my-gcp-project --location us
 # After a raw planner response exists:
 scripts/phase2_step2_normalize_plan.sh --out "$OUT" \
   --raw-response "$OUT/plans/phase2-gemini-response.md"
+
+scripts/phase3_retrieve_evidence.sh --out "$OUT" --with-vectors
 ```
 
 ## 1. Pick the repo and an output directory
@@ -217,6 +220,32 @@ an explicit retrieval readiness contract (`rag/retrieval-capabilities.json`). In
 the preferred script workflow, Step 5 requires FAISS/model2vec and fails if
 vectors cannot be built; a passing run should report `hybrid` mode.
 
+## 5. Phase 3 — retrieve evidence (deterministic, no LLM)
+
+```bash
+python3 -m wiki_generator retrieve-evidence --bundle "$OUT"
+# or:  scripts/phase3_retrieve_evidence.sh --out "$OUT"   (--with-vectors for hybrid)
+```
+
+Reads the normalized plan (`plans/`) + the Step 5 substrate (`rag/`) and writes
+one EvidencePacket per planned section. All-sections producer — there is no
+per-section mode. Produces in `$OUT/evidence/`:
+
+```
+packets/<section_id>.json    one EvidencePacket per section (schema phase3-evidence-packet-v1)
+evidence-packets.jsonl       all packets, one per line, in document order
+evidence-manifest.json       machine-readable index of the artifact set
+retrieval-validation.json    deterministic contract checks + section results
+retrieval-report.md          human-readable PASS/FAIL + evidence-by-lane + fix path
+unresolved-evidence.jsonl    deterministic retrieval misses (not evidence)
+```
+
+Exit codes: `0` PASS · `2` bad/missing input artifact · `3` bad/underspecified
+normalized plan · `1` retriever bug. A failure is not a retry loop: fix the named
+upstream artifact / plan / code per `retrieval-report.md`, then rerun the same
+all-sections command. The vector lane runs only when capabilities report `hybrid`;
+in `lexical-symbolic` mode it is skipped (not a failure).
+
 ---
 
 ## Appendix — exact commands used for RAGFlow
@@ -242,6 +271,8 @@ scripts/phase2_step1_plan.sh --out "$OUT" \
 
 scripts/phase2_step2_normalize_plan.sh --out "$OUT" \
   --raw-response "$OUT/plans/phase2-gemini-response.md"
+
+scripts/phase3_retrieve_evidence.sh --out "$OUT" --with-vectors
 ```
 
 RAGFlow scale (reference): 3,928 files, 15,618 symbols, 52,349 graph edges,

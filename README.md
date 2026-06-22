@@ -4,10 +4,10 @@ Plan a documentation Wiki for a Python repository. `wiki-generator` turns a repo
 into a deterministic **repo-analysis artifact bundle** (Step 1), **condenses** it
 into small planner-facing digests an LLM can actually read (Steps 2/3), **bundles**
 those into one uploadable file (Step 4), **builds the retrieval substrate** Phase 3
-will query (Step 5), runs a **planning LLM** over the upload bundle (Phase 2 Step 1),
-and **normalizes** the LLM's plan into machine-resolvable artifacts for the
-retrieval phase (Phase 2 Step 2). Everything except the single `plan` step is
-deterministic and **LLM-free**.
+queries (Step 5), runs a **planning LLM** over the upload bundle (Phase 2 Step 1),
+**normalizes** the LLM's plan into machine-resolvable artifacts (Phase 2 Step 2),
+and **retrieves exact, citeable evidence** for every planned section (Phase 3).
+Everything except the single `plan` step is deterministic and **LLM-free**.
 
 ```text
 Phase 1  Step 1 decompose  -> raw artifact bundle
@@ -19,7 +19,8 @@ Phase 2  Step 1 plan        -> Gemini/Kimi plan: plans/phase2-<provider>-respons
                                (Vertex AI Gemini 2.5 Pro; the one LLM step.
                                 or run the Gem by hand and save the reply)
          Step 2 normalize-plan -> plans/document-plan.json + section-plans.jsonl
-Phase 3  (later)            -> deterministic section evidence retrieval
+Phase 3  retrieve-evidence  -> evidence/packets/<section_id>.json (+ manifest,
+                               validation, report) — deterministic, no LLM
 ```
 
 Step 5 is numbered after Step 4 because it is **not** needed for the planner
@@ -29,8 +30,9 @@ upload; its only hard dependency is Step 1's corpus, so it can run any time afte
 This implements `PHASE1_DECOMPOSITION_PLAN.md` (Step 1),
 `PHASE1_STEP2_STEP3_PLANNING_CONDENSATES.md` (Steps 2/3),
 `PHASE1_STEP4_PLANNER_UPLOAD_BUNDLE_SPEC.md` (Step 4),
-`PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md` (Step 5), and
-`PHASE2_PLAN_NORMALIZATION_SPEC.md` (Phase 2 Step 2).
+`PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md` (Step 5),
+`PHASE2_PLAN_NORMALIZATION_SPEC.md` (Phase 2 Step 2), and
+`PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` (Phase 3).
 
 ## Architecture
 
@@ -104,6 +106,11 @@ wiki-generator plan --bundle /path/to/phase1-output --project my-gcp-project --l
 # Phase 2 Step 2 — normalize the planning response (deterministic, no LLM)
 wiki-generator normalize-plan --bundle /path/to/phase1-output \
   --raw-response /path/to/phase1-output/plans/phase2-gemini-response.md
+
+# Phase 3 — retrieve exact, citeable evidence for every planned section
+# (deterministic, no LLM). All-sections producer; writes evidence/packets/<id>.json
+# plus a manifest, validation, and report. Exit 0 PASS / 2 bad input / 3 bad plan.
+wiki-generator retrieve-evidence --bundle /path/to/phase1-output
 ```
 
 `digest` regenerates the Step 2 condensates first and then runs Step 4, so running
