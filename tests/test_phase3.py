@@ -727,7 +727,7 @@ class Phase3UnitTests(unittest.TestCase):
                                            lane_rank=1, provenance={"matched_by": "bm25"},
                                            scores=build_scores(lane_rank=1, bm25=2.0))])
         opts = EvidenceOptions(bundle_root="/b", out_dir="/o")
-        evidence, summary, lanes = aggregate("s", [sym_lr, bm_lr], opts)
+        evidence, summary, lanes, _cov = aggregate("s", [sym_lr, bm_lr], opts)
         self.assertEqual(len(evidence), 1)              # chunk folded into the span
         item = evidence[0]
         self.assertEqual(item["lane"], "symbol_anchor")
@@ -756,7 +756,7 @@ class Phase3UnitTests(unittest.TestCase):
                                              confidence="high", lane_rank=1,
                                              provenance={"matched_by": "file_range"})])
         opts = EvidenceOptions(bundle_root="/b", out_dir="/o")
-        evidence, _, lanes = aggregate("s", [graph_lr, file_lr], opts)
+        evidence, _, lanes, _cov = aggregate("s", [graph_lr, file_lr], opts)
         self.assertEqual(len(evidence), 1)
         item = evidence[0]
         self.assertEqual(item["confidence"], "high")     # not demoted to low
@@ -815,6 +815,244 @@ class Phase3UnitTests(unittest.TestCase):
         self.assertEqual(val, "q")
         found2, _ = _resolve_pointer(doc, "/paths/~1x/get/parameters/5/name")
         self.assertFalse(found2)
+
+
+# ---------------------------------------------------------------------------
+# Iteration 3: balanced per-request exact-evidence coverage after capping.
+# These are pure-logic unit tests over synthetic lane results — no bundle build,
+# no LLM, deterministic.
+def _agg():
+    from wiki_generator.libs.evidence.aggregate import aggregate
+    return aggregate
+
+
+def _opts(**kw):
+    from wiki_generator.libs.evidence.options import EvidenceOptions
+    return EvidenceOptions(bundle_root="/b", out_dir="/o", **kw)
+
+
+def _file_chunk(path, s, e):
+    return {"chunk_id": f"chunk:{path}:{s}-{e}", "path": path,
+            "range": {"start_line": s, "end_line": e},
+            "text": f"{path}:{s}-{e}", "span_ids": []}
+
+
+def _file_lane(files_with_counts, *, start_rank=0):
+    """A file_anchor LaneResult with ``n`` representative chunks per requested file.
+
+    ``files_with_counts`` is a list of ``(path, n_candidates)``; later files get
+    higher lane_rank (as the real lane assigns them) so global sorting alone would
+    starve them — the allocator must rebalance."""
+    from wiki_generator.libs.evidence.model import (
+        LaneResult, chunk_hit, exact_request)
+    res = LaneResult(lane="file_anchor", requested=len(files_with_counts),
+                     resolved=0, status="pass")
+    rank = start_rank
+    for i, (path, n) in enumerate(files_with_counts):
+        res.resolved += 1
+        field = f"retrieval_needs.files[{i}]"
+        req = exact_request(lane="file_anchor", source_field=field,
+                            requested_input=path, handle_field="resolved_path",
+                            resolved_handle=path, resolution="file_exists")
+        for j in range(n):
+            rank += 1
+            s = 1 + j * 10
+            res.hits.append(chunk_hit(
+                _file_chunk(path, s, s + 5), lane="file_anchor", confidence="high",
+                lane_rank=rank, request=req,
+                provenance={"section_plan_field": field, "input": path,
+                            "matched_by": "file_repr"}))
+    return res
+
+
+def _bm25_lane(n, *, confidence="medium"):
+    from wiki_generator.libs.evidence.model import (
+        LaneResult, build_scores, chunk_hit)
+    res = LaneResult(lane="bm25", requested=1, resolved=1, status="pass")
+    for j in range(n):
+        res.hits.append(chunk_hit(
+            _file_chunk("other/recall.py", 100 + j * 10, 105 + j * 10), lane="bm25",
+            confidence=confidence, lane_rank=j + 1,
+            provenance={"section_plan_field": "query_text", "input": "q",
+                        "matched_by": "bm25"},
+            scores=build_scores(lane_rank=j + 1, lane_score=9.0, bm25=9.0)))
+    return res
+
+
+_RAG_CORE_FILES = ["rag/flow/parser/parser.py", "rag/nlp/search.py",
+                   "deepdoc/parser/pdf_parser.py", "rag/llm/embedding_model.py"]
+
+
+class Phase3Iteration3Tests(unittest.TestCase):
+    def test_four_files_cap_eight_balanced_includes_all(self):
+        # Case 1 + 7 (regression): 4 requested files, candidates for all, an
+        # effective file-anchor cap of 8 -> ~2 kept items per file, NOT 8/0/0/0.
+        from collections import Counter
+        lr = _file_lane([(p, 8) for p in _RAG_CORE_FILES])
+        ev, _summary, _lanes, cov = _agg()(
+            "subsystem-rag-core", [lr],
+            _opts(max_total_per_section=8, max_per_lane=8))
+        self.assertEqual(len(ev), 8)
+        by_path = Counter(e["source"]["path"] for e in ev)
+        for p in _RAG_CORE_FILES:
+            self.assertEqual(by_path[p], 2, f"{p}: {dict(by_path)}")
+        # the live-failure file is present and covered.
+        self.assertIn("rag/llm/embedding_model.py", by_path)
+        self.assertTrue(all(r["status"] == "covered" for r in cov), cov)
+        emb = next(r for r in cov
+                   if r["resolved_path"] == "rag/llm/embedding_model.py")
+        self.assertEqual(emb["status"], "covered")
+        self.assertEqual(emb["kept_count"], 2)
+        self.assertEqual(len(emb["evidence_ids"]), 2)
+
+    def test_exact_obligations_beat_broad_recall_for_budget(self):
+        # Case 2: high-scoring broad-recall (bm25) candidates must not consume the
+        # section budget before exact minima/depth are allocated.
+        from collections import Counter
+        lr = _file_lane([(p, 2) for p in _RAG_CORE_FILES])  # 8 exact candidates
+        bm = _bm25_lane(6, confidence="high")               # 6 "high" recall hits
+        ev, summary, _lanes, cov = _agg()(
+            "subsystem-rag-core", [lr, bm],
+            _opts(max_total_per_section=8, max_per_lane=8))
+        self.assertEqual(len(ev), 8)
+        lanes = Counter(e["lane"] for e in ev)
+        self.assertEqual(lanes["bm25"], 0)            # broad recall got no budget
+        self.assertEqual(lanes["file_anchor"], 8)
+        for p in _RAG_CORE_FILES:                     # every exact file covered
+            self.assertTrue(any(e["source"]["path"] == p for e in ev), p)
+        self.assertTrue(all(r["status"] == "covered" for r in cov))
+
+    def test_uneven_candidates_still_cover_every_file(self):
+        # Water-fill redistribution: one dominant file + three single-candidate
+        # files. Every file (incl. the last) keeps its minimum; the dominant file
+        # absorbs the redistributed depth — never starving the others.
+        from collections import Counter
+        lr = _file_lane([("rag/flow/parser/parser.py", 10),
+                         ("rag/nlp/search.py", 1),
+                         ("deepdoc/parser/pdf_parser.py", 1),
+                         ("rag/llm/embedding_model.py", 1)])
+        ev, _summary, _lanes, cov = _agg()(
+            "s", [lr], _opts(max_total_per_section=8, max_per_lane=8))
+        by_path = Counter(e["source"]["path"] for e in ev)
+        for p in _RAG_CORE_FILES:
+            self.assertGreaterEqual(by_path[p], 1, dict(by_path))
+        self.assertEqual(by_path["rag/flow/parser/parser.py"], 5)  # absorbs depth
+        self.assertTrue(all(r["status"] == "covered" for r in cov))
+
+    def test_resolved_file_with_no_chunks_reports_no_hits(self):
+        # Case 4: a file_exists request whose file has no chunks reports no_hits
+        # explicitly in per-request coverage rather than disappearing.
+        from wiki_generator.libs.evidence.model import LaneResult
+        lr = LaneResult(lane="file_anchor", requested=1, resolved=1, status="miss")
+        lr.unresolved.append({
+            "section_id": "s", "type": "file", "input": "pkg/empty.py",
+            "reason": "no_hits", "source_field": "retrieval_needs.files[0]",
+            "candidates": []})
+        section = {"section_id": "s", "retrieval_needs": {"files": [
+            {"input": "pkg/empty.py", "path": "pkg/empty.py",
+             "resolution": "file_exists"}]}}
+        ev, _summary, _lanes, cov = _agg()("s", [lr], _opts(), section)
+        self.assertEqual(ev, [])
+        self.assertEqual(len(cov), 1)
+        rec = cov[0]
+        self.assertEqual(rec["status"], "no_hits")
+        self.assertEqual(rec["resolved_path"], "pkg/empty.py")
+        self.assertEqual(rec["candidate_count"], 0)
+        self.assertEqual(rec["kept_count"], 0)
+        # no_hits with no candidates is NOT a fail-closed coverage failure.
+        from wiki_generator.libs.evidence.validate import exact_coverage_failures
+        errs, sids = exact_coverage_failures(
+            [{"section_id": "s", "coverage": {"exact_requests": cov}}])
+        self.assertEqual(errs, [])
+
+    def test_search_hints_are_not_exact_obligations(self):
+        # Case 5: a search_hints-driven bm25 lane with no result must not create a
+        # starved_by_cap or any exact coverage record.
+        from wiki_generator.libs.evidence.model import LaneResult
+        bm = LaneResult(lane="bm25", requested=1, resolved=0, status="empty")
+        ev, _summary, _lanes, cov = _agg()("s", [bm], _opts())
+        self.assertEqual(ev, [])
+        self.assertEqual(cov, [])               # no exact obligations from hints
+
+    def test_total_cap_too_small_starves_and_fails_closed(self):
+        # Case 6: more exact requests with candidates than max_total_per_section
+        # -> keep a deterministic subset, mark the rest starved_by_cap, fail closed.
+        lr = _file_lane([(p, 4) for p in _RAG_CORE_FILES[:3]])
+        ev, _summary, _lanes, cov = _agg()(
+            "s", [lr], _opts(max_total_per_section=2, max_per_lane=8))
+        self.assertEqual(len(ev), 2)
+        starved = [r for r in cov if r["status"] == "starved_by_cap"]
+        covered = [r for r in cov if r["status"] == "covered"]
+        self.assertEqual(len(covered), 2)
+        self.assertEqual(len(starved), 1)
+        self.assertIn("infeasible", starved[0]["reason"])
+        from wiki_generator.libs.evidence.validate import exact_coverage_failures
+        errs, sids = exact_coverage_failures(
+            [{"section_id": "s", "coverage": {"exact_requests": cov}}])
+        self.assertTrue(errs)                   # fail closed
+        self.assertEqual(sids, ["s"])
+
+    def test_feasible_request_absent_fails_validation(self):
+        # Case 3: a resolved exact file with candidates but zero kept evidence,
+        # while minima fit under hard caps, must fail validation as an
+        # aggregation/allocation implementation error — never a clean pass.
+        from wiki_generator.libs.evidence.validate import exact_coverage_failures
+        packet = {"section_id": "subsystem-rag-core", "coverage": {"exact_requests": [
+            {"lane": "file_anchor",
+             "source_field": "retrieval_needs.files[3]",
+             "requested_input": "rag/llm/embedding_model.py",
+             "resolved_path": "rag/llm/embedding_model.py",
+             "resolution": "file_exists", "candidate_count": 6, "kept_count": 0,
+             "evidence_ids": [], "status": "covered"}]}}  # mislabelled "covered"
+        errs, sids = exact_coverage_failures([packet])
+        self.assertTrue(errs, "feasible candidate>0/kept==0 must fail closed")
+        self.assertEqual(sids, ["subsystem-rag-core"])
+
+    def test_merged_representative_preserves_both_request_identities(self):
+        # Case 8: when two exact requests dedupe to one representative (a shared
+        # span), the kept item covers both only because merged provenance/coverage
+        # records preserve both identities.
+        from wiki_generator.libs.evidence.model import (
+            LaneResult, exact_request, span_hit)
+        span = {"span_id": "span:a.py:1-5", "path": "a.py",
+                "range": {"start_line": 1, "end_line": 5}, "text": "x"}
+        freq = exact_request(lane="file_anchor",
+                             source_field="retrieval_needs.files[0]",
+                             requested_input="a.py", handle_field="resolved_path",
+                             resolved_handle="a.py", resolution="file_exists")
+        sreq = exact_request(lane="symbol_anchor",
+                             source_field="retrieval_needs.symbols[0]",
+                             requested_input="S", handle_field="resolved_symbol_id",
+                             resolved_handle="S", resolution="exact")
+        flr = LaneResult(lane="file_anchor", requested=1, resolved=1, status="pass",
+                         hits=[span_hit(span, lane="file_anchor", confidence="exact",
+                                        lane_rank=1, request=freq,
+                                        provenance={"matched_by": "file_range"})])
+        slr = LaneResult(lane="symbol_anchor", requested=1, resolved=1,
+                         status="pass",
+                         hits=[span_hit(span, lane="symbol_anchor", confidence="exact",
+                                        lane_rank=1, request=sreq,
+                                        provenance={"matched_by": "symbol_id"})])
+        ev, _summary, _lanes, cov = _agg()("s", [flr, slr], _opts())
+        self.assertEqual(len(ev), 1)            # deduped to one representative
+        eid = ev[0]["evidence_id"]
+        self.assertEqual(len(cov), 2)
+        self.assertTrue(all(r["status"] == "covered" for r in cov))
+        for r in cov:
+            self.assertEqual(r["evidence_ids"], [eid])  # both tied to the one item
+
+    def test_byte_stable_over_identical_inputs(self):
+        # Case 9: two runs over freshly-built identical synthetic inputs produce
+        # byte-identical evidence + coverage.
+        def run_once():
+            lr = _file_lane([(p, 3) for p in _RAG_CORE_FILES])
+            bm = _bm25_lane(4)
+            ev, summary, _lanes, cov = _agg()(
+                "subsystem-rag-core", [lr, bm],
+                _opts(max_total_per_section=10, max_per_lane=8))
+            return json.dumps({"evidence": ev, "coverage": cov, "summary": summary},
+                              sort_keys=True)
+        self.assertEqual(run_once(), run_once())
 
 
 def _snapshot(d: str) -> dict:

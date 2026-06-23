@@ -31,6 +31,10 @@ footnotes, and never cite `search_hints` or `context_artifacts`.
 - Do NOT introduce any identifier (path, symbol, route, env var, command, \
 dependency, version) that does not appear in a cited evidence excerpt or its \
 source metadata. If the evidence does not support a fact, omit the fact.
+- Never synthesize or expand a file path: do not join a directory and a filename, \
+complete a partial path, or infer a module's full path. Use a path ONLY when that \
+exact string appears in a cited evidence item's `source` or excerpt — otherwise \
+refer to the component by the name the evidence actually provides.
 - `exact`/`high` evidence supports definitive statements. `medium` evidence \
 needs careful phrasing. `low` (graph-context) evidence must never be the sole \
 support for a precise claim — pair it with stronger evidence or omit it.

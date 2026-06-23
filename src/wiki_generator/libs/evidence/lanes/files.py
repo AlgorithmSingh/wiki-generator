@@ -1,7 +1,7 @@
 """file_anchor lane: resolved file references -> exact source ranges/chunks."""
 from __future__ import annotations
 
-from ..model import LaneResult, chunk_hit, span_hit
+from ..model import LaneResult, chunk_hit, exact_request, span_hit
 
 LANE = "file_anchor"
 _RESOLVED = {"file_exists", "unique_suffix", "digest_artifact"}
@@ -41,6 +41,10 @@ def run(bundle, section, options) -> LaneResult:
             })
             continue
         res.resolved += 1
+        req = exact_request(lane=LANE, source_field=field,
+                            requested_input=item.get("input"),
+                            handle_field="resolved_path", resolved_handle=path,
+                            resolution=resolution)
 
         ac = item.get("anchor_confidence")
         parsed = _parse_anchor(item.get("anchor"))
@@ -52,13 +56,13 @@ def run(bundle, section, options) -> LaneResult:
             for span in bundle.overlapping_spans(path, start, end, cap):
                 rank += 1
                 res.hits.append(span_hit(
-                    span, lane=LANE, confidence="exact", lane_rank=rank,
+                    span, lane=LANE, confidence="exact", lane_rank=rank, request=req,
                     provenance={"section_plan_field": field, "input": item.get("input"),
                                 "matched_by": "file_range", "anchor": item.get("anchor")}))
             for chunk in bundle.overlapping_chunks(path, start, end, cap):
                 rank += 1
                 res.hits.append(chunk_hit(
-                    chunk, lane=LANE, confidence="high", lane_rank=rank,
+                    chunk, lane=LANE, confidence="high", lane_rank=rank, request=req,
                     provenance={"section_plan_field": field, "input": item.get("input"),
                                 "matched_by": "file_range", "anchor": item.get("anchor")}))
         else:
@@ -73,7 +77,7 @@ def run(bundle, section, options) -> LaneResult:
             for chunk in bundle.file_repr_chunks(path, cap):
                 rank += 1
                 res.hits.append(chunk_hit(
-                    chunk, lane=LANE, confidence="high", lane_rank=rank,
+                    chunk, lane=LANE, confidence="high", lane_rank=rank, request=req,
                     provenance={"section_plan_field": field, "input": item.get("input"),
                                 "matched_by": "file_repr", "anchor": item.get("anchor")}))
 

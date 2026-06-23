@@ -23,6 +23,30 @@ CONFIDENCE = ("exact", "high", "medium", "low")
 CONFIDENCE_RANK = {c: i for i, c in enumerate(CONFIDENCE)}
 
 
+def exact_request(*, lane, source_field, requested_input, handle_field,
+                  resolved_handle, resolution=None) -> dict:
+    """Stable identity of one *exact* retrieval obligation a hit serves.
+
+    Carried on each exact-lane ``RawHit`` (Iteration 3) so aggregation can
+    reserve balanced per-request coverage and report it. ``handle_field`` names
+    the resolved-handle field for the coverage record (``resolved_path``,
+    ``resolved_symbol_id``, ``operation_ref``, ``resolved_test``, ``query_pack``).
+    """
+    return {
+        "lane": lane,
+        "source_field": source_field,
+        "requested_input": requested_input,
+        "handle_field": handle_field,
+        "resolved_handle": resolved_handle,
+        "resolution": resolution,
+    }
+
+
+def request_key(req: dict) -> str:
+    """Stable dedupe key for one exact request: lane|source_field|resolved_handle."""
+    return f"{req['lane']}|{req['source_field']}|{req.get('resolved_handle')}"
+
+
 @dataclass
 class RawHit:
     """One pre-aggregation evidence candidate from a single lane."""
@@ -38,6 +62,9 @@ class RawHit:
     coarse_key: str                 # path:start-end (or a lane-unique key) for span/chunk folding
     is_span: bool
     lane_rank: int | None = None
+    # Exact-request identity this hit serves (Iteration 3); None for broad recall
+    # lanes (bm25, vector, graph_neighbors) which are not exact obligations.
+    request: dict | None = None
 
     def sort_key(self) -> tuple:
         path = self.source.get("path") or ""
@@ -81,7 +108,8 @@ def _excerpt(text) -> str:
 
 
 def span_hit(span: dict, *, lane: str, confidence: str, provenance: dict,
-             lane_rank: int | None = None, scores: dict | None = None) -> RawHit:
+             lane_rank: int | None = None, scores: dict | None = None,
+             request: dict | None = None) -> RawHit:
     """Build a RawHit from a ``rag/spans.jsonl`` row."""
     path = span["path"]
     rng = span["range"]
@@ -102,11 +130,13 @@ def span_hit(span: dict, *, lane: str, confidence: str, provenance: dict,
         scores=scores or build_scores(lane_rank=lane_rank),
         dedupe_key=f"{path}:{s}-{e}|span:{sid}",
         coarse_key=f"{path}:{s}-{e}", is_span=True, lane_rank=lane_rank,
+        request=request,
     )
 
 
 def chunk_hit(chunk: dict, *, lane: str, confidence: str, provenance: dict,
-              lane_rank: int | None = None, scores: dict | None = None) -> RawHit:
+              lane_rank: int | None = None, scores: dict | None = None,
+              request: dict | None = None) -> RawHit:
     """Build a RawHit from a ``rag/chunks.jsonl`` row."""
     path = chunk["path"]
     rng = chunk["range"]
@@ -129,4 +159,5 @@ def chunk_hit(chunk: dict, *, lane: str, confidence: str, provenance: dict,
         scores=scores or build_scores(lane_rank=lane_rank),
         dedupe_key=f"{path}:{s}-{e}|chunk:{cid}",
         coarse_key=f"{path}:{s}-{e}", is_span=False, lane_rank=lane_rank,
+        request=request,
     )

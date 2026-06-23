@@ -6,7 +6,7 @@ overlapping chunks for surrounding context.
 """
 from __future__ import annotations
 
-from ..model import LaneResult, chunk_hit, span_hit
+from ..model import LaneResult, chunk_hit, exact_request, span_hit
 
 LANE = "symbol_anchor"
 _RESOLVED = {"exact", "unique_alias"}
@@ -52,13 +52,18 @@ def run(bundle, section, options) -> LaneResult:
             })
             continue
         res.resolved += 1
+        req = exact_request(lane=LANE, source_field=field,
+                            requested_input=item.get("input"),
+                            handle_field="resolved_symbol_id",
+                            resolved_handle=symbol_id, resolution=resolution)
         prov = {"section_plan_field": field, "input": item.get("input"),
                 "matched_by": "symbol_id", "symbol_id": symbol_id}
 
         # 1. the symbol's own span (exact).
         rank += 1
         res.hits.append(span_hit(_symbol_span(bundle, symbol), lane=LANE,
-                                 confidence="exact", lane_rank=rank, provenance=prov))
+                                 confidence="exact", lane_rank=rank, provenance=prov,
+                                 request=req))
 
         # 2. class child-method spans (high), before bulk chunks so they survive caps.
         if symbol.get("kind") == "class":
@@ -68,7 +73,7 @@ def run(bundle, section, options) -> LaneResult:
                     continue
                 rank += 1
                 res.hits.append(span_hit(
-                    child_span, lane=LANE, confidence="high", lane_rank=rank,
+                    child_span, lane=LANE, confidence="high", lane_rank=rank, request=req,
                     provenance={"section_plan_field": field, "input": item.get("input"),
                                 "matched_by": "class_member",
                                 "symbol_id": child["symbol_id"]}))
@@ -79,7 +84,7 @@ def run(bundle, section, options) -> LaneResult:
                                                r["end_line"], options.max_per_lane):
             rank += 1
             res.hits.append(chunk_hit(chunk, lane=LANE, confidence="high",
-                                      lane_rank=rank, provenance=prov))
+                                      lane_rank=rank, provenance=prov, request=req))
 
     res.status = ("not_requested" if res.requested == 0
                   else "pass" if res.hits else "miss")

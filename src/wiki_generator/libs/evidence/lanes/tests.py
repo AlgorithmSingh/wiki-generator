@@ -1,7 +1,7 @@
 """test lane: resolved test files -> test source chunks (+ pytest nodeids)."""
 from __future__ import annotations
 
-from ..model import LaneResult, chunk_hit
+from ..model import LaneResult, chunk_hit, exact_request
 
 LANE = "test"
 _RESOLVED = {"test_file", "unique_suffix", "file_exists"}
@@ -38,6 +38,10 @@ def run(bundle, section, options) -> LaneResult:
             })
             continue
         res.resolved += 1
+        req = exact_request(lane=LANE, source_field=field,
+                            requested_input=item.get("input"),
+                            handle_field="resolved_test", resolved_handle=path,
+                            resolution=resolution)
         nodes = _pytest_nodes(bundle, path)
         chunks = bundle.file_repr_chunks(path, options.max_per_lane)
         if not chunks:
@@ -53,7 +57,7 @@ def run(bundle, section, options) -> LaneResult:
             if nodes:
                 prov["pytest_nodes"] = nodes
             res.hits.append(chunk_hit(chunk, lane=LANE, confidence="high",
-                                      lane_rank=rank, provenance=prov))
+                                      lane_rank=rank, provenance=prov, request=req))
 
     res.status = ("not_requested" if res.requested == 0
                   else "pass" if res.hits else "miss")

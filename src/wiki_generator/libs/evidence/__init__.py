@@ -119,7 +119,7 @@ def _work_order(section) -> dict:
 
 
 def _missing_packet(bundle, sid, index, options) -> dict:
-    evidence, lane_summary, _ = aggregate(sid, [], options)
+    evidence, lane_summary, _, _coverage = aggregate(sid, [], options)
     return {
         "schema_version": PACKET_SCHEMA_VERSION,
         "section_id": sid,
@@ -138,7 +138,8 @@ def _missing_packet(bundle, sid, index, options) -> dict:
                        "context_artifacts": []},
         "evidence": evidence,
         "lane_summary": lane_summary,
-        "coverage": {"satisfied": [], "missing": [], "warnings": []},
+        "coverage": {"satisfied": [], "missing": [], "warnings": [],
+                     "exact_requests": []},
         "validation": {
             "status": "fail",
             "errors": ["section present in DocumentPlan but has no SectionPlan"],
@@ -154,7 +155,7 @@ def _provenance_packet(bundle, section, sid, index, options) -> dict:
     evidence lanes. No source retrieval runs, no generic fallback, and its
     diagnostic/context artifacts are carried for traceability only (never cited).
     It validates as pass because absence of source evidence is correct here."""
-    evidence, lane_summary, _ = aggregate(sid, [], options)
+    evidence, lane_summary, _, _coverage = aggregate(sid, [], options)
     note = ("controlled provenance/meta section — handled outside normal evidence "
             "lanes; diagnostics are non-source context, not citeable evidence")
     return {
@@ -173,7 +174,8 @@ def _provenance_packet(bundle, section, sid, index, options) -> dict:
         "work_order": _work_order(section),
         "evidence": evidence,
         "lane_summary": lane_summary,
-        "coverage": {"satisfied": [], "missing": [], "warnings": [note]},
+        "coverage": {"satisfied": [], "missing": [], "warnings": [note],
+                     "exact_requests": []},
         "validation": {"status": "pass", "errors": [], "warnings": [note]},
     }
 
@@ -206,7 +208,8 @@ def _build_packet(bundle, sid, index, options, vector_backend):
         lane_results.append(bm25_lane.run(bundle, section, options))
         lane_results.append(
             vectors_lane.run(bundle, section, options, backend=vector_backend))
-    evidence, lane_summary, lanes_present = aggregate(sid, lane_results, options)
+    evidence, lane_summary, lanes_present, exact_coverage = aggregate(
+        sid, lane_results, options, section)
     unresolved = [u for lr in lane_results for u in lr.unresolved]
     by_lane = {lr.lane: lr for lr in lane_results}
 
@@ -231,6 +234,17 @@ def _build_packet(bundle, sid, index, options, vector_backend):
     if unresolved:
         warnings.append(f"{len(unresolved)} unresolved reference(s)")
 
+    # Iteration 3: a feasible exact request with candidates but no kept evidence,
+    # or a hard-cap starvation, fails the section closed — it must never read as a
+    # clean pass behind a lane-level summary.
+    for rec in exact_coverage:
+        if rec["status"] == "starved_by_cap" or (
+                rec["candidate_count"] > 0 and rec["kept_count"] == 0):
+            errors.append(
+                f"exact request {rec['source_field']} "
+                f"({rec.get('reason') or rec['status']}): candidate_count="
+                f"{rec['candidate_count']} kept_count={rec['kept_count']}")
+
     packet = {
         "schema_version": PACKET_SCHEMA_VERSION,
         "section_id": sid,
@@ -247,7 +261,8 @@ def _build_packet(bundle, sid, index, options, vector_backend):
         "evidence": evidence,
         "lane_summary": lane_summary,
         "coverage": {"satisfied": satisfied, "missing": missing,
-                     "warnings": coverage_warnings},
+                     "warnings": coverage_warnings,
+                     "exact_requests": exact_coverage},
         "validation": {"status": "fail" if errors else "pass",
                        "errors": errors, "warnings": warnings},
     }

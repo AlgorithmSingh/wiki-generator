@@ -13,6 +13,31 @@ from .schema import (
 )
 
 
+def exact_coverage_failures(packets):
+    """Fail-closed scan of per-request exact coverage (Iteration 3).
+
+    Returns ``(errors, failed_section_ids)``. A failure is any exact request that
+    is ``starved_by_cap`` (hard-cap infeasibility or fail-closed implementation
+    sentinel) or that resolved with candidates yet kept nothing under feasible
+    caps. Ordinary ``no_hits``/``miss``/``unresolved`` are NOT failures here — the
+    existing expected_evidence_types / unresolved policy governs those.
+    """
+    errors: list = []
+    failed_sids: set = set()
+    for p in packets:
+        sid = p.get("section_id")
+        for rec in (p.get("coverage") or {}).get("exact_requests", []):
+            cc = rec.get("candidate_count", 0)
+            kc = rec.get("kept_count", 0)
+            st = rec.get("status")
+            if st == "starved_by_cap" or (cc > 0 and kc == 0):
+                failed_sids.add(sid)
+                errors.append(
+                    f"{sid}: exact request {rec.get('source_field')} "
+                    f"({rec.get('reason') or st}) candidate_count={cc} kept_count={kc}")
+    return errors, sorted(failed_sids)
+
+
 def _resolve_pointer(doc, pointer):
     """Resolve an RFC 6901 JSON pointer; return (found, value)."""
     if not isinstance(pointer, str) or not pointer.startswith("/"):
@@ -162,6 +187,20 @@ def validate_run(bundle, packets, options, *, substrate_warnings) -> tuple[dict,
         if s not in plan_failures:
             plan_failures.append(s)
 
+    # 6. Iteration 3: per-request exact coverage. A feasible exact request that
+    # resolved and produced candidates but kept nothing, or a hard-cap starvation,
+    # is a fail-closed retriever bug — it must never pass behind a lane-level
+    # summary. ``no_hits``/``miss``/``unresolved`` are handled by the existing
+    # expected_evidence_types / unresolved policy, not here.
+    coverage_errors, coverage_failed_sids = exact_coverage_failures(packets)
+    contract_checks.append(_check(
+        "exact_requests_covered", not coverage_errors,
+        "all resolved exact requests with candidates are covered"
+        if not coverage_errors else f"{len(coverage_errors)} exact request(s) lost"))
+    bug_errors.extend(coverage_errors)
+    coverage_failed_set = set(coverage_failed_sids)
+    plan_only_failures = [s for s in plan_failures if s not in coverage_failed_set]
+
     # --- classify -------------------------------------------------------------
     if bug_errors:
         category = CAT_BUG
@@ -188,7 +227,10 @@ def validate_run(bundle, packets, options, *, substrate_warnings) -> tuple[dict,
         "section_results": section_results,
         "errors": bug_errors,
         "warnings": list(substrate_warnings) + (
-            [f"plan-quality failures: {plan_failures}"] if plan_failures else []),
+            [f"plan-quality failures: {plan_only_failures}"] if plan_only_failures
+            else []) + (
+            [f"exact-coverage failures: {sorted(coverage_failed_sids)}"]
+            if coverage_failed_sids else []),
     }
     return validation, category, EXIT_FOR_CATEGORY[category]
 

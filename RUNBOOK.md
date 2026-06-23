@@ -14,7 +14,7 @@ are deterministic and LLM-free. Phase 2 Step 1 (`plan`), optional Step 1b
 writing/synthesis is **implemented** per `PHASE4_WRITING_SYNTHESIS_SPEC.md`
 (§6 below).
 
-> **Current readiness status (2026-06-22):** The `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` patches are **implemented and validated**. Phase 2 `normalize-plan` stays deterministic; when it reports a planner-quality `FAIL`, the bounded `plan-repair` step (Phase 2 Step 1b, §4b below) re-prompts Vertex/Gemini, re-validates with the same strict gate, and writes canonical artifacts only on `PASS` (fails loudly otherwise). A clean fresh validation run — readiness `PASS` → `phase3_retrieve_evidence.sh` without `--force` → evidence validation `pass` (16/16 sections, 569 items) — is at `13-e2e-allphases/runs/20260622-234038`. Phase 4 (`write-wiki`, §6) is **implemented** and consumes that fresh bundle; it independently re-checks every gate and fails closed, so forced Phase-3-after-`FAIL` output can never become a wiki. No live Vertex/Gemini Phase 4 generation has been run; it is validated by a fake-provider suite.
+> **Current readiness status (2026-06-23):** Iteration 2 remains the accepted Phase 1-3 baseline, but live Phase 4 is currently blocked. The second live Vertex Phase 4 run exposed a Phase 3 aggregation/coverage bug where exact file-anchor candidates could be starved by caps while the lane still reported pass. See `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_3_SPEC.md` (SPEC ONLY). Do not retry live Phase 4 until Iteration 3 is implemented, Phase 3 is rerun on the accepted bundle or a fresh Phase 1-3, retrieval validation passes, and `subsystem-rag-core` includes citeable evidence for `rag/llm/embedding_model.py`.
 
 ```
 Phase 1  Step 1 decompose   -> raw artifact bundle
@@ -360,9 +360,9 @@ evidence and never runs for terminal failures (cited context artifact, invented
 identifier, placeholder, truncation). If the bundle carries no command manifest,
 pass `--accept-no-force` to assert Phase 3 was not force-run.
 
-A live Vertex/Gemini Phase 4 generation has not been run here; the implementation
-is validated by a fake-provider test suite (`tests/test_phase4.py`) that needs no
-live model.
+A live Vertex Phase 4 generation has now been attempted and correctly failed
+closed on an unsupported identifier. Treat live Phase 4 as blocked until the
+Iteration 3 Phase 3 evidence-coverage fix is implemented and validated.
 
 ---
 

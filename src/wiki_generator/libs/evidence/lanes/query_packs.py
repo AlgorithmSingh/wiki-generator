@@ -1,7 +1,7 @@
 """query_pack lane: canonical ripgrep packs -> source chunks/spans at each hit."""
 from __future__ import annotations
 
-from ..model import LaneResult, build_scores, chunk_hit, span_hit
+from ..model import LaneResult, build_scores, chunk_hit, exact_request, span_hit
 
 LANE = "query_pack"
 
@@ -17,6 +17,9 @@ def run(bundle, section, options) -> LaneResult:
         field = f"retrieval_needs.query_packs[{i}]"
         rows = bundle.rg_by_pack.get(pack, [])
         res.resolved += 1  # the pack key is already canonical from Phase 2.
+        req = exact_request(lane=LANE, source_field=field, requested_input=pack,
+                            handle_field="query_pack", resolved_handle=pack,
+                            resolution="exact")
         if not rows:
             res.unresolved.append({
                 "section_id": sid, "type": "query_pack", "input": pack,
@@ -38,12 +41,14 @@ def run(bundle, section, options) -> LaneResult:
                 rank += 1
                 scores = build_scores(lane_rank=rank)
                 res.hits.append(chunk_hit(chunks[0], lane=LANE, confidence="medium",
-                                          lane_rank=rank, provenance=prov, scores=scores))
+                                          lane_rank=rank, provenance=prov, scores=scores,
+                                          request=req))
             if spans:
                 rank += 1
                 res.hits.append(span_hit(spans[0], lane=LANE, confidence="medium",
                                          lane_rank=rank, provenance=prov,
-                                         scores=build_scores(lane_rank=rank)))
+                                         scores=build_scores(lane_rank=rank),
+                                         request=req))
             if not chunks and not spans:
                 res.unresolved.append({
                     "section_id": sid, "type": "query_pack", "input": pack,

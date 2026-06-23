@@ -1,8 +1,8 @@
-# Handoff — Phase 1/2/3 Readiness Iteration 2 (CURRENT)
+# Handoff — Phase 1/2/3 Readiness Iteration 2 (baseline; Phase 4 currently blocked)
 
-> **This is the current readiness handoff.** It supersedes `HANDOFF_READINESS_ITERATION.md` and `HANDOFF_STEP5.md` as the source of truth for readiness/Phase-3 state. Source spec: `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` (do not modify `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`).
+> **This remains the Iteration 2 readiness baseline handoff.** It supersedes `HANDOFF_READINESS_ITERATION.md` and `HANDOFF_STEP5.md` for the implemented Iteration 2 state. New live-Phase-4 blocker/spec amendment: `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_3_SPEC.md` (SPEC ONLY; do not modify `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`).
 
-Status: **implemented, tested (175 passed / 1 skipped), and freshly accepted end-to-end on RAGFlow through Phase 3 without `--force`.** The current Phase 4 input bundle is `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/runs/20260622-234038`. Phase 4 is **ready to reopen for that bundle only** and is currently **SPEC ONLY / not implemented** in `PHASE4_WRITING_SYNTHESIS_SPEC.md`.
+Status: **Iteration 2 is implemented, tested (175 passed / 1 skipped), and freshly accepted end-to-end on RAGFlow through Phase 3 without `--force`.** The accepted Phase 1-3 bundle is `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/runs/20260622-234038`. Live Phase 4 is now **blocked pending Iteration 3** because a live run exposed a Phase 3 per-request evidence coverage/cap-starvation bug; see `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_3_SPEC.md` (SPEC ONLY).
 
 ## 1. Problem and context
 
@@ -38,7 +38,7 @@ Deterministic patches in the normalizer/parser/readiness; one bounded LLM repair
 `normalize-plan` (FAIL: 4 genuine errors, 6 dir warnings, 1 deterministic repair) → `plan-repair` (gemini-2.5-pro, 1 attempt: 3 refs fixed surgically, known-gaps → `role: provenance`) → readiness **PASS** (0 failures, 6 warnings) → Phase 3 without `--force` → **PASS** (hybrid, 16/16, 512 items, all contract checks pass, no `derived/`/`plans/` citations, known-gaps = 0 evidence/no fallback). This run remains useful history, but it is no longer the preferred Phase 4 input.
 
 **Current fresh acceptance run / Phase 4 gate:** `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/runs/20260622-234038`
-Fresh run artifacts include `command-manifest.tsv`, `command-transcript.log`, exit codes, `validate_acceptance.py`, and `EXPERIMENT_RESULT.md`. Result: tests **175 passed / 1 skipped**, readiness **PASS** (0 failures, 0 warnings, 16 sections), Phase 3 without `--force` **PASS** (hybrid, 16/16, 569 evidence items, `failure_category: null`), 0 source evidence from `derived/` or `plans/`, 0 `no_retrieval_signal` sections, no normal `known-gaps` evidence, and `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` unchanged. Use this bundle for Phase 4; do not use old `11-testing-pipeline` artifacts as Phase 4 evidence.
+Fresh run artifacts include `command-manifest.tsv`, `command-transcript.log`, exit codes, `validate_acceptance.py`, and `EXPERIMENT_RESULT.md`. Result: tests **175 passed / 1 skipped**, readiness **PASS** (0 failures, 0 warnings, 16 sections), Phase 3 without `--force` **PASS** (hybrid, 16/16, 569 evidence items, `failure_category: null`), 0 source evidence from `derived/` or `plans/`, 0 `no_retrieval_signal` sections, no normal `known-gaps` evidence, and `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` unchanged. Do not use this bundle for another live Phase 4 attempt until Iteration 3 is implemented and Phase 3 has been rerun/validated with per-request evidence coverage.
 
 ## 3. Suggested review
 
@@ -61,4 +61,4 @@ rg --fixed-strings -- '--force' "$FRESH/command-manifest.tsv"          # expect 
 **Extra attention / follow-up:**
 - `plan-repair` makes a live Gemini call; reruns are non-deterministic. The deterministic patches (1, 2-bare-string, 3-detection) need no LLM — only the two genuine planner near-misses do.
 - Adversarial review (18 agents) found **0 blockers**; the one major (verbatim raw must reach the repair model) is fixed. Two minors consciously left, both **fail loudly** (cannot cause a silent pass): the format-#4 markdown-heading fallback pre-filters non-`{` lines; malformed-row→section attachment uses the raw (not slugified) id and falls to the artifact bucket.
-- Phase 4 is **ready to reopen** for the fresh accepted bundle only: `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/runs/20260622-234038`. `PHASE4_WRITING_SYNTHESIS_SPEC.md` is **SPEC ONLY / future implementation**; no Phase 4 command or run exists yet. Do not treat stale pre-patch artifacts, old `11-testing-pipeline` outputs, or any forced Phase-3-after-`FAIL` output as a Phase 4 GO.
+- Phase 4 is **blocked pending Iteration 3**. Before retrying live Phase 4, implement the Phase 3 per-request evidence coverage fix, rerun Phase 3 on the accepted bundle or run a fresh Phase 1-3, require retrieval validation `pass`, and confirm citeable `rag/llm/embedding_model.py` evidence in `subsystem-rag-core`. Do not treat stale pre-patch artifacts, old `11-testing-pipeline` outputs, or any forced Phase-3-after-`FAIL` output as a Phase 4 GO.

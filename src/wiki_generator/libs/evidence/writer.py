@@ -124,6 +124,32 @@ def _report(bundle, options, packets, validation, unresolved) -> str:
         rows.append(row)
     lines += md.md_table(header, rows)
 
+    lines += md.heading(2, "Exact-request coverage")
+    cov_rows = []
+    covered_total = 0
+    for sid in bundle.section_order:
+        p = by_id.get(sid)
+        if p is None:
+            continue
+        for rec in (p.get("coverage") or {}).get("exact_requests", []):
+            if rec.get("status") == "covered":
+                covered_total += 1
+                continue
+            cov_rows.append([sid, rec.get("lane"), rec.get("source_field"),
+                             rec.get("requested_input"), rec.get("candidate_count"),
+                             rec.get("kept_count"), rec.get("status")])
+    if cov_rows:
+        lines.append(f"_{covered_total} exact request(s) covered; "
+                     f"{len(cov_rows)} not covered:_")
+        lines.append("")
+        lines += md.md_table(
+            ["section", "lane", "source_field", "requested", "candidates",
+             "kept", "status"], cov_rows)
+    else:
+        lines.append(f"_all {covered_total} resolved exact request(s) with "
+                     "candidates are covered_")
+        lines.append("")
+
     lines += md.heading(2, "Unresolved evidence")
     if unresolved:
         from collections import Counter

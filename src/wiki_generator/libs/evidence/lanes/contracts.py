@@ -4,7 +4,8 @@ from __future__ import annotations
 import json
 
 from ...util import clip
-from ..model import LaneResult, RawHit, build_scores, chunk_hit, span_hit
+from ..model import (
+    LaneResult, RawHit, build_scores, chunk_hit, exact_request, span_hit)
 from ..schema import EVIDENCE_EXCERPT_CHARS
 
 LANE = "contract"
@@ -19,7 +20,7 @@ def _op_excerpt(operation) -> str:
                EVIDENCE_EXCERPT_CHARS)
 
 
-def _route_hit(route, method, operation, *, field, item, rank) -> RawHit:
+def _route_hit(route, method, operation, *, field, item, rank, request) -> RawHit:
     pointer = f"/paths/{_escape(route)}/{method.lower()}"
     return RawHit(
         lane=LANE, type="route_operation",
@@ -31,10 +32,11 @@ def _route_hit(route, method, operation, *, field, item, rank) -> RawHit:
                     "handler_symbol_id": operation.get("x-handler-symbol-id"),
                     "x_source": operation.get("x-source")},
         scores=build_scores(lane_rank=rank), dedupe_key=f"openapi|{pointer}",
-        coarse_key=f"openapi|{pointer}", is_span=False, lane_rank=rank)
+        coarse_key=f"openapi|{pointer}", is_span=False, lane_rank=rank,
+        request=request)
 
 
-def _recover_handler(bundle, operation, *, field, item, rank, res, options):
+def _recover_handler(bundle, operation, *, field, item, rank, res, options, request):
     """If the operation names a handler symbol, add its source span as linked evidence."""
     symbol_id = operation.get("x-handler-symbol-id")
     if not symbol_id:
@@ -47,13 +49,13 @@ def _recover_handler(bundle, operation, *, field, item, rank, res, options):
         return rank
     rank += 1
     res.hits.append(span_hit(
-        span, lane=LANE, confidence="exact", lane_rank=rank,
+        span, lane=LANE, confidence="exact", lane_rank=rank, request=request,
         provenance={"section_plan_field": field, "input": item.get("input"),
                     "matched_by": "contract_handler", "symbol_id": symbol_id}))
     return rank
 
 
-def _recover_source(bundle, operation, *, field, item, rank, res, options):
+def _recover_source(bundle, operation, *, field, item, rank, res, options, request):
     """Recover the route's declaring source line via the ``x-source`` extension."""
     xsrc = operation.get("x-source")
     if not xsrc or ":" not in str(xsrc):
@@ -65,10 +67,20 @@ def _recover_source(bundle, operation, *, field, item, rank, res, options):
     for chunk in bundle.overlapping_chunks(path, line, line, 1):
         rank += 1
         res.hits.append(chunk_hit(
-            chunk, lane=LANE, confidence="high", lane_rank=rank,
+            chunk, lane=LANE, confidence="high", lane_rank=rank, request=request,
             provenance={"section_plan_field": field, "input": item.get("input"),
                         "matched_by": "contract_source", "x_source": xsrc}))
     return rank
+
+
+def _contract_request(item, field, route):
+    """Stable exact-request identity for one contracts[] reference."""
+    method = (item.get("method") or "").upper()
+    handle = f"{method} {route}".strip() if method else str(route)
+    return exact_request(lane=LANE, source_field=field,
+                         requested_input=item.get("input"),
+                         handle_field="operation_ref", resolved_handle=handle,
+                         resolution=item.get("resolution"))
 
 
 def run(bundle, section, options) -> LaneResult:
@@ -91,15 +103,17 @@ def run(bundle, section, options) -> LaneResult:
                 res.unresolved.append(_miss(sid, item, field, "no_hits"))
                 continue
             res.resolved += 1
+            req = _contract_request(item, field, route)
             rank += 1
             res.hits.append(_route_hit(route, method, operation,
-                                       field=field, item=item, rank=rank))
+                                       field=field, item=item, rank=rank, request=req))
             rank = _recover_handler(bundle, operation, field=field, item=item,
-                                    rank=rank, res=res, options=options)
+                                    rank=rank, res=res, options=options, request=req)
             rank = _recover_source(bundle, operation, field=field, item=item,
-                                   rank=rank, res=res, options=options)
+                                   rank=rank, res=res, options=options, request=req)
         elif resolution == "path_only" and route in paths:
             res.resolved += 1
+            req = _contract_request(item, field, route)
             methods = item.get("methods") or sorted(
                 m for m in paths[route] if not m.startswith("x-"))
             for method in sorted(methods)[:options.max_per_lane]:
@@ -108,9 +122,10 @@ def run(bundle, section, options) -> LaneResult:
                     continue
                 rank += 1
                 res.hits.append(_route_hit(route, str(method), operation,
-                                           field=field, item=item, rank=rank))
+                                           field=field, item=item, rank=rank,
+                                           request=req))
                 rank = _recover_handler(bundle, operation, field=field, item=item,
-                                        rank=rank, res=res, options=options)
+                                        rank=rank, res=res, options=options, request=req)
         elif resolution in ("no_match", "hint") or route not in paths:
             reason = "missing_reference" if resolution == "no_match" else "no_hits"
             res.unresolved.append(_miss(sid, item, field, reason))
