@@ -569,6 +569,24 @@ class WritingValidationTests(TmpBundleMixin, unittest.TestCase):
                         provider=self._provider(root, draft_json("service",
                                                                  "Service Layer", md)))
 
+    def test_parent_heading_with_child_subsections_is_allowed(self):
+        root = self.fresh()
+        md = ("## Service Layer\n\n### Utility Commands\n\n#### Password Reset\n\n"
+              "The service layer lives in `pkg/svc.py`. [ev:service:0001]\n")
+        res = writing.run(opts_for(root),
+                          provider=self._provider(root, draft_json("service",
+                                                                   "Service Layer", md)))
+        self.assertEqual(res.status, "pass")
+
+    def test_empty_heading_is_rejected(self):
+        root = self.fresh()
+        md = ("## Service Layer\n\n### Empty Group\n\n### Real Details\n\n"
+              "The service layer lives in `pkg/svc.py`. [ev:service:0001]\n")
+        with self.assertRaises(writing.WritingValidationFailure):
+            writing.run(opts_for(root),
+                        provider=self._provider(root, draft_json("service",
+                                                                 "Service Layer", md)))
+
     def test_truncation_finish_reason_fails(self):
         root = self.fresh()
         resp = SectionResponse(draft_json("service", "Service Layer",
@@ -736,8 +754,14 @@ class UnitTests(unittest.TestCase):
     def test_placeholder_detector(self):
         from wiki_generator.libs.writing import citations as c
         self.assertTrue(c.find_placeholders("TODO: fix"))
+        self.assertTrue(c.find_placeholders("TBD: fill in later"))
         self.assertTrue(c.find_placeholders("I cannot determine this."))
-        self.assertTrue(c.find_placeholders("## Heading\n\n## Next"))  # empty heading
+        empty = c.find_placeholders("## Empty\n\n## Next\n\nBody.")
+        self.assertIn("empty heading: ## Empty", empty)
+        self.assertNotIn("empty heading: ## Next", empty)
+        nested = ("### Utility Commands\n\n#### Password Reset\n\nReset passwords.\n\n"
+                  "#### MCP Server Launcher\n\nLaunches the server.\n")
+        self.assertFalse(c.find_placeholders(nested))
         self.assertFalse(c.find_placeholders("Real prose with no markers."))
 
     def test_parse_fenced_and_balanced(self):

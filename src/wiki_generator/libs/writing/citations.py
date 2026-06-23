@@ -28,7 +28,7 @@ _RE_METHOD_PATH = re.compile(
 
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
 _FENCE_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
-_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s")
+_HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s")
 
 
 # --- citation extraction ------------------------------------------------------
@@ -99,20 +99,33 @@ def find_placeholders(markdown: str) -> list[str]:
     return out
 
 
+def _heading_level(line: str) -> int | None:
+    m = _HEADING_RE.match(line)
+    return len(m.group(1)) if m else None
+
+
 def _empty_headings(markdown: str) -> list[str]:
     lines = markdown.splitlines()
     out: list[str] = []
     for i, line in enumerate(lines):
-        if _HEADING_RE.match(line):
-            # find the next non-blank content line
-            has_body = False
-            for nxt in lines[i + 1:]:
-                if not nxt.strip():
-                    continue
-                has_body = not _HEADING_RE.match(nxt)
+        level = _heading_level(line)
+        if level is None:
+            continue
+        # A heading owns content until the next same-or-higher-level heading.
+        # Descendant headings are allowed: a grouping heading is not empty when
+        # one of its nested subsections contains body text.
+        has_body = False
+        for nxt in lines[i + 1:]:
+            if not nxt.strip():
+                continue
+            nxt_level = _heading_level(nxt)
+            if nxt_level is not None and nxt_level <= level:
                 break
-            if not has_body:
-                out.append(f"empty heading: {line.strip()}")
+            if nxt_level is None:
+                has_body = True
+                break
+        if not has_body:
+            out.append(f"empty heading: {line.strip()}")
     return out
 
 
