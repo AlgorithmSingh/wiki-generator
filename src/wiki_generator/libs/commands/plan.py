@@ -112,6 +112,22 @@ def _resolve_text(explicit: str | None, candidates: list[str], default: str,
     return default
 
 
+def _finish_reason_name(resp: object) -> str:
+    """Best-effort normalized finish reason of the response's first candidate.
+
+    Returns the enum name (e.g. ``"STOP"``, ``"MAX_TOKENS"``) when available,
+    else the stringified value, else ``""``. Tolerant of SDK shape differences
+    so the caller can do a simple substring/name check without importing the enum.
+    """
+    cands = getattr(resp, "candidates", None) or []
+    if not cands:
+        return ""
+    fr = getattr(cands[0], "finish_reason", None)
+    if fr is None:
+        return ""
+    return getattr(fr, "name", None) or str(fr)
+
+
 def build_user_content(kickoff: str, bundle_text: str) -> str:
     """Assemble the user turn: the kickoff prompt followed by the upload bundle."""
     return (f"{kickoff.strip()}\n\n"
@@ -192,12 +208,24 @@ def run(args: argparse.Namespace) -> int:
         return 1
 
     text = getattr(resp, "text", None)
+    finish = _finish_reason_name(resp)
     if not text:
-        reason = ""
-        cands = getattr(resp, "candidates", None) or []
-        if cands:
-            reason = f" (finish_reason={getattr(cands[0], 'finish_reason', '?')})"
+        reason = f" (finish_reason={finish})" if finish else ""
         log(f"plan: model returned no text{reason}")
+        return 1
+
+    # Loud guard against a truncated plan. gemini-2.5-pro is a thinking model and
+    # spends part of --max-output-tokens on its reasoning, so a cap that is too
+    # small stops the response with finish_reason=MAX_TOKENS and a partial (but
+    # non-empty) body. Writing that as the canonical response would silently feed
+    # a truncated plan into normalize-plan; treat it as a config failure and fail
+    # loudly instead, per the --max-output-tokens help ("tiny caps ... are a
+    # test-config failure, not a planner-quality result").
+    if "MAX_TOKENS" in finish:
+        log("plan: response truncated (finish_reason=MAX_TOKENS) — the output cap "
+            "was too small for the full plan. A thinking model spends part of "
+            "--max-output-tokens on reasoning; raise it (8192+ for smoke, 32768+ "
+            "for full e2e runs) and re-run. Refusing to write a truncated plan.")
         return 1
 
     out_path = os.path.join(out_dir, f"phase2-{provider}-response.md")

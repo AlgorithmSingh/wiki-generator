@@ -1,17 +1,20 @@
 # Variables to set
-   cd /Users/ankitsingh/Documents/deep-wiki/10-porting/wiki-generator                                                      
-                                                                                                                           
-   export REPO=/Users/ankitsingh/Documents/deep-wiki/6-repo-analysis-packet-test/ragflow                                   
-   export OUT=/Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2                                       
 
+```bash
+cd /Users/ankitsingh/Documents/deep-wiki/10-porting/wiki-generator
+export REPO=/Users/ankitsingh/Documents/deep-wiki/ragflow
+export OUT=/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/runs/$(date +%Y%m%d-%H%M%S)
+```
 
 # Runbook — generate a DeepWiki plan for any repo
 
-End-to-end commands for the full pipeline. Phase 1 is deterministic and LLM-free;
-Phase 2 Step 1 is the only LLM call (a Gemini/Kimi Gem) and happens outside this
-tool; Phase 2 Step 2 (`normalize-plan`) is deterministic again.
+End-to-end commands for the implemented Phase 1-3 pipeline. Phase 1 and Phase 3
+are deterministic and LLM-free. Phase 2 Step 1 (`plan`) and optional Step 1b
+(`plan-repair`) are the implemented LLM-backed steps. Phase 4 writing/synthesis
+is currently **SPEC ONLY / future implementation** in
+`PHASE4_WRITING_SYNTHESIS_SPEC.md`.
 
-> **Current readiness status (2026-06-22):** The `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` patches are **implemented and validated**. Phase 2 `normalize-plan` stays deterministic; when it reports a planner-quality `FAIL`, the bounded `plan-repair` step (Phase 2 Step 1b, §4b below) re-prompts Vertex/Gemini, re-validates with the same strict gate, and writes canonical artifacts only on `PASS` (fails loudly otherwise). A clean validation run — readiness `PASS` → `phase3_retrieve_evidence.sh` without `--force` → evidence validation `pass` (16/16 sections, 512 items) — is at `11-testing-pipeline/runs/iter2-validation-20260622`. Phase 4 is unblocked for that bundle; never use forced Phase-3-after-`FAIL` output as a Phase 4 GO.
+> **Current readiness status (2026-06-22):** The `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` patches are **implemented and validated**. Phase 2 `normalize-plan` stays deterministic; when it reports a planner-quality `FAIL`, the bounded `plan-repair` step (Phase 2 Step 1b, §4b below) re-prompts Vertex/Gemini, re-validates with the same strict gate, and writes canonical artifacts only on `PASS` (fails loudly otherwise). A clean fresh validation run — readiness `PASS` → `phase3_retrieve_evidence.sh` without `--force` → evidence validation `pass` (16/16 sections, 569 items) — is at `13-e2e-allphases/runs/20260622-234038`. Phase 4 is **ready to reopen for that fresh bundle** and is **SPEC ONLY / not implemented** in `PHASE4_WRITING_SYNTHESIS_SPEC.md`; never use forced Phase-3-after-`FAIL` output as a Phase 4 GO.
 
 ```
 Phase 1  Step 1 decompose   -> raw artifact bundle
@@ -20,12 +23,16 @@ Phase 1  Step 1 decompose   -> raw artifact bundle
          Step 3 digest       -> derived/planning-digest.md (also runs Step 4)
          Step 4 bundle       -> planner-digest/planner-upload-bundle.md (one upload)
          Step 5 build-retrieval -> rag/retrieval-capabilities.json (+ BM25 / optional vectors)
-Phase 2  Step 1 (external)   -> Gemini/Kimi plan -> plans/phase2-<provider>-response.md
+Phase 2  Step 1 plan         -> Gemini/Kimi plan -> plans/phase2-<provider>-response.md
+         Step 1b plan-repair  -> optional bounded/audited Gemini repair on
+                                  readiness FAIL only
          Step 2 normalize-plan -> plans/document-plan.json + section-plans.jsonl
                                   + plans/phase3-readiness-report.md (PASS/FAIL gate)
 Phase 3  retrieve-evidence   -> evidence/packets/<section_id>.json (+ manifest,
                                 validation, report) — deterministic, no LLM
                                 (refuses to run if readiness report is not PASS)
+Phase 4  write/synthesize    -> SPEC ONLY in PHASE4_WRITING_SYNTHESIS_SPEC.md
+                                (not implemented; no command yet)
 ```
 
 Step 5 (`build-retrieval`) is independent of the planner upload — it only needs
@@ -142,22 +149,22 @@ recommended mode before starting Phase 3.
 If FAISS won't install, verify the environment first (Python/arch/wheel) — see
 the preflight in `PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md`.
 
-Quick handoff verification on an existing bundle, with vectors required:
+Quick handoff verification on an existing clean bundle, with vectors required:
 
 ```bash
 cd /Users/ankitsingh/Documents/deep-wiki/10-porting/wiki-generator
 
 scripts/phase1_step5_build_retrieval.sh \
-  --out /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2 \
+  --out "$OUT" \
   --rebuild \
   --run-tests-first \
   --smoke-query "authentication and login flow"
 
-cat /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2/rag/retrieval-substrate-report.md
-cat /Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2/rag/retrieval-capabilities.json
+cat "$OUT/rag/retrieval-substrate-report.md"
+cat "$OUT/rag/retrieval-capabilities.json"
 ```
 
-## 3. Phase 2 Step 1 — run the planning LLM (the only LLM step)
+## 3. Phase 2 Step 1 — run the planning LLM
 
 Two ways; pick one.
 
@@ -296,37 +303,51 @@ upstream artifact / plan / code per `retrieval-report.md`, then rerun the same
 all-sections command. The vector lane runs only when capabilities report `hybrid`;
 in `lexical-symbolic` mode it is skipped (not a failure).
 
----
+## 6. Phase 4 — writing/synthesis (spec only)
 
-## Appendix — exact commands used for RAGFlow
+Phase 4 is ready to design/implement **only after** a clean Phase 1-3 bundle like:
 
-```bash
-cd /Users/ankitsingh/Documents/deep-wiki/10-porting/wiki-generator
-
-export REPO=/Users/ankitsingh/Documents/deep-wiki/6-repo-analysis-packet-test/ragflow
-export OUT=/Users/ankitsingh/Documents/deep-wiki/8-phase1-decomposition-diy-test2
-
-scripts/00_setup_python312_vectors.sh --recreate-venv
-scripts/phase1_step1_decompose.sh --repo "$REPO" --out "$OUT"
-scripts/phase1_step2_condense.sh --out "$OUT" --budget-tokens 250000
-scripts/phase1_step3_digest.sh --out "$OUT" --budget-tokens 250000
-scripts/phase1_step4_bundle.sh --out "$OUT" --budget-tokens 250000
-scripts/phase1_step5_build_retrieval.sh --out "$OUT" --rebuild \
-  --smoke-query "authentication and login flow"
-
-# Phase 2 Step 1 — either run the Gem by hand (save reply to
-# plans/phase2-gemini-response.md), or use Vertex AI:
-scripts/phase2_step1_plan.sh --out "$OUT" \
-  --project "$GOOGLE_CLOUD_PROJECT" --location us-central1
-
-scripts/phase2_step2_normalize_plan.sh --out "$OUT" \
-  --raw-response "$OUT/plans/phase2-gemini-response.md"
-
-scripts/phase3_retrieve_evidence.sh --out "$OUT" --with-vectors
+```text
+/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/runs/20260622-234038
 ```
 
-RAGFlow scale (reference): 3,928 files, 15,618 symbols, 52,349 graph edges,
-22,429 chunks; upload bundle ~109K tokens; plan = 13 sections.
+Current status: **SPEC ONLY / not implemented**. Read:
+
+```text
+PHASE4_WRITING_SYNTHESIS_SPEC.md
+```
+
+The spec defines two future execution modes:
+
+1. Gemini Gem / direct Gemini mode.
+2. Vertex AI mode with `gemini-2.5-pro`.
+
+Both must use low temperature, audit raw prompts/responses, and use generous
+output token caps for `gemini-2.5-pro` (`32768+`, not `8192`) to avoid truncation.
+Phase 4 must consume the clean Phase 1-3 bundle, validate readiness/retrieval
+first, cite only Phase 3 EvidencePacket evidence IDs, and fail closed on stale,
+forced, missing, or unsupported evidence. It must not rerun Phase 3 or invent
+fallback evidence.
+
+---
+
+## Appendix — current accepted RAGFlow run
+
+Accepted run artifacts and command transcript live under:
+
+```text
+/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/runs/20260622-234038
+```
+
+The run recorded `command-manifest.tsv`, `command-transcript.log`, exit codes,
+`validate_acceptance.py`, and `EXPERIMENT_RESULT.md`. It passed with readiness
+`PASS`, Phase 3 hybrid retrieval `pass`, 16/16 sections, 569 evidence items, and
+no `--force` in the command manifest.
+
+To reproduce into a new run directory, use the fresh-run appendix below.
+
+RAGFlow scale in the fresh accepted run (reference): 3,974 files, 15,668 symbols,
+52,584 graph edges, 22,713 chunks; upload bundle ~115K tokens; plan = 16 sections.
 
 ## Appendix — fresh end-to-end run (readiness iteration)
 
@@ -335,11 +356,11 @@ A clean run that exercises the readiness gate, under a fresh output dir.
 ```bash
 cd /Users/ankitsingh/Documents/deep-wiki/10-porting/wiki-generator
 
-export TARGET_REPO=/Users/ankitsingh/Documents/deep-wiki/6-repo-analysis-packet-test/ragflow
-export OUT=/Users/ankitsingh/Documents/deep-wiki/11-testing-pipeline
+export TARGET_REPO=/Users/ankitsingh/Documents/deep-wiki/ragflow
+export OUT=/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/runs/$(date +%Y%m%d-%H%M%S)
 
 # Clean start (intentional):
-rm -rf "$OUT"; mkdir -p "$OUT"
+mkdir -p "$OUT"
 
 scripts/00_setup_python312_vectors.sh --recreate-venv
 
@@ -352,16 +373,32 @@ scripts/phase1_step5_build_retrieval.sh --out "$OUT" --rebuild \
   --smoke-query "api routes"
 
 # Phase 2 Step 1 — Vertex (use a realistic output cap; tiny caps fail with MAX_TOKENS)
+# gemini-2.5-pro is a thinking model and spends part of --max-output-tokens on
+# reasoning, so keep the cap generous: 8192 truncated a full RAGFlow plan. Use
+# 32768+ for full e2e runs (the CLI default is 65535). Treat any
+# finish_reason=MAX_TOKENS response as truncated and rerun with a higher cap.
 scripts/phase2_step1_plan.sh --out "$OUT" \
   --project "$GOOGLE_CLOUD_PROJECT" --location "${GOOGLE_CLOUD_LOCATION:-us-central1}" \
-  --model gemini-2.5-pro --max-output-tokens 8192
-#  smoke alternative: --model gemini-2.5-flash --max-output-tokens 4096
+  --model gemini-2.5-pro --max-output-tokens 32768
+#  smoke alternative: --model gemini-2.5-flash --max-output-tokens 8192
 
 # Phase 2 Step 2 — normalize + readiness gate
 scripts/phase2_step2_normalize_plan.sh --out "$OUT" --provider gemini
 cat "$OUT/plans/phase3-readiness-report.md"   # require Status: PASS before Phase 3
 
-# Phase 3 — only when readiness is PASS (the script enforces this; --force overrides)
+# If readiness is FAIL for a repairable planner-quality issue, run bounded repair.
+# Key this decision on the readiness report, not only on the normalize exit code.
+if rg -q '^Status: FAIL' "$OUT/plans/phase3-readiness-report.md"; then
+  scripts/phase2_step1b_repair_plan.sh --out "$OUT" \
+    --provider gemini \
+    --project "$GOOGLE_CLOUD_PROJECT" \
+    --location "${GOOGLE_CLOUD_LOCATION:-us-central1}" \
+    --model gemini-2.5-pro \
+    --max-attempts 2
+  cat "$OUT/plans/phase3-readiness-report.md"   # require Status: PASS after repair
+fi
+
+# Phase 3 — only when readiness is PASS (the script enforces this; do not use --force in product runs)
 scripts/phase3_retrieve_evidence.sh --out "$OUT" --with-vectors
 ```
 

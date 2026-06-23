@@ -7,7 +7,10 @@ those into one uploadable file (Step 4), **builds the retrieval substrate** Phas
 queries (Step 5), runs a **planning LLM** over the upload bundle (Phase 2 Step 1),
 **normalizes** the LLM's plan into machine-resolvable artifacts (Phase 2 Step 2),
 and **retrieves exact, citeable evidence** for every planned section (Phase 3).
-Everything except the single `plan` step is deterministic and **LLM-free**.
+The implemented pipeline currently stops at Phase 3. Phase 2 planning and the
+optional bounded Phase 2 repair are LLM-backed; Phase 1 and Phase 3 remain
+deterministic and **LLM-free**. Phase 4 writing/synthesis is currently
+**spec-only / future implementation** and will be LLM-backed when implemented.
 
 ```text
 Phase 1  Step 1 decompose  -> raw artifact bundle
@@ -16,11 +19,15 @@ Phase 1  Step 1 decompose  -> raw artifact bundle
          Step 4 bundle      -> planner-digest/planner-upload-bundle.md (one upload)
          Step 5 build-retrieval -> rag/retrieval-capabilities.json (BM25 + optional vectors)
 Phase 2  Step 1 plan        -> Gemini/Kimi plan: plans/phase2-<provider>-response.md
-                               (Vertex AI Gemini 2.5 Pro; the one LLM step.
-                                or run the Gem by hand and save the reply)
+                               (Vertex AI Gemini 2.5 Pro, or run the Gem by hand
+                                and save the reply)
+         Step 1b plan-repair -> optional bounded/audited Gemini repair on
+                                readiness FAIL only
          Step 2 normalize-plan -> plans/document-plan.json + section-plans.jsonl
 Phase 3  retrieve-evidence  -> evidence/packets/<section_id>.json (+ manifest,
                                validation, report) — deterministic, no LLM
+Phase 4  write/synthesize   -> SPEC ONLY in PHASE4_WRITING_SYNTHESIS_SPEC.md
+                               (not implemented; no command yet)
 ```
 
 Step 5 is numbered after Step 4 because it is **not** needed for the planner
@@ -32,9 +39,12 @@ This implements `PHASE1_DECOMPOSITION_PLAN.md` (Step 1),
 `PHASE1_STEP4_PLANNER_UPLOAD_BUNDLE_SPEC.md` (Step 4),
 `PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md` (Step 5),
 `PHASE2_PLAN_NORMALIZATION_SPEC.md` (Phase 2 Step 2), and
-`PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` (Phase 3).
+`PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` (Phase 3). Phase 4 writing/synthesis is
+specified in `PHASE4_WRITING_SYNTHESIS_SPEC.md` as **SPEC ONLY / future
+implementation**; it defines both Gemini Gem/direct Gemini mode and Vertex AI
+`gemini-2.5-pro` mode, but no Phase 4 command exists yet.
 
-> **Current readiness note (2026-06-22):** The `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` patches are **implemented and validated** — Patch 1 (directory anchors → `search_hints[]` warnings), Patch 2 (malformed `SectionPlan` JSONL: deterministic repair + bounded `plan-repair`), Patch 3 (planning diagnostics are not normal sections; no generic Phase 3 fallback). `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` is unchanged and Phase 3 stays deterministic/LLM-free. A clean validation run (readiness `PASS` → `phase3_retrieve_evidence.sh` without `--force` → evidence validation `pass`, 16/16 sections, 512 items) is at `11-testing-pipeline/runs/iter2-validation-20260622`. Phase 4 is therefore **unblocked** (ready to reopen) for that bundle; never treat stale pre-patch normalized artifacts or forced Phase-3-after-`FAIL` output as a Phase 4 GO.
+> **Current readiness note (2026-06-22):** The `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` patches are **implemented and validated** — Patch 1 (directory anchors → `search_hints[]` warnings), Patch 2 (malformed `SectionPlan` JSONL: deterministic repair + bounded `plan-repair`), Patch 3 (planning diagnostics are not normal sections; no generic Phase 3 fallback). `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` is unchanged and Phase 3 stays deterministic/LLM-free. A clean fresh validation run (readiness `PASS` → `phase3_retrieve_evidence.sh` without `--force` → evidence validation `pass`, 16/16 sections, 569 items) is at `13-e2e-allphases/runs/20260622-234038`. Phase 4 is **ready to reopen for that fresh bundle** and is **SPEC ONLY / not implemented** in `PHASE4_WRITING_SYNTHESIS_SPEC.md`; never treat stale pre-patch normalized artifacts or forced Phase-3-after-`FAIL` output as a Phase 4 GO.
 
 ## Architecture
 
@@ -100,9 +110,9 @@ wiki-generator bundle --in /path/to/phase1-output --budget-tokens 250000
 # installed (--vectors auto), otherwise skipped with an explicit reason.
 wiki-generator build-retrieval --in /path/to/phase1-output --vectors auto
 
-# Phase 2 Step 1 — run the planning LLM (Vertex AI Gemini 2.5 Pro; the one LLM
-# step; needs the [vertex] extra + GCP credentials — see below). Optional: run the
-# Gem by hand instead and save the reply to plans/phase2-gemini-response.md.
+# Phase 2 Step 1 — run the planning LLM (Vertex AI Gemini 2.5 Pro; needs the
+# [vertex] extra + GCP credentials — see below). Optional: run the Gem by hand
+# instead and save the reply to plans/phase2-gemini-response.md.
 wiki-generator plan --bundle /path/to/phase1-output --project my-gcp-project --location us-central1
 
 # Phase 2 Step 2 — normalize the planning response (deterministic, no LLM)
@@ -130,15 +140,17 @@ Optional capabilities:
 ```bash
 pip install -e '.[embeddings]'   # rag/vectors.faiss (faiss + model2vec)
 pip install -e '.[grepast]'      # AST-context query previews
-pip install -e '.[vertex]'       # `plan` command (Vertex AI Gemini, google-genai)
+pip install -e '.[vertex]'       # Vertex/Gemini LLM commands (`plan`, `plan-repair`)
 # brew install universal-ctags semgrep ast-grep   # richer symbol/query lanes
 ```
 
 ### Phase 2 Step 1 — `plan` (Vertex AI Gemini 2.5 Pro)
 
-`plan` is the **only** command that calls an LLM. It sends the planner
+`plan` is the primary LLM-backed planning command. It sends the planner
 instructions + kickoff prompt + the Step 4 upload bundle to `gemini-2.5-pro` on
 Vertex AI and writes the raw response to `plans/phase2-gemini-response.md`.
+`plan-repair` is the only other implemented LLM-backed command, and it is bounded,
+audited, and used only after a readiness `FAIL` for planner-quality issues.
 
 ```bash
 pip install -e '.[vertex]'                     # the google-genai SDK
