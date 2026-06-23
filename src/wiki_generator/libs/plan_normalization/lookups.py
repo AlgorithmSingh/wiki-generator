@@ -354,6 +354,27 @@ class Lookups:
         conf = self._anchor_confidence(path, res, anchor)
         return FileRes(ref, path, anchor, conf, res, cands)
 
+    def is_directory_like(self, ref) -> bool:
+        """True if ``ref`` names a repository directory / path prefix rather than
+        an exact citeable file (Patch 1). Deterministic, from the Phase 1 inventory
+        only — no LLM, no prose inference.
+
+        Directory-like when: the path ends with ``/``; or, with any trailing slash
+        stripped, it is not itself a known file but is the parent prefix of one or
+        more known files (i.e. a real repository directory). An exact existing file
+        (``agent/component/base.py``) and a plausible-but-nonexistent file
+        (``conf/config.yaml``) are both NOT directory-like."""
+        filepart, _ = _split_anchor(ref if isinstance(ref, str) else str(ref))
+        filepart = filepart.strip()
+        if not filepart:
+            return False
+        if filepart.endswith("/"):
+            return True
+        if filepart in self.files:
+            return False
+        prefix = filepart.rstrip("/") + "/"
+        return any(f.startswith(prefix) for f in self.files)
+
     def resolve_contract(self, ref) -> dict:
         text = ref if isinstance(ref, str) else str(ref)
         m = _METHOD_PATH_RE.match(text.strip())

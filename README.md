@@ -34,7 +34,7 @@ This implements `PHASE1_DECOMPOSITION_PLAN.md` (Step 1),
 `PHASE2_PLAN_NORMALIZATION_SPEC.md` (Phase 2 Step 2), and
 `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` (Phase 3).
 
-> **Current readiness note (2026-06-22):** For the next readiness implementation pass, read `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` first. It is an incremental amendment on top of `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_SPEC.md`; it does not modify `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. Phase 4 is **NO-GO** from any forced Phase 3 run after readiness `FAIL`; require the Iteration 2 patches, readiness `PASS`, and Phase 3 without `--force` before Phase 4.
+> **Current readiness note (2026-06-22):** The `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` patches are **implemented and validated** — Patch 1 (directory anchors → `search_hints[]` warnings), Patch 2 (malformed `SectionPlan` JSONL: deterministic repair + bounded `plan-repair`), Patch 3 (planning diagnostics are not normal sections; no generic Phase 3 fallback). `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` is unchanged and Phase 3 stays deterministic/LLM-free. A clean validation run (readiness `PASS` → `phase3_retrieve_evidence.sh` without `--force` → evidence validation `pass`, 16/16 sections, 512 items) is at `11-testing-pipeline/runs/iter2-validation-20260622`. Phase 4 is therefore **unblocked** (ready to reopen) for that bundle; never treat stale pre-patch normalized artifacts or forced Phase-3-after-`FAIL` output as a Phase 4 GO.
 
 ## Architecture
 
@@ -107,6 +107,11 @@ wiki-generator plan --bundle /path/to/phase1-output --project my-gcp-project --l
 
 # Phase 2 Step 2 — normalize the planning response (deterministic, no LLM)
 wiki-generator normalize-plan --bundle /path/to/phase1-output \
+  --raw-response /path/to/phase1-output/plans/phase2-gemini-response.md
+
+# Phase 2 Step 1b — bounded planner-artifact repair (only if readiness FAILs for a
+# planner-quality reason; re-prompts Vertex/Gemini, re-validates, fails loudly).
+wiki-generator plan-repair --bundle /path/to/phase1-output \
   --raw-response /path/to/phase1-output/plans/phase2-gemini-response.md
 
 # Phase 3 — retrieve exact, citeable evidence for every planned section

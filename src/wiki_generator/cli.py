@@ -24,6 +24,7 @@ from .libs.commands import decompose as decompose_cmd
 from .libs.commands import digest as digest_cmd
 from .libs.commands import normalize_plan as normalize_plan_cmd
 from .libs.commands import plan as plan_cmd
+from .libs.commands import plan_repair as plan_repair_cmd
 from .libs.commands import retrieve_evidence as retrieve_evidence_cmd
 
 _TOGGLE = ("auto", "on", "off")
@@ -158,6 +159,30 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("--provider", default="gemini",
                    help="planning provider name, recorded as metadata only")
 
+    pr = sub.add_parser(
+        "plan-repair",
+        help="Phase 2 Step 1b: bounded Vertex/Gemini repair of planner artifacts "
+             "when normalization is not Phase-3-ready (Patch 2/3). Audited, capped, "
+             "fails loudly. Phase 3 never invokes this.")
+    pr.add_argument("--bundle", required=True,
+                    help="path to the Phase 1 decomposition bundle")
+    pr.add_argument("--raw-response", dest="raw_response", required=True,
+                    help="path to the raw Gemini/Kimi planning response (markdown)")
+    pr.add_argument("--out", dest="out_dir", default=None,
+                    help="output directory for plan artifacts (default <bundle>/plans)")
+    pr.add_argument("--provider", default="gemini",
+                    help="planning provider name, recorded as metadata only")
+    pr.add_argument("--max-attempts", dest="max_attempts", type=int, default=2,
+                    help="bounded repair attempts (1 or 2; hard cap 2)")
+    pr.add_argument("--model", default="gemini-2.5-pro",
+                    help="Vertex/Gemini model id (default gemini-2.5-pro)")
+    pr.add_argument("--project", default=None,
+                    help="GCP project for Vertex (default $GOOGLE_CLOUD_PROJECT)")
+    pr.add_argument("--location", default=None,
+                    help="Vertex location (default $GOOGLE_CLOUD_LOCATION or us-central1)")
+    pr.add_argument("--max-output-tokens", dest="max_output_tokens", type=int,
+                    default=32768, help="max output tokens (default 32768; not tiny)")
+
     re_ = sub.add_parser(
         "retrieve-evidence",
         help="Phase 3: retrieve deterministic, citeable evidence packets for "
@@ -192,6 +217,8 @@ def main(argv: list[str] | None = None) -> int:
         return plan_cmd.run(args)
     if args.command == "normalize-plan":
         return normalize_plan_cmd.run(args)
+    if args.command == "plan-repair":
+        return plan_repair_cmd.run(args)
     if args.command == "retrieve-evidence":
         return retrieve_evidence_cmd.run(args)
     return 2  # pragma: no cover - argparse enforces a known command

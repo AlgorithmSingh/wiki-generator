@@ -12,10 +12,20 @@ import re
 from dataclasses import dataclass, field
 
 from ..context_docs import looks_like_context_artifact as _looks_like_context_artifact
+from ..context_docs import normalize_section_role
 from .lookups import Lookups
 from .parse import RawPlan
 
 _CLEAN_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_DIR_SEG = re.compile(r"[/_.\-]+")
+
+
+def _dir_recall_text(ref) -> str:
+    """Deterministic BM25/vector recall text for a directory-like file anchor:
+    the cleaned path plus its path segments as words (no prose inference)."""
+    p = str(ref).strip().rstrip("/")
+    words = [seg for seg in _DIR_SEG.split(p) if seg]
+    return " ".join([p, *words]) if words else (p or str(ref).strip())
 
 PLAN_SCHEMA = "phase2-plan-v1"
 SECTION_SCHEMA = "phase2-section-plan-v1"
@@ -52,15 +62,20 @@ class Result:
     warnings: list[str]
     raw_document_plan: dict
     raw_section_plans: list[dict]
+    parse_diagnostics: list[dict] = field(default_factory=list)
 
     @property
     def counts(self) -> dict:
         by_type: dict[str, int] = {}
         for u in self.unresolved:
+            # Patch 1: a safely-routed broad directory ref is a warning, not a
+            # rejected reference — it must not inflate the unresolved tally.
+            if not u.get("blocking", True):
+                continue
             by_type[u["type"]] = by_type.get(u["type"], 0) + 1
         return {
             "sections": len(self.sections),
-            "unresolved_total": len(self.unresolved),
+            "unresolved_total": sum(by_type.values()),
             "unresolved_by_type": by_type,
         }
 
@@ -113,14 +128,19 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
     hint_seen: set[str] = set()
     ca_seen: set[str] = set()
 
-    def add_hint(text, scope, reason) -> None:
+    def add_hint(text, scope, reason, source_field=None, source_input=None) -> None:
         if text is None:
             return
         t = str(text).strip()
         if not t or t.casefold() in hint_seen:
             return
         hint_seen.add(t.casefold())
-        search_hints.append({"text": t, "scope": list(scope), "reason": reason})
+        entry = {"text": t, "scope": list(scope), "reason": reason}
+        if source_field is not None:
+            entry["source_field"] = source_field
+        if source_input is not None:
+            entry["source_input"] = source_input
+        search_hints.append(entry)
 
     def add_context_artifact(path, role: str = "planner_context") -> None:
         if not path:
@@ -208,6 +228,25 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
                 warnings.append(
                     f"[{section_id}] non-source bundle artifact in files[]: {ref!r}")
                 add_hint(ref, ["source"], "non-source bundle artifact")
+        elif r.resolution != "ambiguous" and lk.is_directory_like(ref):
+            # Patch 1: a directory / trailing-slash / path-prefix reference is a
+            # useful retrieval *neighbourhood* ("agent/component/"), not an exact
+            # citeable file. Route it to search_hints[] (BM25/vector recall text)
+            # with full traceability, and record a NON-blocking warning — readiness
+            # warns, it does not fail on a safely-routed broad directory ref.
+            add_hint(_dir_recall_text(ref), ["source", "bm25", "vector"],
+                     "directory-like file anchor routed to search_hints (Patch 1)",
+                     source_field="file_anchors[]", source_input=str(ref))
+            unresolved.append({
+                "section_id": section_id, "type": "file", "input": ref,
+                "reason": "directory_like_routed",
+                "code": "broad_directory_ref_routed_to_search_hints",
+                "source_field": "file_anchors[]",
+                "normalized_to": "retrieval_needs.search_hints[]",
+                "blocking": False, "candidates": []})
+            warnings.append(
+                f"[{section_id}] directory-like file anchor routed to "
+                f"search_hints[]: {ref!r}")
         else:
             reason = "ambiguous" if r.resolution == "ambiguous" else "no_match"
             unresolved.append({"section_id": section_id, "type": "file",
@@ -327,9 +366,17 @@ def _build_section(nid: str, order: int, meta: dict | None, plan: dict | None,
     section_warnings = sec_warnings + [
         f"{u['type']} {u['reason']}: {u['input']}" for u in unresolved[before:]]
 
+    # Patch 3: a section's role. "provenance"/"meta" sections are controlled
+    # provenance notes handled OUTSIDE the normal source-evidence lanes; everything
+    # else is a normal source-evidence section that must carry real retrieval signal.
+    role = normalize_section_role(
+        meta.get("role") or meta.get("kind") or meta.get("section_role")
+        or plan.get("role") or plan.get("kind") or plan.get("section_role"))
+
     return {
         "schema_version": SECTION_SCHEMA,
         "section_id": nid,
+        "section_role": role,
         "title": title,
         "order": order,
         "parent": meta.get("parent"),
@@ -429,4 +476,5 @@ def normalize(raw: RawPlan, lk: Lookups, source_raw_rel: str,
                                    provider, len(unresolved), warnings)
     return Result(document_plan=document_plan, sections=sections,
                   unresolved=unresolved, warnings=warnings,
-                  raw_document_plan=doc, raw_section_plans=raw.section_plans)
+                  raw_document_plan=doc, raw_section_plans=raw.section_plans,
+                  parse_diagnostics=list(raw.parse_diagnostics))

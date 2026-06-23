@@ -474,6 +474,60 @@ class Phase3FailureTests(unittest.TestCase):
         sl = next(s for s in v["section_results"] if s["section_id"] == "service-layer")
         self.assertEqual(sl["status"], "fail")
 
+    def test_no_signal_section_gets_no_generic_fallback(self):
+        # Patch 3: a normal section with NO retrieval signal (no exact lanes, no
+        # query packs, no search hints — only title/purpose prose) must NOT be
+        # rescued by generic BM25/vector fallback. The recall lanes are not run
+        # and the section fails as an underspecified plan.
+        out = self._fresh()
+        rows = _read_jsonl(os.path.join(out, "plans", "section-plans.jsonl"))
+        for r in rows:
+            if r["section_id"] == "service-layer":
+                r["retrieval_needs"] = {"query_packs": [], "symbols": [], "files": [],
+                                        "contracts": [], "tests": [], "graph_nodes": [],
+                                        "search_hints": []}
+                r["expected_evidence_types"] = []
+        with open(os.path.join(out, "plans", "section-plans.jsonl"), "w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        res = _run_cmd("retrieve-evidence", "--bundle", out)
+        self.assertEqual(res.returncode, 3, res.stderr)
+        p = json.load(open(os.path.join(out, "evidence", "packets",
+                                        "service-layer.json")))
+        self.assertEqual(p["evidence"], [])
+        # the generic recall lanes were never requested for a no-signal section
+        self.assertEqual(p["lane_summary"]["bm25"]["status"], "not_requested")
+        self.assertEqual(p["lane_summary"]["vector"]["status"], "not_requested")
+
+    def test_provenance_section_handled_outside_evidence_lanes(self):
+        # Patch 3: an explicitly-marked controlled provenance/meta section is
+        # non-source — Phase 3 performs no source retrieval, emits no evidence,
+        # and the run still PASSES (absence of evidence is correct here).
+        out = self._fresh()
+        rows = _read_jsonl(os.path.join(out, "plans", "section-plans.jsonl"))
+        for r in rows:
+            if r["section_id"] == "service-layer":
+                r["section_role"] = "provenance"
+                r["retrieval_needs"] = {
+                    "query_packs": [], "symbols": [], "files": [], "contracts": [],
+                    "tests": [], "graph_nodes": [], "search_hints": [],
+                    "context_artifacts": [{"path": "derived/planning-gaps.md",
+                                           "role": "planner_context",
+                                           "citeable_as_evidence": False}]}
+                r["expected_evidence_types"] = []
+        with open(os.path.join(out, "plans", "section-plans.jsonl"), "w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        res = _run_cmd("retrieve-evidence", "--bundle", out)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        p = json.load(open(os.path.join(out, "evidence", "packets",
+                                        "service-layer.json")))
+        self.assertEqual(p.get("section_role"), "provenance")
+        self.assertEqual(p["evidence"], [])
+        self.assertEqual(p["validation"]["status"], "pass")
+        v = json.load(open(os.path.join(out, "evidence", "retrieval-validation.json")))
+        self.assertEqual(v["status"], "pass")
+
     def test_ragflow_section_passes_after_readiness_normalization(self):
         # Regression for the RAGFlow failure: a section whose ORIGINAL plan put a
         # vague symbol / openapi.json-only contract / digest file in exact lanes.

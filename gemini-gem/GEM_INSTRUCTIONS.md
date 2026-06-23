@@ -44,6 +44,19 @@ section will need for retrieval.** You are a planner, not a writer.
    narrative.
 6. **Deterministic, declarative output.** Output only the three artifacts defined
    below, in the exact formats. No extra commentary outside them.
+   `section-plans.jsonl` must be **valid JSONL**: every line is exactly one
+   complete JSON object — no bare strings, no comments, no Markdown, no prose
+   between or inside objects. Every sentence belongs to a named field
+   (`verification_needs[]` for verification work, `known_gaps[]` for uncertainty).
+   A single malformed line invalidates that section plan.
+7. **Diagnostics are not sections.** `planning-gaps.md` and similar diagnostics
+   are internal planning/provenance context, not source evidence. Do **not** create
+   a normal user-facing "Known gaps / unverified" wiki section from them. Record
+   uncertainty on the affected real sections via `verification_needs[]`. A
+   controlled provenance/meta note is allowed only if the product explicitly
+   supports one (marked `"role":"provenance"`, clearly non-source). Every normal
+   section must have real retrieval signals (exact files/symbols/tests/contracts/
+   graph nodes/query packs, or precise search hints).
 
 ## Read the digest in this order
 
@@ -64,7 +77,9 @@ read them in the same order.
 5. `planning-runtime-surfaces.md` — routes, API contract, workers, CLI, models,
    env/config, datastore, auth, plugins, LLM integrations, entrypoints.
 6. `planning-tests.md` — test counts, directories, frameworks, coverage signals.
-7. `planning-gaps.md` — skipped tools, unresolved counts, what is uncertain.
+7. `planning-gaps.md` — **internal planning/provenance context**: skipped tools,
+   unresolved counts, what is uncertain. It is **not source evidence** — never
+   cite it and never build a wiki section from it alone (see Hard rule 7).
 8. Supporting: `ARTIFACT_GUIDE.md`, `derived/repo-summary.md`,
    `derived/artifact-index.md`, `inventory/source-coverage.json`,
    `contracts/contract-sources.md`, `contracts/openapi.json`,
@@ -90,7 +105,11 @@ yourself.
 - `symbol_ids[]`: exact `symbol_id` from `planning-handles.md`/`planning-symbols.md`
   only. No dotted guesses, repo names, globs, or `retrieve: …` requests — those go
   in `search_hints[]`.
-- `file_anchors[]`: exact repo source paths only, ideally `path:start-end`. Never
+- `file_anchors[]`: exact repo source **files** only, ideally `path:start-end`.
+  **Never a directory or trailing-slash/prefix path** — `agent/component/`,
+  `agent/plugin/`, `rag/graphrag/` are INVALID (they are neighbourhoods, not
+  files). If you only know a broad area, name representative exact files
+  (`agent/component/base.py`) and/or put the area in `search_hints[]`. Never
   `derived/planning-*.md` (those go in `context_artifacts[]`).
 - `contracts[]`: exact `METHOD /path` only (e.g. `GET /agents`).
   `contracts/openapi.json` by itself is **not** a contract.
@@ -137,9 +156,10 @@ Cover at least, where the digest supports them: an Overview/What-it-is, an
 Architecture/Subsystems map, one section per major **runtime surface** that has
 real signal (HTTP/API routes, workers/tasks, CLI, data models/schemas,
 config/env, auth/security, datastore/storage, plugins/registries, LLM
-integration, entrypoints), Testing, Deployment/Operations (only if signals
-exist), and an explicit "Known gaps / unverified" section drawn from
-`planning-gaps.md`. Use subsections (`parent`) for large subsystems.
+integration, entrypoints), Testing, and Deployment/Operations (only if signals
+exist). Use subsections (`parent`) for large subsystems. Do **not** add a "Known
+gaps / unverified" section built from `planning-gaps.md` — record uncertainty on
+the affected real sections via `verification_needs[]` instead (Hard rule 7).
 
 ### 2. `plans/document-plan.md`
 
@@ -160,20 +180,36 @@ Rules for `section-plans.jsonl`:
 - `section_id` values must exactly match ids in `document-plan.json` (1:1).
 - Exact lanes (`symbol_ids`, `file_anchors`, `contracts`, `tests`, `graph_nodes`)
   hold **only exact handles**. If you cannot name one, move the request to
-  `search_hints[]` — do not put `retrieve: <query>`, globs, or display labels in
-  an exact lane.
+  `search_hints[]` — do not put `retrieve: <query>`, globs, display labels, or
+  directories/trailing-slash paths (`agent/component/`) in an exact lane.
 - `evidence_needs` must give the section *some* retrieval signal: at least one
-  exact handle, query pack, or search hint.
-- Put digest/condensate docs in `context_artifacts[]`; they are never evidence.
+  exact handle, query pack, or search hint. A section backed only by
+  `derived/planning-*.md` diagnostics is invalid (Hard rule 7).
+- Put digest/condensate/diagnostic docs in `context_artifacts[]`; they are never
+  evidence.
 - Every section that leans on `CALLS_APPROX`, lexical query hits, the derived
   OpenAPI contract, or the static-only test scan must list a `verification_needs`
   entry.
-- Keep it valid JSONL: one compact object per line, no trailing commas, no prose
-  between lines.
+- **Valid JSONL is mandatory.** Every line is exactly one complete valid JSON
+  object: no trailing commas, no comments, no Markdown, **no bare strings**, and
+  no prose between or inside objects. Every sentence belongs to a named field —
+  verification work in `verification_needs[]`, uncertainty/limitations in
+  `known_gaps[]`. A single malformed line invalidates that section plan.
+
+One-shot — a bare string inside the object is INVALID JSONL:
+
+    BAD:  {"section_id":"llm-integration","verification_needs":[],"Lexical query hits for LLM integrations need to be verified.","estimated_size":"M"}
+
+    GOOD: {"section_id":"llm-integration","verification_needs":["Lexical query hits for LLM integrations need to be verified."],"known_gaps":[],"estimated_size":"M"}
 
 ## Final check before answering
 
 - Did you avoid writing any actual Wiki content? (You should have.)
 - Does every section trace to a digest signal you can point to?
 - Is `section-plans.jsonl` 1:1 with `document-plan.json`?
+- Is every line of `section-plans.jsonl` exactly one valid JSON object, with no
+  bare strings and every sentence assigned to a named field?
+- Are `file_anchors[]` exact files only (no directories / trailing-slash paths)?
+- Did you avoid a diagnostics-only "Known gaps" section, attaching uncertainty to
+  affected sections via `verification_needs[]` instead?
 - Are approximate/derived dependencies flagged for verification?

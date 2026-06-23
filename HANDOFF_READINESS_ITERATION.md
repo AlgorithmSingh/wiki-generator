@@ -1,6 +1,8 @@
-# Handoff — Phase 1/2/3 Readiness Iteration
+# Handoff — Phase 1/2/3 Readiness Iteration (SUPERSEDED — historical)
 
-> **Supersession note (2026-06-22):** This local/untracked handoff is stale and must not be used as the current Phase 4 decision or readiness source of truth. The branch is now pushed at `f8f60a04f8effd21bc82d86b059bd657569d7b35`; current readiness implementation work should start from `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md`. Final decision: **NO-GO for Phase 4** from the forced Phase 3 run described below. A forced run after readiness `FAIL` is diagnostic only, not a clean Phase 3 validation. Implement the Iteration 2 patches, re-normalize/repair as needed, require readiness `PASS`, then rerun Phase 3 without `--force` before reconsidering Phase 4. Where this handoff conflicts with Iteration 2, Iteration 2 supersedes it.
+> **⛔ NOT THE CURRENT HANDOFF.** Iteration 2 is now **implemented and validated** — see **`HANDOFF_READINESS_ITERATION_2.md`** (the current readiness handoff and Phase-4 status). This file describes the first (Iteration 1) pass and the diagnostic NO-GO run that motivated Iteration 2; keep it only as historical context. Where it conflicts with Iteration 2, Iteration 2 wins.
+>
+> **Original supersession note (2026-06-22):** This handoff must not be used as the current Phase 4 decision or readiness source of truth. Current readiness work starts from `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md`. The forced Phase 3 run described below was a **NO-GO for Phase 4** (a forced run after readiness `FAIL` is diagnostic only). Iteration 2 implemented the patches, achieved readiness `PASS`, and reran Phase 3 without `--force` (see the current handoff).
 
 Branch: `feat/phase1-step5-build-retrieval` — **4 commits ahead of origin, not yet pushed.**
 Status: implemented, tested (136 tests, both interpreters), and validated end-to-end on RAGFlow through Phase 3. Phase 4 not started (decision pending — see §4).

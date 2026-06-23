@@ -1,4 +1,6 @@
-# Handoff — Phase 1 Step 5: `build-retrieval`
+# Handoff — Phase 1 Step 5: `build-retrieval` (historical — earlier phase)
+
+> **Not the current handoff.** This documents an earlier, completed phase (Phase 1 Step 5). The current handoff is **`HANDOFF_READINESS_ITERATION_2.md`** (Phase 1/2/3 readiness state + Phase-4 status). Kept for historical reference.
 
 Branch: `feat/phase1-step5-build-retrieval` · Commit: `f4db835` · Pushed to `origin`.
 

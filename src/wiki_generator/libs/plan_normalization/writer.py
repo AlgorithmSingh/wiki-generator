@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import os
 
+from ..context_docs import (
+    is_diagnostic_artifact, is_provenance_section, section_has_retrieval_signal,
+)
 from ..util import write_json, write_jsonl, write_text
 from .normalize import Result
 
@@ -42,41 +45,113 @@ _FIX = {
                      "or move it to search_hints[]",
     "no_retrieval_signal": "add exact handles, query_packs, search_hints, "
                            "or topic text",
+    # Patch 2: a malformed required SectionPlan JSONL row.
+    "section_plan_jsonl_parse_error":
+        "fix the malformed SectionPlan JSONL row (one valid JSON object per line; "
+        "prose belongs in verification_needs[]/known_gaps[]), or run the bounded "
+        "Phase 2 planner-artifact repair (plan-repair)",
+    # Patch 3: a normal section backed only by internal planning diagnostics.
+    "diagnostic_only_user_section":
+        "remove this section, convert it to a controlled provenance/meta section "
+        "(role: provenance), or add real retrieval signals (source files, symbols, "
+        "tests, contracts, graph nodes, query packs, or precise search hints)",
+    # Patch 1: a directory-like path that leaked into the active exact files lane.
+    "directory_like_in_exact_lane":
+        "a directory / trailing-slash path is not a citeable file; use an exact "
+        "file (e.g. agent/component/base.py) or route the area to search_hints[]",
 }
 
 
-def _readiness_failures(result: Result) -> dict:
-    """Per-section list of readiness failures. A section is Phase-3-ready only if
-    it has no rejected exact-lane references and a deterministic retrieval signal.
+# Artifact-level failures (no recoverable section_id) bucket under this key.
+_ARTIFACT_BUCKET = "(artifact)"
 
-    A ``context_only`` rejection is NOT a failure: the normalizer already relocated
-    the planner-context doc out of the exact ``files[]`` lane into
-    ``context_artifacts[]`` (the spec-mandated fix), so the exact lane is clean.
+
+def _diagnostic_paths(section: Result) -> list[str]:
+    """Repo-relative paths of the section's *diagnostic* context artifacts."""
+    out: list[str] = []
+    for ca in section["retrieval_needs"].get("context_artifacts", []):
+        path = ca.get("path") if isinstance(ca, dict) else ca
+        if path and is_diagnostic_artifact(path):
+            out.append(path)
+    return out
+
+
+def _readiness_failures(result: Result) -> dict:
+    """Per-section list of readiness failures. A normal section is Phase-3-ready
+    only if it has no rejected exact-lane references, no malformed-row parse error,
+    and a deterministic retrieval signal.
+
+    NON-failures (correct normalizer actions, not blockers):
+    - ``context_only``: the planner-context doc was relocated out of ``files[]``
+      into ``context_artifacts[]`` (the spec-mandated fix);
+    - ``directory_like_routed`` (``blocking: false``): a broad directory anchor was
+      routed to ``search_hints[]`` (Patch 1) — reported as a warning, not a failure;
+    - controlled provenance/meta sections (Patch 3): handled outside source lanes.
     """
     by_section: dict[str, list] = {s["section_id"]: [] for s in result.sections}
+    section_ids = set(by_section)
+
+    # Patch 2: a malformed required SectionPlan JSONL row is the PRIMARY failure for
+    # its section (attached by recovered section_id when it maps to the plan, else
+    # reported at artifact level). It must never be hidden behind a synthesized
+    # empty section that only reports no_retrieval_signal.
+    for d in result.parse_diagnostics:
+        if d.get("severity") != "failure":
+            continue
+        rec = {
+            "field": d.get("artifact", "section-plans.jsonl"),
+            "input": f"line {d.get('line')}",
+            "reason": d.get("code", "section_plan_jsonl_parse_error"),
+            "fix": _FIX["section_plan_jsonl_parse_error"],
+        }
+        sid = d.get("section_id")
+        by_section.setdefault(sid if sid in section_ids else _ARTIFACT_BUCKET,
+                              []).append(rec)
+
     for u in result.unresolved:
-        if u.get("reason") == "context_only":
-            continue  # correctly relocated to context_artifacts[]; not a blocker
+        if u.get("reason") == "context_only" or not u.get("blocking", True):
+            continue  # relocated/routed correctly — not a blocker
         sid = u.get("section_id")
-        rec = by_section.setdefault(sid, [])
-        rec.append({
+        by_section.setdefault(sid, []).append({
             "field": _LANE_FIELD.get(u.get("type"), u.get("type")),
             "input": u.get("input"),
             "reason": u.get("reason"),
             "fix": _FIX.get(u.get("reason"),
                             "use an exact handle, or move it to search_hints[]"),
         })
+
+    # Patch 1 (defense-in-depth): the readiness gate independently FAILs if any
+    # directory-like path leaked into an active exact files lane — it does not rely
+    # solely on the normalizer having routed it out.
     for s in result.sections:
-        nh = s["retrieval_needs"]
+        for f in s["retrieval_needs"].get("files", []):
+            path = (f.get("path") or f.get("input")) if isinstance(f, dict) else f
+            if isinstance(path, str) and path.rstrip().endswith("/"):
+                by_section.setdefault(s["section_id"], []).append({
+                    "field": "retrieval_needs.files", "input": path,
+                    "reason": "directory_like_in_exact_lane",
+                    "fix": _FIX["directory_like_in_exact_lane"]})
+
+    for s in result.sections:
+        # Patch 3: a controlled provenance/meta section is non-source — it does not
+        # require source-evidence retrieval signals and is reported separately.
+        if is_provenance_section(s):
+            continue
         # A deterministic retrieval directive: an exact handle, a canonical query
-        # pack, or a search hint. Bare title/topic text is not sufficient — it only
-        # feeds BM25/vector recall and may match nothing, which Phase 3 would then
-        # classify as bad_underspecified_normalized_plan (spec line 421).
-        has_signal = (
-            any(nh.get(k) for k in
-                ("symbols", "files", "contracts", "tests", "graph_nodes"))
-            or bool(nh.get("query_packs")) or bool(nh.get("search_hints")))
-        if not has_signal:
+        # pack, or a search hint. Bare title/topic text is not sufficient.
+        if section_has_retrieval_signal(s):
+            continue
+        diag = _diagnostic_paths(s)
+        if diag:
+            # Patch 3: a normal section backed ONLY by internal planning diagnostics
+            # is a diagnostic_only_user_section (primary), not merely no-signal.
+            by_section.setdefault(s["section_id"], []).append({
+                "field": "retrieval_needs", "input": ", ".join(diag),
+                "reason": "diagnostic_only_user_section",
+                "fix": _FIX["diagnostic_only_user_section"],
+                "secondary": "no_retrieval_signal",
+            })
+        else:
             by_section.setdefault(s["section_id"], []).append({
                 "field": "retrieval_needs", "input": "(none)",
                 "reason": "no_retrieval_signal", "fix": _FIX["no_retrieval_signal"],
@@ -85,8 +160,7 @@ def _readiness_failures(result: Result) -> dict:
 
 
 def readiness_pass(result: Result) -> bool:
-    failures = _readiness_failures(result)
-    return not any(failures.get(s["section_id"]) for s in result.sections)
+    return not any(_readiness_failures(result).values())
 
 
 def _readiness_report_md(result: Result) -> str:
@@ -95,8 +169,24 @@ def _readiness_report_md(result: Result) -> str:
     failures = _readiness_failures(result)
     status = "PASS" if readiness_pass(result) else "FAIL"
 
+    # Patch 1: broad directory anchors routed to search_hints[] (warnings).
+    dir_routed = [u for u in result.unresolved
+                  if u.get("reason") == "directory_like_routed"]
+    # Patch 2: malformed-row diagnostics (blocking failures + deterministic repairs).
+    parse_fail = [d for d in result.parse_diagnostics
+                  if d.get("severity") == "failure"]
+    parse_repair = [d for d in result.parse_diagnostics
+                    if d.get("severity") == "warning"]
+    # Patch 3: controlled provenance/meta sections (non-source).
+    provenance = [s for s in sections if is_provenance_section(s)]
+
+    n_fail = sum(len(v) for v in failures.values())
+    n_warn = len(dir_routed) + len(parse_repair)
+
     L = ["# Phase 3 Readiness Report", "",
          f"Status: {status}",
+         f"Failures: {n_fail}",
+         f"Warnings: {n_warn}",
          f"Bundle: {dp['repo']['root']}",
          "Document plan: plans/document-plan.json",
          "Section plans: plans/section-plans.jsonl",
@@ -108,9 +198,29 @@ def _readiness_report_md(result: Result) -> str:
             ("graph_nodes", "graph_nodes", "graph"),
             ("query_packs", "query_packs", "query_pack")):
         resolved = sum(len(s["retrieval_needs"][key]) for s in sections)
+        # A rejection counts only when it is a genuine, blocking exact-lane failure
+        # — not a context_only relocation or a routed directory anchor (Patch 1).
         rejected = sum(1 for u in result.unresolved if u.get("type") == utype
-                       and u.get("reason") != "context_only")
+                       and u.get("reason") != "context_only"
+                       and u.get("blocking", True))
         L.append(f"- {label}: {resolved} resolved, {rejected} rejected")
+    L.append("")
+
+    # --- Patch 2: malformed planner artifacts --------------------------------
+    L += ["## Malformed planner artifacts", ""]
+    if parse_fail or parse_repair:
+        L.append(f"- Parse failures (blocking): {len(parse_fail)}")
+        L.append(f"- Deterministic repairs (warning): {len(parse_repair)}")
+        for d in parse_fail:
+            L.append(f"  - FAIL `{d.get('artifact')}` line {d.get('line')} "
+                     f"section_id=`{d.get('section_id') or '?'}` "
+                     f"({d.get('code')}): {d.get('parse_error', '')}")
+        for d in parse_repair:
+            L.append(f"  - repaired `{d.get('artifact')}` line {d.get('line')} "
+                     f"section_id=`{d.get('section_id') or '?'}`: "
+                     f"{d.get('repair', '')}")
+    else:
+        L.append("_none_")
     L.append("")
 
     total_hints = sum(len(s["retrieval_needs"].get("search_hints", []))
@@ -127,6 +237,18 @@ def _readiness_report_md(result: Result) -> str:
             L.append(f"- `{s['section_id']}`: {n}")
     L.append("")
 
+    # --- Patch 1: broad directory refs routed to search_hints[] (warnings) ----
+    L += ["## Warnings", "",
+          "### Broad directory refs routed to search_hints[]", "",
+          f"- Broad directory refs routed to search_hints[]: {len(dir_routed)}"]
+    for u in dir_routed:
+        L.append(f"  - `{u.get('section_id')}` "
+                 f"source_field: {u.get('source_field', 'file_anchors[]')} "
+                 f"input: `{u.get('input')}` → {u.get('normalized_to')} "
+                 "(non-blocking; directory-like path is recall text, not a "
+                 "citeable file)")
+    L.append("")
+
     total_ca = sum(len(s["retrieval_needs"].get("context_artifacts", []))
                    for s in sections)
     L += ["## Context artifacts", "",
@@ -135,6 +257,17 @@ def _readiness_report_md(result: Result) -> str:
         for ca in s["retrieval_needs"].get("context_artifacts", []):
             L.append(f"- `{s['section_id']}`: `{ca['path']}` "
                      "(citeable_as_evidence: false)")
+    L.append("")
+
+    # --- Patch 3: controlled provenance / meta sections (non-source) ----------
+    L += ["## Controlled provenance / meta sections", ""]
+    if provenance:
+        for s in provenance:
+            diag = _diagnostic_paths(s)
+            L.append(f"- `{s['section_id']}` (role: provenance, non-source)"
+                     + (f"; diagnostics: {', '.join(diag)}" if diag else ""))
+    else:
+        L.append("_none_")
     L.append("")
 
     L += ["## Expected evidence derivation", ""]
@@ -147,13 +280,15 @@ def _readiness_report_md(result: Result) -> str:
     L += ["## Failures", ""]
     ordered = list(dp["section_order"]) + [
         s["section_id"] for s in sections
-        if s["section_id"] not in dp["section_order"]]
+        if s["section_id"] not in dp["section_order"]] + [_ARTIFACT_BUCKET]
     any_fail = False
     for sid in ordered:
         for f in failures.get(sid, []):
             any_fail = True
+            secondary = (f" (secondary: {f['secondary']})"
+                         if f.get("secondary") else "")
             L.append(f"- `{sid}` — {f['field']}: invalid input {f['input']!r} "
-                     f"({f['reason']}); fix: {f['fix']}")
+                     f"({f['reason']}){secondary}; fix: {f['fix']}")
     if not any_fail:
         L.append("_none_")
     L.append("")

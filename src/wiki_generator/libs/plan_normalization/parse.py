@@ -51,6 +51,53 @@ class RawPlan:
     section_plans: list[dict]
     doc_plan_md: str | None = None
     warnings: list[str] = field(default_factory=list)
+    # Patch 2: structured per-line diagnostics for section-plans.jsonl — a
+    # malformed required row must never disappear behind a bare log line.
+    parse_diagnostics: list[dict] = field(default_factory=list)
+
+
+# --- Patch 2: section-plan JSONL repair / diagnostics --------------------------
+_SECTION_ID_RE = re.compile(r'"section_id"\s*:\s*"([^"\\]+)"')
+# A bare (unkeyed) string immediately after an empty prose array — the one
+# structurally-obvious malformation we repair deterministically:
+#   "verification_needs":[],"<sentence>",   ->   "verification_needs":["<sentence>"],
+# The destination is the array the string immediately follows, so it is never
+# ambiguous; we only do this for the two prose fields the spec names, and we
+# re-parse to confirm the repair produced valid JSON before accepting it.
+_BARE_STR_AFTER_EMPTY = re.compile(
+    r'"(verification_needs|known_gaps)"(\s*:\s*)\[\]\s*,\s*'
+    r'("(?:[^"\\]|\\.)*")\s*(,|})')
+
+
+def _extract_section_id(line: str) -> str | None:
+    """Best-effort recovery of a ``section_id`` from a malformed JSONL line, for
+    diagnostics/repair routing only (never treated as parsed content)."""
+    m = _SECTION_ID_RE.search(line)
+    return m.group(1) if m else None
+
+
+def _excerpt(line: str, limit: int = 240) -> str:
+    line = line.strip()
+    return line if len(line) <= limit else line[:limit] + "…"
+
+
+def _repair_bare_string_after_empty_array(line: str):
+    """Return ``(repaired_obj, field_name)`` if ``line`` is a single JSON object
+    whose only fault is an unkeyed string immediately after an empty
+    ``verification_needs``/``known_gaps`` array, else ``(None, None)``. Conservative
+    and validated: the repaired text must re-parse as JSON or the repair is rejected."""
+    m = _BARE_STR_AFTER_EMPTY.search(line)
+    if not m:
+        return None, None
+    field_name = m.group(1)
+    repaired = (line[:m.start()]
+                + f'"{field_name}"{m.group(2)}[{m.group(3)}]{m.group(4)}'
+                + line[m.end():])
+    try:
+        obj = json.loads(repaired)
+    except json.JSONDecodeError:
+        return None, None
+    return (obj, field_name) if isinstance(obj, dict) else (None, None)
 
 
 # --- fenced-block scanning -----------------------------------------------------
@@ -131,7 +178,16 @@ def _loads(text: str, warnings: list[str], what: str):
         raise ParseError(f"{what}: not valid JSON")
 
 
-def _loads_jsonl(text: str, warnings: list[str], what: str) -> list[dict]:
+def _loads_jsonl(text: str, warnings: list[str], what: str,
+                 diagnostics: list[dict] | None = None) -> list[dict]:
+    """Parse JSONL, never silently dropping a malformed row (Patch 2).
+
+    A line that fails ``json.loads`` is, in order: smart-quote repaired; then
+    deterministically repaired if it is the structurally-obvious bare-string case;
+    otherwise recorded as a structured ``section_plan_jsonl_parse_error`` failure
+    diagnostic (with artifact/line/recovered section_id/raw excerpt/parse error)
+    and skipped from the parsed rows. The required-section repair-or-fail decision
+    is made downstream by normalization/readiness, which owns the DocumentPlan."""
     rows: list[dict] = []
     for i, line in enumerate(text.splitlines(), 1):
         line = line.strip()
@@ -139,13 +195,49 @@ def _loads_jsonl(text: str, warnings: list[str], what: str) -> list[dict]:
             continue
         try:
             rows.append(json.loads(line))
-        except json.JSONDecodeError:
-            repaired = "".join(_SMART.get(ch, ch) for ch in line)
+            continue
+        except json.JSONDecodeError as err:
+            first_err = err
+        repaired = "".join(_SMART.get(ch, ch) for ch in line)
+        if repaired != line:
             try:
                 rows.append(json.loads(repaired))
                 warnings.append(f"{what}: smart-quote repair on line {i}")
+                continue
             except json.JSONDecodeError:
-                warnings.append(f"{what}: skipped unparseable line {i}")
+                pass
+        obj, field_name = _repair_bare_string_after_empty_array(line)
+        if obj is not None:
+            rows.append(obj)
+            msg = (f"{what}: line {i} repaired a bare string into "
+                   f"{field_name}[] (section_id={obj.get('section_id') or '?'})")
+            warnings.append(msg)
+            if diagnostics is not None:
+                diagnostics.append({
+                    "artifact": what, "line": i,
+                    "section_id": obj.get("section_id"),
+                    "severity": "warning",
+                    "code": "section_plan_jsonl_deterministically_repaired",
+                    "message": msg,
+                    "repair": f"moved unkeyed string token into {field_name}[]",
+                    "raw_excerpt": _excerpt(line),
+                    "repaired_excerpt": _excerpt(json.dumps(obj)),
+                })
+            continue
+        sid = _extract_section_id(line)
+        msg = (f"{what}: malformed JSON on line {i} not parsed "
+               f"(section_id={sid or '?'})")
+        warnings.append(msg)
+        if diagnostics is not None:
+            diagnostics.append({
+                "artifact": what, "line": i, "section_id": sid,
+                "severity": "failure",
+                "code": "section_plan_jsonl_parse_error",
+                "message": msg,
+                "raw_excerpt": _excerpt(line),
+                "parse_error": (f"{first_err.msg}: line {first_err.lineno} "
+                                f"column {first_err.colno}"),
+            })
     return rows
 
 
@@ -218,7 +310,8 @@ def _doc_from_headings(text: str, warnings: list[str]) -> dict | None:
     return cands[0]
 
 
-def _sections_from_headings(text: str, warnings: list[str]) -> list[dict] | None:
+def _sections_from_headings(text: str, warnings: list[str],
+                            diagnostics: list[dict] | None = None) -> list[dict] | None:
     for htext, body in _heading_regions(text):
         if not _SEC_HEAD.search(htext):
             continue
@@ -233,7 +326,8 @@ def _sections_from_headings(text: str, warnings: list[str]) -> list[dict] | None
                 return obj
         json_lines = [ln for ln in body.splitlines() if ln.strip().startswith("{")]
         if json_lines:
-            rows = _loads_jsonl("\n".join(json_lines), warnings, "section-plans (heading)")
+            rows = _loads_jsonl("\n".join(json_lines), warnings,
+                                "section-plans (heading)", diagnostics)
             rows = [r for r in rows if isinstance(r, dict) and r]
             if rows:
                 warnings.append("SectionPlans extracted from a markdown heading (format #4)")
@@ -274,17 +368,20 @@ def _pick_document_plan(blocks: list[Block], warnings: list[str], text: str) -> 
                      "markdown heading)")
 
 
-def _pick_section_plans(blocks: list[Block], warnings: list[str], text: str) -> list[dict]:
+def _pick_section_plans(blocks: list[Block], warnings: list[str], text: str,
+                        diagnostics: list[dict] | None = None) -> list[dict]:
     labelled = [b for b in blocks if b.label == "section-plans.jsonl"]
     if len(labelled) > 1:
         raise ParseError("multiple blocks labelled section-plans.jsonl")
     if labelled:
-        return _loads_jsonl(labelled[0].content, warnings, "section-plans.jsonl")
+        return _loads_jsonl(labelled[0].content, warnings, "section-plans.jsonl",
+                            diagnostics)
     jsonl_blocks = [b for b in blocks if b.lang in ("jsonl", "ndjson")]
     if len(jsonl_blocks) > 1:
         raise ParseError("multiple JSONL blocks; refusing to guess which is section-plans")
     if jsonl_blocks:
-        return _loads_jsonl(jsonl_blocks[0].content, warnings, "section-plans.jsonl")
+        return _loads_jsonl(jsonl_blocks[0].content, warnings, "section-plans.jsonl",
+                            diagnostics)
     # Fallback (#3): a JSON array of section objects.
     arrays = []
     for b in blocks:
@@ -300,7 +397,7 @@ def _pick_section_plans(blocks: list[Block], warnings: list[str], text: str) -> 
     if arrays:
         return arrays[0]
     # Fallback (#4): a markdown SectionPlans heading with raw JSON/JSONL beneath it.
-    rows = _sections_from_headings(text, warnings)
+    rows = _sections_from_headings(text, warnings, diagnostics)
     if rows is not None:
         return rows
     raise ParseError("no SectionPlans found (need a JSONL block, a JSON array, a "
@@ -322,9 +419,11 @@ def parse(text: str) -> RawPlan:
     """Parse a raw planning response into a :class:`RawPlan`. Raises
     :class:`ParseError` on ambiguous or missing required blocks."""
     warnings: list[str] = []
+    diagnostics: list[dict] = []
     blocks = _label_blocks(_scan_blocks(text))
     document_plan = _pick_document_plan(blocks, warnings, text)
-    section_plans = _pick_section_plans(blocks, warnings, text)
+    section_plans = _pick_section_plans(blocks, warnings, text, diagnostics)
     doc_md = _pick_doc_md(blocks)
     return RawPlan(document_plan=document_plan, section_plans=section_plans,
-                   doc_plan_md=doc_md, warnings=warnings)
+                   doc_plan_md=doc_md, warnings=warnings,
+                   parse_diagnostics=diagnostics)

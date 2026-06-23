@@ -15,6 +15,7 @@ import os
 from dataclasses import dataclass, field
 
 from .. import util
+from ..context_docs import is_provenance_section, section_has_retrieval_signal
 from .aggregate import EXPECTED_LABEL_TO_LANE, aggregate
 from .lanes import bm25 as bm25_lane
 from .lanes import contracts as contracts_lane
@@ -146,11 +147,53 @@ def _missing_packet(bundle, sid, index, options) -> dict:
     }
 
 
+def _provenance_packet(bundle, section, sid, index, options) -> dict:
+    """Packet for a controlled provenance/meta section (Patch 3).
+
+    A provenance/meta section is non-source: it is handled OUTSIDE the normal
+    evidence lanes. No source retrieval runs, no generic fallback, and its
+    diagnostic/context artifacts are carried for traceability only (never cited).
+    It validates as pass because absence of source evidence is correct here."""
+    evidence, lane_summary, _ = aggregate(sid, [], options)
+    note = ("controlled provenance/meta section — handled outside normal evidence "
+            "lanes; diagnostics are non-source context, not citeable evidence")
+    return {
+        "schema_version": PACKET_SCHEMA_VERSION,
+        "section_id": sid,
+        "section_role": "provenance",
+        "title": section.get("title") or sid,
+        "order": section.get("order") if isinstance(section.get("order"), int)
+        else index + 1,
+        "retrieval_mode": bundle.retrieval_mode,
+        "source_plan": {
+            "document_plan_path": "plans/document-plan.json",
+            "section_plans_path": "plans/section-plans.jsonl",
+            "section_plan_sha256": _section_sha(bundle, sid),
+        },
+        "work_order": _work_order(section),
+        "evidence": evidence,
+        "lane_summary": lane_summary,
+        "coverage": {"satisfied": [], "missing": [], "warnings": [note]},
+        "validation": {"status": "pass", "errors": [], "warnings": [note]},
+    }
+
+
 def _build_packet(bundle, sid, index, options, vector_backend):
     section = bundle.section_by_id.get(sid)
     if section is None:
         return _missing_packet(bundle, sid, index, options), []
 
+    # Patch 3: a controlled provenance/meta section is non-source — never retrieve
+    # source evidence (and never generic fallback) for it.
+    if is_provenance_section(section):
+        return _provenance_packet(bundle, section, sid, index, options), []
+
+    # Patch 3: a no-signal normal section must NOT be rescued by generic BM25/vector
+    # fallback. The recall lanes run only when the section has a legitimate
+    # retrieval driver (exact handles, query packs, or search hints); the same
+    # predicate the readiness gate uses, so a section that should have failed
+    # readiness cannot be quietly rescued here.
+    has_signal = section_has_retrieval_signal(section)
     lane_results = [
         files_lane.run(bundle, section, options),
         symbols_lane.run(bundle, section, options),
@@ -158,9 +201,11 @@ def _build_packet(bundle, sid, index, options, vector_backend):
         contracts_lane.run(bundle, section, options),
         tests_lane.run(bundle, section, options),
         graph_lane.run(bundle, section, options),
-        bm25_lane.run(bundle, section, options),
-        vectors_lane.run(bundle, section, options, backend=vector_backend),
     ]
+    if has_signal:
+        lane_results.append(bm25_lane.run(bundle, section, options))
+        lane_results.append(
+            vectors_lane.run(bundle, section, options, backend=vector_backend))
     evidence, lane_summary, lanes_present = aggregate(sid, lane_results, options)
     unresolved = [u for lr in lane_results for u in lr.unresolved]
     by_lane = {lr.lane: lr for lr in lane_results}

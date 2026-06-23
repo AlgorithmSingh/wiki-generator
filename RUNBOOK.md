@@ -11,7 +11,7 @@ End-to-end commands for the full pipeline. Phase 1 is deterministic and LLM-free
 Phase 2 Step 1 is the only LLM call (a Gemini/Kimi Gem) and happens outside this
 tool; Phase 2 Step 2 (`normalize-plan`) is deterministic again.
 
-> **Current readiness status (2026-06-22):** For readiness patch work, read `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` first. Existing forced Phase 3 output after readiness `FAIL` is diagnostic and is a **NO-GO for Phase 4**. Normal product validation requires implementing the Iteration 2 patches, re-normalizing/repairing as needed, getting readiness `PASS`, and running Phase 3 without `--force`.
+> **Current readiness status (2026-06-22):** The `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` patches are **implemented and validated**. Phase 2 `normalize-plan` stays deterministic; when it reports a planner-quality `FAIL`, the bounded `plan-repair` step (Phase 2 Step 1b, §4b below) re-prompts Vertex/Gemini, re-validates with the same strict gate, and writes canonical artifacts only on `PASS` (fails loudly otherwise). A clean validation run — readiness `PASS` → `phase3_retrieve_evidence.sh` without `--force` → evidence validation `pass` (16/16 sections, 512 items) — is at `11-testing-pipeline/runs/iter2-validation-20260622`. Phase 4 is unblocked for that bundle; never use forced Phase-3-after-`FAIL` output as a Phase 4 GO.
 
 ```
 Phase 1  Step 1 decompose   -> raw artifact bundle
@@ -236,6 +236,31 @@ Before Phase 3, run **Step 5 (`build-retrieval`, section 2.5)** so the bundle ha
 an explicit retrieval readiness contract (`rag/retrieval-capabilities.json`). In
 the preferred script workflow, Step 5 requires FAISS/model2vec and fails if
 vectors cannot be built; a passing run should report `hybrid` mode.
+
+## 4b. Phase 2 Step 1b — bounded planner-artifact repair (only if readiness FAILs)
+
+`normalize-plan` stays deterministic and LLM-free. When it reports `Status: FAIL`
+for a planner-quality reason — a malformed required `SectionPlan` JSONL row, an
+unresolved exact-lane handle (a wrong file path / symbol), or a diagnostic-only
+section — and Vertex/Gemini is available, run the **bounded repair** (Readiness
+Iteration 2). It re-prompts the planner for *corrected planning artifacts only*,
+re-validates with the same strict gate, and writes the canonical plan artifacts
+only when readiness passes:
+
+```bash
+scripts/phase2_step1b_repair_plan.sh --out "$OUT" \
+  --raw-response "$OUT/plans/phase2-gemini-response.md"
+# needs the [vertex] extra + GCP ADC (GOOGLE_CLOUD_PROJECT) or a GEMINI_API_KEY
+```
+
+It is bounded (≤2 attempts), keeps `section_id`s 1:1 with the original plan (a
+diagnostic-only section may be removed or converted to `role: provenance`), and
+audits every attempt under `$OUT/plans/repair/` (request, raw bad artifacts, exact
+errors, response, validation). It **fails loudly** if Gemini is unavailable or the
+plan cannot be made Phase-3-ready — it never silently continues. Patch 1
+directory-anchor warnings and the Patch 2 bare-string deterministic repair are
+handled inside `normalize-plan` itself and do **not** require this step. Phase 3
+never invokes repair.
 
 ## 5. Phase 3 — retrieve evidence (deterministic, no LLM)
 

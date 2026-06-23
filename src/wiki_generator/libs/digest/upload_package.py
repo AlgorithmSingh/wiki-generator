@@ -165,7 +165,9 @@ def _readme(repo_root: str, source_bundle: str, generated_at: str,
           "",
           "- `symbols[]`: exact `symbol_id` only. No dotted guesses, repo names, "
           "globs, or `retrieve: …` requests.",
-          "- `files[]`: exact repo source files only. Never put "
+          "- `files[]`: exact repo source **files** only. Never a directory or "
+          "trailing-slash path (`agent/component/` is INVALID — use "
+          "`agent/component/base.py` or a `search_hints[]` entry). Never put "
           "`derived/planning-*.md` here.",
           "- `contracts[]`: exact `METHOD /path` only. `contracts/openapi.json` "
           "by itself is **not** a contract.",
@@ -177,6 +179,27 @@ def _readme(repo_root: str, source_bundle: str, generated_at: str,
           "`retrieve: api.apps.*`, `module layout`, or `test function markers`.",
           "- `context_artifacts[]`: digest/condensate docs used to understand the "
           "repo; they are **never** citeable source evidence.",
+          "",
+          "### Valid JSONL only", "",
+          "Every `section-plans.jsonl` line is exactly one complete JSON object: "
+          "no bare strings, no comments, no Markdown, no prose between or inside "
+          "objects. Put every sentence in a named field — verification work in "
+          "`verification_needs[]`, uncertainty in `known_gaps[]`. A single "
+          "malformed line invalidates that section plan.",
+          "",
+          "- BAD:  `{\"section_id\":\"llm-integration\",\"verification_needs\":[],"
+          "\"Lexical query hits need verification.\",\"estimated_size\":\"M\"}`",
+          "- GOOD: `{\"section_id\":\"llm-integration\",\"verification_needs\":"
+          "[\"Lexical query hits need verification.\"],\"known_gaps\":[],"
+          "\"estimated_size\":\"M\"}`",
+          "",
+          "### Diagnostics are not sections", "",
+          "`planning-gaps.md` and similar diagnostics are internal planning/"
+          "provenance context, not source evidence. Do **not** create a normal "
+          "\"Known gaps / unverified\" section from them. Attach uncertainty to the "
+          "affected real sections via `verification_needs[]`. Every normal section "
+          "must have a real retrieval signal (exact handle, query pack, or search "
+          "hint).",
           "",
           "Produce:",
           "",
@@ -190,7 +213,7 @@ def _readme(repo_root: str, source_bundle: str, generated_at: str,
           "needs (exact `symbol_id`s / file anchors / canonical query packs / "
           "`METHOD /path` contracts / tests / exact `node_id`s), plus "
           "`search_hints[]` for broad recall, `context_artifacts[]` for digest "
-          "docs, and any known gaps or verification needs.",
+          "docs, and verification needs.",
           ""]
     return "\n".join(L) + "\n"
 

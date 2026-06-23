@@ -58,7 +58,9 @@ verification_needs[], estimated_size}.
 Lane rules (the output is consumed by a deterministic normalizer):
 - symbol_ids[]: exact `symbol_id` only — no dotted guesses, repo names, globs, \
 or `retrieve: …` requests.
-- file_anchors[]: exact repo source files only — never `derived/planning-*.md`.
+- file_anchors[]: exact repo source files only — never a directory or \
+trailing-slash path (agent/component/ is INVALID; use agent/component/base.py or \
+move the area to search_hints[]); never `derived/planning-*.md`.
 - contracts[]: exact `METHOD /path` only — `contracts/openapi.json` alone is \
 NOT a contract.
 - tests[]: exact test file and function/node id when available.
@@ -71,6 +73,17 @@ datastore, llm_integrations, entrypoints, plugin_registries).
 `module layout`, or `test function markers`.
 - context_artifacts[]: digest/planning docs used to understand the repo; never \
 citeable source evidence.
+
+section-plans.jsonl must be valid JSONL: exactly one complete JSON object per line, \
+with no bare strings, comments, or prose between/inside objects. Every sentence \
+belongs to a named field — verification work in verification_needs[], uncertainty in \
+known_gaps[]. BAD: {"section_id":"x","verification_needs":[],"a bare sentence.","estimated_size":"M"} \
+GOOD: {"section_id":"x","verification_needs":["a bare sentence."],"known_gaps":[],"estimated_size":"M"}
+
+planning-gaps.md is internal planning/provenance context, NOT source evidence: do \
+not put it in file_anchors[] and do not create a "Known gaps / unverified" section \
+from it — attach uncertainty to affected sections via verification_needs[]. Every \
+section must have a real retrieval signal (an exact handle, query pack, or search hint).
 Use stable kebab ids (section_id must equal a document-plan id)."""
 
 _DEFAULT_KICKOFF = """You are planning the DeepWiki for the repository summarized \

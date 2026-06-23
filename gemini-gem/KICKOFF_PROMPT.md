@@ -39,11 +39,23 @@ Constraints (repeat of the Gem rules, in case they aren't loaded):
   Move broad or fuzzy retrieval requests into `search_hints[]`.
 - **Move planning digest/condensate documents into `context_artifacts[]`.** They
   are never citeable evidence.
-- Lane rules: `symbol_ids[]` exact `symbol_id` only; `file_anchors[]` real repo
-  paths only (never `derived/planning-*.md`); `contracts[]` exact `METHOD /path`
-  only (`contracts/openapi.json` alone is not a contract); `graph_nodes[]` exact
+- Lane rules: `symbol_ids[]` exact `symbol_id` only; `file_anchors[]` exact repo
+  **files** only — never a directory or trailing-slash path (`agent/component/`,
+  `rag/graphrag/` are INVALID; use `agent/component/base.py` or a `search_hints[]`
+  entry) and never `derived/planning-*.md`; `contracts[]` exact `METHOD /path` only
+  (`contracts/openapi.json` alone is not a contract); `graph_nodes[]` exact
   `node_id` only (never a display label like `pytest [Dependency]`);
   `query_packs[]` canonical keys only.
+- **Valid JSONL is mandatory.** Every `section-plans.jsonl` line is exactly one
+  complete JSON object — no bare strings, no comments, no Markdown, no prose
+  between or inside objects. Every sentence belongs to a named field: verification
+  work in `verification_needs[]`, uncertainty in `known_gaps[]`. One-shot:
+  - BAD:  `{"section_id":"llm-integration","verification_needs":[],"Lexical query hits need verification.","estimated_size":"M"}`
+  - GOOD: `{"section_id":"llm-integration","verification_needs":["Lexical query hits need verification."],"known_gaps":[],"estimated_size":"M"}`
+- `planning-gaps.md` is internal planning/provenance context, not source evidence.
+  Do **not** create a "Known gaps / unverified" section from it; attach uncertainty
+  to the affected real sections via `verification_needs[]`. Every normal section
+  needs real retrieval signals.
 - Treat `CALLS_APPROX` edges, lexical query hits, the derived OpenAPI contract, and
   the static-only test scan as approximate — any section relying on them must list a
   `verification_needs` entry.
