@@ -789,6 +789,18 @@ class UnitTests(unittest.TestCase):
         r2 = analyze_claims("Uses `app/ghost.py` here. [ev:x:0001]", available)
         self.assertIn("app/ghost.py", r2["invented_identifiers"])
 
+    def test_public_route_source_metadata_supports_exact_route(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        route = "/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks"
+        available = json.dumps({"source": {"route": "/datasets/<dataset_id>/documents/<document_id>/chunks",
+                                             "public_route": route}})
+        r = analyze_claims(f"Lists chunks with `GET {route}`. [ev:x:0001]",
+                           available)
+        self.assertEqual(r["invented_identifiers"], [])
+        r2 = analyze_claims(f"Lists chunks with `GET {route}`. [ev:x:0001]",
+                            '{"route": "/datasets/<dataset_id>/documents/<document_id>/chunks"}')
+        self.assertIn(route, r2["invented_identifiers"])
+
     def test_uncited_paragraph_detection(self):
         from wiki_generator.libs.writing.citations import analyze_claims
         available = "pkg/svc.py is here"

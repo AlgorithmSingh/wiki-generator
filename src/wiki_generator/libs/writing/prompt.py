@@ -35,6 +35,10 @@ source metadata. If the evidence does not support a fact, omit the fact.
 complete a partial path, or infer a module's full path. Use a path ONLY when that \
 exact string appears in a cited evidence item's `source` or excerpt — otherwise \
 refer to the component by the name the evidence actually provides.
+- Never synthesize or normalize a route: do not add `/api/v1`, remove query \
+parameters, or convert `<param>` to `{param}` unless that exact route string \
+appears in a single cited evidence item's `source` or excerpt. For route evidence, \
+copy only `source.route` or `source.public_route` values verbatim.
 - `exact`/`high` evidence supports definitive statements. `medium` evidence \
 needs careful phrasing. `low` (graph-context) evidence must never be the sole \
 support for a precise claim — pair it with stronger evidence or omit it.

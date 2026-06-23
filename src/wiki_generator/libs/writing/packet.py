@@ -40,7 +40,8 @@ def _evidence_row(ev: dict) -> dict:
         "source": {
             k: src[k] for k in (
                 "artifact", "path", "range", "span_id", "chunk_id", "symbol_id",
-                "symbol_name", "json_pointer", "route", "method")
+                "symbol_name", "json_pointer", "route", "method",
+                "public_route", "public_route_source")
             if src.get(k) is not None
         },
         "provenance": {

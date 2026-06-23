@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from ...util import clip
 from ..model import (
@@ -9,6 +10,7 @@ from ..model import (
 from ..schema import EVIDENCE_EXCERPT_CHARS
 
 LANE = "contract"
+HTTP_REFERENCE_PATH = "docs/references/http_api_reference.md"
 
 
 def _escape(segment: str) -> str:
@@ -20,12 +22,54 @@ def _op_excerpt(operation) -> str:
                EVIDENCE_EXCERPT_CHARS)
 
 
-def _route_hit(route, method, operation, *, field, item, rank, request) -> RawHit:
+def _brace_route(route: str) -> str:
+    """Convert Flask/Quart ``<param>`` route placeholders to docs ``{param}``."""
+    return re.sub(r"<([^>/]+)>", r"{\1}", str(route or ""))
+
+
+def _public_route_candidate(route: str) -> str:
+    """Canonical public REST route used by the HTTP API reference when present."""
+    r = _brace_route(route)
+    if r.startswith("/api/"):
+        return r
+    if r.startswith("/v1/"):
+        return "/api" + r
+    return "/api/v1" + (r if r.startswith("/") else f"/{r}")
+
+
+def _http_reference_supports(bundle, *, method: str, route: str) -> str | None:
+    """Return the documented public route when the HTTP reference contains it.
+
+    OpenAPI routes in ``contracts/openapi.json`` are internal blueprint paths such
+    as ``/datasets/<dataset_id>``. The public HTTP docs spell the same routes as
+    ``/api/v1/datasets/{dataset_id}``. Expose that public form only when a
+    citeable HTTP-reference chunk/span actually contains it, so Phase 4 can copy
+    one route string instead of synthesizing a prefix/placeholders from separate
+    evidence items.
+    """
+    public_route = _public_route_candidate(route)
+    method = str(method or "").upper()
+    method_markers = (f"**{method}**", f"Method: {method}", f"--request {method}")
+    rows = list(getattr(bundle, "spans_by_path", {}).get(HTTP_REFERENCE_PATH, []))
+    rows += list(getattr(bundle, "chunks_by_path", {}).get(HTTP_REFERENCE_PATH, []))
+    for row in rows:
+        text = row.get("text") or ""
+        if public_route in text and any(marker in text for marker in method_markers):
+            return public_route
+    return None
+
+
+def _route_hit(route, method, operation, *, field, item, rank, request,
+               public_route=None) -> RawHit:
     pointer = f"/paths/{_escape(route)}/{method.lower()}"
+    source = {"artifact": "contracts/openapi.json", "json_pointer": pointer,
+              "route": route, "method": method.upper()}
+    if public_route:
+        source["public_route"] = public_route
+        source["public_route_source"] = HTTP_REFERENCE_PATH
     return RawHit(
         lane=LANE, type="route_operation",
-        source={"artifact": "contracts/openapi.json", "json_pointer": pointer,
-                "route": route, "method": method.upper()},
+        source=source,
         excerpt=_op_excerpt(operation), confidence="exact",
         provenance={"section_plan_field": field, "input": item.get("input"),
                     "matched_by": "openapi_operation",
@@ -105,8 +149,10 @@ def run(bundle, section, options) -> LaneResult:
             res.resolved += 1
             req = _contract_request(item, field, route)
             rank += 1
+            public_route = _http_reference_supports(bundle, method=method, route=route)
             res.hits.append(_route_hit(route, method, operation,
-                                       field=field, item=item, rank=rank, request=req))
+                                       field=field, item=item, rank=rank,
+                                       request=req, public_route=public_route))
             rank = _recover_handler(bundle, operation, field=field, item=item,
                                     rank=rank, res=res, options=options, request=req)
             rank = _recover_source(bundle, operation, field=field, item=item,
@@ -121,9 +167,11 @@ def run(bundle, section, options) -> LaneResult:
                 if operation is None:
                     continue
                 rank += 1
+                public_route = _http_reference_supports(bundle, method=str(method),
+                                                        route=route)
                 res.hits.append(_route_hit(route, str(method), operation,
                                            field=field, item=item, rank=rank,
-                                           request=req))
+                                           request=req, public_route=public_route))
                 rank = _recover_handler(bundle, operation, field=field, item=item,
                                         rank=rank, res=res, options=options, request=req)
         elif resolution in ("no_match", "hint") or route not in paths:

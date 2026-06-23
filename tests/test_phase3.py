@@ -884,6 +884,41 @@ _RAG_CORE_FILES = ["rag/flow/parser/parser.py", "rag/nlp/search.py",
 
 
 class Phase3Iteration3Tests(unittest.TestCase):
+    def test_contract_route_exposes_documented_public_route(self):
+        # Follow-up to the live Phase 4 API-route failure: when the HTTP API
+        # reference contains the public `/api/v1/...{param}...` form for a
+        # contract route, the route_operation evidence exposes that exact string
+        # so Phase 4 need not synthesize a prefix or placeholder style.
+        from wiki_generator.libs.evidence.lanes import contracts
+
+        route = "/datasets/<dataset_id>/documents/<document_id>/chunks"
+        public = "/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks"
+
+        class Bundle:
+            openapi = {"paths": {route: {"get": {"operationId": "list_chunks"}}}}
+            spans_by_path = {contracts.HTTP_REFERENCE_PATH: [{
+                "span_id": "span:docs/references/http_api_reference.md:2154-2166:doc_section",
+                "path": contracts.HTTP_REFERENCE_PATH,
+                "range": {"start_line": 2154, "end_line": 2166},
+                "text": f"### List chunks\n\n**GET** `{public}?keywords={{keywords}}`",
+            }]}
+            chunks_by_path = {}
+            def symbol(self, _symbol_id):
+                return None
+            def overlapping_chunks(self, *_args):
+                return []
+
+        section = {"section_id": "api-datasets-and-documents", "retrieval_needs": {
+            "contracts": [{"input": "GET " + route, "method": "GET",
+                           "path": route, "resolution": "exact"}]}}
+        res = contracts.run(Bundle(), section, _opts())
+        route_hits = [h for h in res.hits if h.type == "route_operation"]
+        self.assertEqual(len(route_hits), 1)
+        self.assertEqual(route_hits[0].source["route"], route)
+        self.assertEqual(route_hits[0].source["public_route"], public)
+        self.assertEqual(route_hits[0].source["public_route_source"],
+                         contracts.HTTP_REFERENCE_PATH)
+
     def test_four_files_cap_eight_balanced_includes_all(self):
         # Case 1 + 7 (regression): 4 requested files, candidates for all, an
         # effective file-anchor cap of 8 -> ~2 kept items per file, NOT 8/0/0/0.
