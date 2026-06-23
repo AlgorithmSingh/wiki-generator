@@ -35,6 +35,13 @@ source metadata. If the evidence does not support a fact, omit the fact.
 complete a partial path, or infer a module's full path. Use a path ONLY when that \
 exact string appears in a cited evidence item's `source` or excerpt — otherwise \
 refer to the component by the name the evidence actually provides.
+- Never expand or interpolate shell or environment variables. Copy identifiers \
+exactly; do not compute the result of a variable substitution. If evidence shows \
+`CONF_DIR="/ragflow/conf"` and `CONF_FILE="${CONF_DIR}/service_conf.yaml"`, you may \
+write `CONF_FILE`, `${CONF_FILE}`, or `${CONF_DIR}/service_conf.yaml` — those exact \
+tokens appear in evidence — but you must NOT write the expanded literal \
+`/ragflow/conf/service_conf.yaml` unless that exact expanded string itself appears \
+in a cited evidence item.
 - Never synthesize or normalize a route: do not add `/api/v1`, remove query \
 parameters, or convert `<param>` to `{param}` unless that exact route string \
 appears in a single cited evidence item's `source` or excerpt. For route evidence, \
@@ -124,6 +131,17 @@ def build_rewrite_prompt(writing_packet, prior_raw: str, problems: list[str]) ->
         "",
     ]
     extra += [f"- {p}" for p in problems]
+    if any(p.startswith("synthesized_identifier") for p in problems):
+        extra += [
+            "",
+            "One or more identifiers are shell-variable EXPANSIONS, not grounded "
+            "identifiers: the expanded literal does not appear verbatim in cited "
+            "evidence. Replace each flagged identifier with one of the exact "
+            "evidence tokens suggested above (e.g. a variable name like `CONF_FILE`, "
+            "`${CONF_FILE}`, or the raw `${CONF_DIR}/service_conf.yaml`), or omit "
+            "the claim entirely. Do NOT expand variables and do NOT justify the "
+            "expanded path.",
+        ]
     extra += [
         "",
         "## Your previous response (verbatim)",

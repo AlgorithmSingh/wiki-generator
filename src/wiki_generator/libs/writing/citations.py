@@ -179,6 +179,119 @@ def _supported(kind: str, needle: str, available: str) -> bool:
     return needle in available
 
 
+# --- shell-variable path synthesis (Iteration 2) ------------------------------
+# A narrow, *diagnosis-only* detector for deterministic shell-variable path
+# expansions. When evidence shows ``CONF_DIR="/ragflow/conf"`` and
+# ``CONF_FILE="${CONF_DIR}/service_conf.yaml"`` and the model writes the expanded
+# literal ``/ragflow/conf/service_conf.yaml`` (which is NOT a verbatim evidence
+# token), this lets the validator classify it as a rewriteable
+# ``synthesized_identifier`` and suggest the exact tokens that DO appear in
+# evidence (``CONF_FILE``, ``${CONF_FILE}``, ``${CONF_DIR}/service_conf.yaml``).
+# It NEVER makes the expanded path grounded: a synthesized identifier still fails
+# validation and can only be fixed by rewriting to an exact evidence token.
+_SHELL_ASSIGN_RE = re.compile(
+    r"^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)=(\S.*?)[ \t]*$")
+_VAR_REF_RE = re.compile(
+    r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
+_SHELL_LITERAL_RE = re.compile(r"^[\w./+-]*$")   # path-literal remainder (\w incl _)
+
+
+def _unquote_shell_value(rhs: str) -> str | None:
+    """Strip one layer of matching surrounding quotes. Reject a value that still
+    carries a quote afterwards (e.g. concatenated ``"a"b"c"``) — that is not a
+    single clean literal/${VAR} assignment and must stay terminal."""
+    if len(rhs) >= 2 and rhs[0] == rhs[-1] and rhs[0] in ("'", '"'):
+        inner = rhs[1:-1]
+        return None if ("'" in inner or '"' in inner) else inner
+    return None if ("'" in rhs or '"' in rhs) else rhs
+
+
+def _is_safe_shell_value(val: str) -> bool:
+    """A *conservative* assignment value: path-literal text plus AT MOST ONE
+    ``${VAR}``/``$VAR`` reference, with no command substitution, arithmetic,
+    globbing, operators, whitespace, or multi-variable concatenation."""
+    if not val:
+        return False
+    if len(_VAR_REF_RE.findall(val)) > 1:        # >1 var ref => not deterministic
+        return False
+    return bool(_SHELL_LITERAL_RE.match(_VAR_REF_RE.sub("", val)))
+
+
+def _parse_shell_assignments(text: str) -> dict:
+    """``{VAR: value}`` for conservative simple assignments in ``text``. A
+    variable assigned conflicting safe values is dropped: ambiguous / runtime
+    mutation is not a single deterministic expansion."""
+    found: dict[str, str] = {}
+    ambiguous: set[str] = set()
+    for line in (text or "").splitlines():
+        m = _SHELL_ASSIGN_RE.match(line)
+        if not m:
+            continue
+        val = _unquote_shell_value(m.group(2).strip())
+        if val is None or not _is_safe_shell_value(val):
+            continue
+        var = m.group(1)
+        if var in found and found[var] != val:
+            ambiguous.add(var)
+        else:
+            found.setdefault(var, val)
+    for v in ambiguous:
+        found.pop(v, None)
+    return found
+
+
+def _shell_expansions(assigns: dict) -> dict:
+    """``{one_step_expanded_literal: [vars]}`` for assignments of the form
+    ``VAR=<prefix>${OTHER}<suffix>`` where ``OTHER`` has a *literal* value in the
+    same map. Exactly one deterministic substitution step is performed (no
+    recursion, no multi-variable joins)."""
+    literals = {v: val for v, val in assigns.items() if "$" not in val}
+    out: dict[str, list] = {}
+    for var, val in assigns.items():
+        if "$" not in val:
+            continue
+        m = _VAR_REF_RE.search(val)
+        if not m:
+            continue
+        ref = m.group(1) or m.group(2)
+        if ref not in literals:
+            continue
+        expanded = val[:m.start()] + literals[ref] + val[m.end():]
+        out.setdefault(expanded, [])
+        if var not in out[expanded]:
+            out[expanded].append(var)
+    return out
+
+
+def detect_synthesized_identifier(identifier: str, available_text: str) -> dict | None:
+    """If ``identifier`` is an unsupported path that exactly equals a deterministic
+    one-step shell-variable expansion derived from ``available_text`` AND there is
+    exactly one assignment producing it AND safe exact alternatives are present in
+    evidence, return ``{"identifier", "alternatives"}``. Otherwise return ``None``
+    (the identifier stays a terminal ``invented_identifier``).
+
+    Ambiguous (multi-target) expansions, multi-step/recursive derivations,
+    command substitution, concatenation, routes, and plain directory+filename
+    joins do not match here and remain terminal."""
+    assigns = _parse_shell_assignments(available_text)
+    if not assigns:
+        return None
+    vars_for = _shell_expansions(assigns).get(identifier)
+    if not vars_for or len(vars_for) != 1:
+        return None                              # absent, or >1 semantic target
+    var = vars_for[0]
+    # Prefer the assignment variable and the raw evidence tokens as alternatives,
+    # keeping only those that appear verbatim in evidence (so a rewrite to them
+    # passes final validation).
+    alts: list[str] = []
+    for cand in (var, "${" + var + "}", assigns[var]):
+        if cand and cand in available_text and cand not in alts:
+            alts.append(cand)
+    if not alts:
+        return None
+    return {"identifier": identifier, "alternatives": alts}
+
+
 def _strip_code_and_headings(markdown: str) -> list[str]:
     """Paragraph blocks with fenced code removed and headings dropped."""
     no_fence = _FENCE_BLOCK_RE.sub("\n\n", markdown or "")
@@ -192,24 +305,36 @@ def _strip_code_and_headings(markdown: str) -> list[str]:
 
 
 def analyze_claims(markdown: str, available_text: str) -> dict:
-    """Return invented identifiers (terminal) and uncited-claim paragraphs
+    """Return invented identifiers (terminal), synthesized identifiers
+    (rewriteable shell-variable expansions), and uncited-claim paragraphs
     (rewriteable). ``available_text`` is the concatenation of every excerpt and
     source-metadata blob the section may rely on."""
     invented: list[str] = []
-    # 1. invented identifiers anywhere (inline spans + fenced path/route tokens)
+    synthesized: list[dict] = []
+    # 1. unsupported identifiers anywhere (inline spans + fenced path/route tokens).
+    # Each is classified once: a deterministic shell-variable expansion becomes a
+    # rewriteable ``synthesized_identifier``; everything else stays terminal.
     seen_inv: set = set()
+
+    def classify(needle: str) -> None:
+        if needle in seen_inv:
+            return
+        seen_inv.add(needle)
+        syn = detect_synthesized_identifier(needle, available_text)
+        if syn is not None:
+            synthesized.append(syn)
+        else:
+            invented.append(needle)
+
     for span in _INLINE_CODE_RE.findall(markdown or ""):
         for kind, needle in _candidate_identifiers(span):
-            if not _supported(kind, needle, available_text) and needle not in seen_inv:
-                invented.append(needle)
-                seen_inv.add(needle)
+            if not _supported(kind, needle, available_text):
+                classify(needle)
     for block in _FENCE_BLOCK_RE.findall(markdown or ""):
         for tok in re.findall(r"[/\w.+{}:-]+", block):
             if "/" in tok and _RE_PATH.match(tok) and _RE_PATH_EXT.search(tok):
-                if tok not in available_text and tok.lstrip("/") not in available_text \
-                        and tok not in seen_inv:
-                    invented.append(tok)
-                    seen_inv.add(tok)
+                if tok not in available_text and tok.lstrip("/") not in available_text:
+                    classify(tok)
 
     # 2. uncited repo-claim paragraphs (supported identifier present, no citation)
     uncited: list[str] = []
@@ -227,7 +352,9 @@ def analyze_claims(markdown: str, available_text: str) -> dict:
         if groundable:
             snippet = " ".join(block.split())[:120]
             uncited.append(snippet)
-    return {"invented_identifiers": invented, "uncited_paragraphs": uncited}
+    return {"invented_identifiers": invented,
+            "synthesized_identifiers": synthesized,
+            "uncited_paragraphs": uncited}
 
 
 # --- citation resolution ------------------------------------------------------

@@ -14,7 +14,7 @@ are deterministic and LLM-free. Phase 2 Step 1 (`plan`), optional Step 1b
 writing/synthesis is **implemented** per `PHASE4_WRITING_SYNTHESIS_SPEC.md`
 (§6 below).
 
-> **Current readiness status (2026-06-23):** Iteration 2 remains the accepted Phase 1-3 baseline, but live Phase 4 is currently blocked. The second live Vertex Phase 4 run exposed a Phase 3 aggregation/coverage bug where exact file-anchor candidates could be starved by caps while the lane still reported pass. See `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_3_SPEC.md` (SPEC ONLY). Do not retry live Phase 4 until Iteration 3 is implemented, Phase 3 is rerun on the accepted bundle or a fresh Phase 1-3, retrieval validation passes, and `subsystem-rag-core` includes citeable evidence for `rag/llm/embedding_model.py`.
+> **Current readiness status (2026-06-23):** Phase 1-3 can pass with the Iteration 3 exact-coverage/public-route fixes. The Phase 4 shell-variable path-synthesis fix from `PHASE4_WRITING_SYNTHESIS_ITERATION_2_SPEC.md` is now **implemented and validated non-live**: the expanded literal `/ragflow/conf/service_conf.yaml` is classified as a rewriteable `synthesized_identifier` (not terminal `invented_identifier`), and a bounded rewrite to an exact evidence token (`CONF_FILE`, `${CONF_FILE}`, or `${CONF_DIR}/service_conf.yaml`) passes. `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` is unchanged. The only remaining gate before another live Phase 4 attempt is **explicit user approval for a billed retry**; do not retry live Phase 4 without it.
 
 ```
 Phase 1  Step 1 decompose   -> raw artifact bundle
@@ -360,9 +360,19 @@ evidence and never runs for terminal failures (cited context artifact, invented
 identifier, placeholder, truncation). If the bundle carries no command manifest,
 pass `--accept-no-force` to assert Phase 3 was not force-run.
 
-A live Vertex Phase 4 generation has now been attempted and correctly failed
-closed on an unsupported identifier. Treat live Phase 4 as blocked until the
-Iteration 3 Phase 3 evidence-coverage fix is implemented and validated.
+The latest live Vertex Phase 4 attempt failed closed on an unsupported
+shell-expanded identifier, `/ragflow/conf/service_conf.yaml`, in the `deployment`
+section. The Iteration 2 fix (`PHASE4_WRITING_SYNTHESIS_ITERATION_2_SPEC.md`) is
+now implemented: the prompt explicitly forbids expanding shell/env variables, and
+the validator classifies a deterministic one-step shell-variable expansion that is
+absent from evidence as a rewriteable `synthesized_identifier` — distinct from a
+terminal `invented_identifier` — and feeds the rewrite the exact evidence tokens
+to use instead (e.g. `CONF_FILE`, `${CONF_FILE}`, `${CONF_DIR}/service_conf.yaml`).
+A `synthesized_identifier` is rewriteable, never passable: final validation still
+requires exact tokens, and true inventions, routes, directory+filename joins, and
+multi-step/ambiguous derivations stay terminal. This is proven non-live by unit
+tests and a fake-provider rewrite; treat live Phase 4 as blocked only on explicit
+user approval for another billed retry.
 
 ---
 

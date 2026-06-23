@@ -21,9 +21,15 @@ from .schema import (
 )
 
 # Violation codes that a bounded format/citation rewrite is allowed to address.
+# ``synthesized_identifier`` is a *narrow* near-miss: a deterministic shell-variable
+# expansion that is not a verbatim evidence token. It is rewriteable (the model is
+# told to swap it for an exact evidence token) but never passable — the rewritten
+# draft must still validate using only exact tokens. True ``invented_identifier``
+# stays terminal.
 REWRITEABLE_CODES = frozenset({
     "malformed_json", "wrong_section_id", "empty_markdown", "schema_version",
     "unresolved_citation", "malformed_citation_syntax", "uncited_repo_claim",
+    "synthesized_identifier",
 })
 # Terminal codes: never rewritten, always a fail-closed stop.
 # (A "different bundle" citation cannot arise: a Phase 4 run loads packets from
@@ -73,6 +79,20 @@ def _available_text(bundle, section_id: str, cited_ids) -> str:
     for eid in cited_ids:
         add(bundle.evidence_index.get(eid))
     return "\n".join(parts)
+
+
+def _synthesized_message(synthesized: list) -> str:
+    """Rewrite feedback for shell-variable-expanded near-misses: name each
+    expanded literal and the exact evidence tokens to use instead."""
+    parts = []
+    for s in synthesized[:8]:
+        alts = ", ".join("`%s`" % a for a in s.get("alternatives", []))
+        parts.append(f"'{s['identifier']}' -> use an exact evidence token "
+                     f"instead: {alts}")
+    return ("identifier(s) appear to be shell-variable expansions; the expanded "
+            "literal does NOT appear verbatim in cited evidence. Do not expand "
+            "variables — replace each with an exact evidence token or omit the "
+            "claim: " + " | ".join(parts))
 
 
 def validate_section_draft(*, section_id, draft, parse_note, finish_reason,
@@ -146,6 +166,9 @@ def validate_section_draft(*, section_id, draft, parse_note, finish_reason,
         add("invented_identifier",
             "identifier(s) not supported by any cited/available evidence: "
             f"{claims['invented_identifiers'][:8]}")
+    if claims.get("synthesized_identifiers"):
+        add("synthesized_identifier", _synthesized_message(
+            claims["synthesized_identifiers"]))
     if claims["uncited_paragraphs"]:
         add("uncited_repo_claim",
             "paragraph(s) make a groundable repo claim but cite nothing: "

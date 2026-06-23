@@ -121,11 +121,29 @@ def _packet(sid, title, order, evidence, sha):
         "validation": {"status": "pass", "errors": [], "warnings": []}}
 
 
-def make_bundle(root, *, with_manifest=True):
+# A faithful, minimal regression of the live ev:deployment:0005 excerpt
+# (docker/entrypoint.sh shell-variable assignments) that triggered the Iteration 2
+# failure. The expanded literal `/ragflow/conf/service_conf.yaml` is NOT a verbatim
+# token here; only CONF_FILE / ${CONF_FILE} / ${CONF_DIR}/service_conf.yaml are.
+DEPLOYMENT_SHELL_EXCERPT = (
+    "# Replace env variables in the service_conf.yaml file\n"
+    'CONF_DIR="/ragflow/conf"\n'
+    'TEMPLATE_FILE="${CONF_DIR}/service_conf.yaml.template"\n'
+    'CONF_FILE="${CONF_DIR}/service_conf.yaml"\n'
+    "\n"
+    'rm -f "${CONF_FILE}"\n'
+    'done < "${TEMPLATE_FILE}"\n'
+)
+
+
+def make_bundle(root, *, with_manifest=True, with_deployment=False):
     """Write a small, schema-faithful, gate-passing Phase 1-3 bundle.
 
     Two sections: 'overview' (one bm25 chunk citing README) and 'service' (a
-    file_anchor span over pkg/svc.py + a GET /items route). Returns the root."""
+    file_anchor span over pkg/svc.py + a GET /items route). With
+    ``with_deployment`` a third 'deployment' section is added whose evidence
+    carries the docker/entrypoint.sh shell-variable snippet (Iteration 2
+    regression). Returns the root."""
     plans = os.path.join(root, "plans")
     evid = os.path.join(root, "evidence")
     packets_dir = os.path.join(evid, "packets")
@@ -136,6 +154,9 @@ def make_bundle(root, *, with_manifest=True):
         _section_plan("service", "Service Layer", 2, files=("pkg/svc.py",),
                       contracts=("GET /items",), expected=()),
     ]
+    if with_deployment:
+        sections.append(_section_plan(
+            "deployment", "Deployment", 3, files=("docker/entrypoint.sh",)))
     doc = {"schema_version": "phase2-plan-v1",
            "repo": {"name": "demo", "root": root},
            "title": "Demo Documentation Plan",
@@ -157,7 +178,7 @@ def make_bundle(root, *, with_manifest=True):
 
     util.write_text(os.path.join(plans, "phase3-readiness-report.md"),
                     "# Phase 3 Readiness Report\n\nStatus: PASS\nFailures: 0\n"
-                    "Warnings: 0\nSections: 2\n")
+                    f"Warnings: 0\nSections: {len(sections)}\n")
     util.write_text(os.path.join(plans, "normalization-report.md"),
                     "# normalization report\n")
 
@@ -174,6 +195,11 @@ def make_bundle(root, *, with_manifest=True):
                       '{"operationId": "list_items", "x-source": "pkg/api/routes.py"}')],
             sha["service"]),
     }
+    if with_deployment:
+        packets["deployment"] = _packet("deployment", "Deployment", 3, [
+            _ev_chunk("ev:deployment:0001", "docker/entrypoint.sh", 146, 305,
+                      DEPLOYMENT_SHELL_EXCERPT, conf="high")],
+            sha["deployment"])
     packet_paths = []
     for sid, pkt in packets.items():
         util.write_json(os.path.join(packets_dir, f"{sid}.json"), pkt)
@@ -181,11 +207,13 @@ def make_bundle(root, *, with_manifest=True):
     util.write_jsonl(os.path.join(evid, "evidence-packets.jsonl"),
                      [packets[s["section_id"]] for s in sections])
 
+    n_sections = len(sections)
+    ev_total = sum(len(packets[s["section_id"]]["evidence"]) for s in sections)
     validation = {
         "schema_version": "phase3-retrieval-validation-v1", "status": "pass",
         "failure_category": None, "retrieval_mode": "lexical-symbolic",
-        "counts": {"sections_expected": 2, "sections_processed": 2,
-                   "packets_written": 2, "evidence_items": 3},
+        "counts": {"sections_expected": n_sections, "sections_processed": n_sections,
+                   "packets_written": n_sections, "evidence_items": ev_total},
         "contract_checks": [{"name": n, "status": "pass", "details": "ok"}
                             for n in REQUIRED_CONTRACT_CHECKS],
         "section_results": [{"section_id": s["section_id"], "status": "pass",
@@ -198,7 +226,8 @@ def make_bundle(root, *, with_manifest=True):
         "schema_version": "phase3-evidence-manifest-v1", "bundle_root": root,
         "document_plan": "plans/document-plan.json",
         "section_plans": "plans/section-plans.jsonl",
-        "retrieval_mode": "lexical-symbolic", "section_count": 2, "packet_count": 2,
+        "retrieval_mode": "lexical-symbolic", "section_count": n_sections,
+        "packet_count": n_sections,
         "combined_packets": "evidence/evidence-packets.jsonl",
         "packet_paths": packet_paths, "validation": "evidence/retrieval-validation.json",
         "report": "evidence/retrieval-report.md", "status": "pass"})
@@ -1013,6 +1042,200 @@ class ValidatorUnitTests(TmpBundleMixin, unittest.TestCase):
         self.assertEqual(vd["status"], "fail")
         self.assertTrue(any("no_unused_manifest_citations" in f
                             for f in vd["failures"]))
+
+
+# ---------------------------------------------------------------------------
+class SynthesizedIdentifierTests(unittest.TestCase):
+    """Iteration 2: deterministic shell-variable path expansions are rewriteable
+    `synthesized_identifier`s (never grounded); true inventions stay terminal.
+
+    Regression for the live `deployment` failure where the model expanded
+    CONF_DIR/CONF_FILE into the literal `/ragflow/conf/service_conf.yaml`."""
+
+    SNIPPET = DEPLOYMENT_SHELL_EXCERPT
+
+    def _claims(self, md):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        return analyze_claims(md, self.SNIPPET)
+
+    def test_conf_file_token_passes(self):
+        r = self._claims("It writes to `CONF_FILE`. [ev:deployment:0001]")
+        self.assertEqual(r["invented_identifiers"], [])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_brace_var_path_token_passes(self):
+        r = self._claims("It writes `${CONF_DIR}/service_conf.yaml`. "
+                         "[ev:deployment:0001]")
+        self.assertEqual(r["invented_identifiers"], [])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_expanded_literal_is_synthesized_not_invented(self):
+        r = self._claims("The script generates `/ragflow/conf/service_conf.yaml`. "
+                         "[ev:deployment:0001]")
+        self.assertEqual(r["invented_identifiers"], [])      # not terminal
+        self.assertEqual(len(r["synthesized_identifiers"]), 1)
+        syn = r["synthesized_identifiers"][0]
+        self.assertEqual(syn["identifier"], "/ragflow/conf/service_conf.yaml")
+        # exact evidence alternatives are suggested for the rewrite
+        self.assertIn("CONF_FILE", syn["alternatives"])
+        self.assertIn("${CONF_FILE}", syn["alternatives"])
+        self.assertIn("${CONF_DIR}/service_conf.yaml", syn["alternatives"])
+
+    def test_expanded_literal_in_fenced_block_is_synthesized(self):
+        md = ("Generated config:\n\n```\n/ragflow/conf/service_conf.yaml\n```\n"
+              "[ev:deployment:0001]")
+        r = self._claims(md)
+        self.assertEqual(r["invented_identifiers"], [])
+        self.assertEqual([s["identifier"] for s in r["synthesized_identifiers"]],
+                         ["/ragflow/conf/service_conf.yaml"])
+
+    def test_sibling_expanded_literal_is_terminal_invented(self):
+        # `/ragflow/conf/other.yaml` is not produced by any assignment -> terminal
+        r = self._claims("It writes `/ragflow/conf/other.yaml`. [ev:deployment:0001]")
+        self.assertIn("/ragflow/conf/other.yaml", r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_ghost_path_is_terminal_invented(self):
+        r = self._claims("The handler is in `app/ghost.py`. [ev:deployment:0001]")
+        self.assertIn("app/ghost.py", r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_directory_filename_synthesis_is_terminal_invented(self):
+        # joining a dir + filename (not a shell-variable expansion) stays terminal
+        r = self._claims("See `docker/service_conf.yaml`. [ev:deployment:0001]")
+        self.assertIn("docker/service_conf.yaml", r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_public_route_synthesis_is_terminal_invented(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        route = "/api/v1/datasets/{dataset_id}/documents"
+        available = json.dumps({"source": {"route": "/datasets/<dataset_id>/documents"}})
+        r = analyze_claims(f"Lists via `GET {route}`. [ev:x:0001]", available)
+        self.assertIn(route, r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_ambiguous_multi_target_expansion_is_terminal(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        # two distinct vars expand to the SAME literal -> >1 semantic target
+        snippet = 'A="/x"\nB="/x"\nP="${A}/conf.yaml"\nQ="${B}/conf.yaml"\n'
+        r = analyze_claims("Path `/x/conf.yaml`. [ev:x:0001]", snippet)
+        self.assertIn("/x/conf.yaml", r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_multi_step_expansion_is_terminal(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        # P -> ${M} -> ${D}: only ONE deterministic step is allowed, so the full
+        # 2-step literal is not derivable and stays terminal invented
+        snippet = 'D="/ragflow"\nM="${D}/conf"\nP="${M}/service_conf.yaml"\n'
+        r = analyze_claims("Path `/ragflow/conf/service_conf.yaml`. [ev:x:0001]",
+                           snippet)
+        self.assertIn("/ragflow/conf/service_conf.yaml", r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_command_substitution_rhs_is_ignored(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        # command substitution is not a deterministic literal -> no expansion map
+        snippet = 'CONF_DIR="$(pwd)/conf"\nCONF_FILE="${CONF_DIR}/service_conf.yaml"\n'
+        r = analyze_claims("Path `/home/app/conf/service_conf.yaml`. [ev:x:0001]",
+                           snippet)
+        self.assertIn("/home/app/conf/service_conf.yaml", r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+
+# ---------------------------------------------------------------------------
+class SynthesizedIdentifierRewriteTests(TmpBundleMixin, unittest.TestCase):
+    """Fake-provider integration: an expanded shell path is rejected as a
+    rewriteable `synthesized_identifier`, the bounded rewrite swaps it for an
+    exact evidence token, and the run passes — with no new evidence added."""
+
+    def _base_responses(self, b):
+        return {sid: draft_json(
+            sid, b.section_plans[sid]["title"],
+            valid_markdown(sid, b.section_plans[sid]["title"],
+                           sorted(b.section_evidence_ids[sid])),
+            used=sorted(b.section_evidence_ids[sid]))
+            for sid in ("overview", "service")}
+
+    def test_expanded_path_rewrites_to_exact_token_and_passes(self):
+        root = self.fresh(with_deployment=True)
+        bad = draft_json("deployment", "Deployment",
+                         "## Deployment\n\nThe entrypoint script generates "
+                         "`/ragflow/conf/service_conf.yaml` from the template. "
+                         "[ev:deployment:0001]\n")
+        good = draft_json("deployment", "Deployment",
+                          "## Deployment\n\nThe entrypoint script renders the config "
+                          "file referenced by `CONF_FILE`. [ev:deployment:0001]\n")
+        b = gated(root)
+        by = self._base_responses(b)
+        by["deployment"] = [bad, good]
+        prov = FakeProvider(by)
+        res = writing.run(opts_for(root, max_rewrite_attempts=1), provider=prov)
+        self.assertEqual(res.status, "pass", res.message)
+        self.assertEqual(prov.calls.count("deployment"), 2)  # exactly one rewrite
+
+        # rewrite audit records the unsupported id + exact suggested alternatives
+        adir = os.path.join(root, "wiki", "audit", "rewrites", "deployment-attempt-1")
+        for name in ("prompt.md", "response.raw.txt", "problems.json"):
+            self.assertTrue(os.path.isfile(os.path.join(adir, name)), name)
+        blob = json.dumps(json.load(open(os.path.join(adir, "problems.json"))))
+        self.assertIn("synthesized_identifier", blob)
+        self.assertIn("/ragflow/conf/service_conf.yaml", blob)
+        self.assertIn("CONF_FILE", blob)
+
+        # no new evidence was introduced for the section by the rewrite
+        rows = [json.loads(l) for l in open(os.path.join(
+            root, "wiki", "metadata", "generated-sections.jsonl")) if l.strip()]
+        dep = next(r for r in rows if r["section_id"] == "deployment")
+        self.assertEqual(dep["evidence_ids_available"], ["ev:deployment:0001"])
+        # final assembled section uses the exact token, not the expanded literal
+        with open(os.path.join(root, "wiki", "sections",
+                               "003-deployment.md"), encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn("CONF_FILE", text)
+        self.assertNotIn("/ragflow/conf/service_conf.yaml", text)
+
+    def test_rewrite_to_brace_var_token_also_passes(self):
+        root = self.fresh(with_deployment=True)
+        bad = draft_json("deployment", "Deployment",
+                         "## Deployment\n\nGenerates `/ragflow/conf/service_conf.yaml`. "
+                         "[ev:deployment:0001]\n")
+        good = draft_json("deployment", "Deployment",
+                          "## Deployment\n\nGenerates `${CONF_DIR}/service_conf.yaml` "
+                          "from the template. [ev:deployment:0001]\n")
+        b = gated(root)
+        by = self._base_responses(b)
+        by["deployment"] = [bad, good]
+        res = writing.run(opts_for(root, max_rewrite_attempts=1),
+                          provider=FakeProvider(by))
+        self.assertEqual(res.status, "pass", res.message)
+
+    def test_synthesized_not_passable_repeated_after_rewrite_fails(self):
+        # a synthesized identifier is rewriteable but never silently passed: if the
+        # rewrite repeats the expanded literal, the run still fails closed
+        root = self.fresh(with_deployment=True)
+        bad = draft_json("deployment", "Deployment",
+                         "## Deployment\n\nGenerates `/ragflow/conf/service_conf.yaml`. "
+                         "[ev:deployment:0001]\n")
+        b = gated(root)
+        by = self._base_responses(b)
+        by["deployment"] = [bad, bad]
+        prov = FakeProvider(by)
+        with self.assertRaises(writing.WritingValidationFailure):
+            writing.run(opts_for(root, max_rewrite_attempts=1), provider=prov)
+        self.assertEqual(prov.calls.count("deployment"), 2)  # capped at one rewrite
+
+    def test_synthesized_with_zero_rewrites_fails_closed(self):
+        # with rewrites disabled the expanded literal is still rejected (no pass)
+        root = self.fresh(with_deployment=True)
+        bad = draft_json("deployment", "Deployment",
+                         "## Deployment\n\nGenerates `/ragflow/conf/service_conf.yaml`. "
+                         "[ev:deployment:0001]\n")
+        b = gated(root)
+        by = self._base_responses(b)
+        by["deployment"] = bad
+        with self.assertRaises(writing.WritingValidationFailure):
+            writing.run(opts_for(root, max_rewrite_attempts=0),
+                        provider=FakeProvider(by))
 
 
 # ---------------------------------------------------------------------------
