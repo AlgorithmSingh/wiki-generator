@@ -6,11 +6,13 @@ into small planner-facing digests an LLM can actually read (Steps 2/3), **bundle
 those into one uploadable file (Step 4), **builds the retrieval substrate** Phase 3
 queries (Step 5), runs a **planning LLM** over the upload bundle (Phase 2 Step 1),
 **normalizes** the LLM's plan into machine-resolvable artifacts (Phase 2 Step 2),
-and **retrieves exact, citeable evidence** for every planned section (Phase 3).
-The implemented pipeline currently stops at Phase 3. Phase 2 planning and the
-optional bounded Phase 2 repair are LLM-backed; Phase 1 and Phase 3 remain
-deterministic and **LLM-free**. Phase 4 writing/synthesis is currently
-**spec-only / future implementation** and will be LLM-backed when implemented.
+**retrieves exact, citeable evidence** for every planned section (Phase 3), and
+**writes the grounded wiki** from that evidence (Phase 4). Phase 2 planning, the
+optional bounded Phase 2 repair, and Phase 4 writing are LLM-backed; Phase 1 and
+Phase 3 remain deterministic and **LLM-free**. Phase 4 is synthesis only — it
+gates on a clean Phase 1-3 bundle and fails closed on missing, stale, forced, or
+unsupported evidence; it never re-runs Phase 3, repairs the plan, or invents
+fallback evidence.
 
 ```text
 Phase 1  Step 1 decompose  -> raw artifact bundle
@@ -26,8 +28,9 @@ Phase 2  Step 1 plan        -> Gemini/Kimi plan: plans/phase2-<provider>-respons
          Step 2 normalize-plan -> plans/document-plan.json + section-plans.jsonl
 Phase 3  retrieve-evidence  -> evidence/packets/<section_id>.json (+ manifest,
                                validation, report) — deterministic, no LLM
-Phase 4  write/synthesize   -> SPEC ONLY in PHASE4_WRITING_SYNTHESIS_SPEC.md
-                               (not implemented; no command yet)
+Phase 4  write-wiki         -> wiki/index.md + sections/ + citation-manifest +
+                               audit + validation (gemini-gem | gemini-api |
+                               vertex; grounded, fails closed)
 ```
 
 Step 5 is numbered after Step 4 because it is **not** needed for the planner
@@ -39,12 +42,13 @@ This implements `PHASE1_DECOMPOSITION_PLAN.md` (Step 1),
 `PHASE1_STEP4_PLANNER_UPLOAD_BUNDLE_SPEC.md` (Step 4),
 `PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md` (Step 5),
 `PHASE2_PLAN_NORMALIZATION_SPEC.md` (Phase 2 Step 2), and
-`PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` (Phase 3). Phase 4 writing/synthesis is
-specified in `PHASE4_WRITING_SYNTHESIS_SPEC.md` as **SPEC ONLY / future
-implementation**; it defines both Gemini Gem/direct Gemini mode and Vertex AI
-`gemini-2.5-pro` mode, but no Phase 4 command exists yet.
+`PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` (Phase 3), and
+`PHASE4_WRITING_SYNTHESIS_SPEC.md` (Phase 4 writing/synthesis). Phase 4 is
+**implemented** as the `write-wiki` command with all three provider modes from
+the spec — Gemini Gem handoff, direct Gemini API (`GEMINI_API_KEY`), and Vertex AI
+`gemini-2.5-pro` — and a fake-provider test suite that needs no live model.
 
-> **Current readiness note (2026-06-22):** The `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` patches are **implemented and validated** — Patch 1 (directory anchors → `search_hints[]` warnings), Patch 2 (malformed `SectionPlan` JSONL: deterministic repair + bounded `plan-repair`), Patch 3 (planning diagnostics are not normal sections; no generic Phase 3 fallback). `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` is unchanged and Phase 3 stays deterministic/LLM-free. A clean fresh validation run (readiness `PASS` → `phase3_retrieve_evidence.sh` without `--force` → evidence validation `pass`, 16/16 sections, 569 items) is at `13-e2e-allphases/runs/20260622-234038`. Phase 4 is **ready to reopen for that fresh bundle** and is **SPEC ONLY / not implemented** in `PHASE4_WRITING_SYNTHESIS_SPEC.md`; never treat stale pre-patch normalized artifacts or forced Phase-3-after-`FAIL` output as a Phase 4 GO.
+> **Current readiness note (2026-06-22):** The `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` patches are **implemented and validated** — Patch 1 (directory anchors → `search_hints[]` warnings), Patch 2 (malformed `SectionPlan` JSONL: deterministic repair + bounded `plan-repair`), Patch 3 (planning diagnostics are not normal sections; no generic Phase 3 fallback). `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` is unchanged and Phase 3 stays deterministic/LLM-free. A clean fresh validation run (readiness `PASS` → `phase3_retrieve_evidence.sh` without `--force` → evidence validation `pass`, 16/16 sections, 569 items) is at `13-e2e-allphases/runs/20260622-234038`. Phase 4 (`write-wiki`) is **implemented** and consumes that fresh bundle; it re-checks every gate itself (readiness PASS, retrieval `pass`, no forced/stale provenance, source hygiene, all packets present) and fails closed, so stale pre-patch normalized artifacts or forced Phase-3-after-`FAIL` output can never become a wiki.
 
 ## Architecture
 
@@ -128,6 +132,17 @@ wiki-generator plan-repair --bundle /path/to/phase1-output \
 # (deterministic, no LLM). All-sections producer; writes evidence/packets/<id>.json
 # plus a manifest, validation, and report. Exit 0 PASS / 2 bad input / 3 bad plan.
 wiki-generator retrieve-evidence --bundle /path/to/phase1-output
+
+# Phase 4 — write the grounded wiki from the validated evidence (LLM-backed).
+# Gates on Phase 1-3 success, cites only EvidencePacket evidence ids, fails closed.
+# Vertex AI:
+wiki-generator write-wiki --bundle /path/to/phase1-output --provider vertex \
+  --project my-gcp-project --location us-central1
+# Gemini Gem handoff (no API): prepare prompts, paste into the Gem, then assemble:
+wiki-generator write-wiki --bundle /path/to/phase1-output --provider gemini-gem \
+  --prepare-prompts-only
+wiki-generator write-wiki --bundle /path/to/phase1-output --provider gemini-gem \
+  --responses-in /path/to/phase1-output/wiki/audit/responses --validate-and-assemble
 ```
 
 `digest` regenerates the Step 2 condensates first and then runs Step 4, so running
@@ -140,7 +155,7 @@ Optional capabilities:
 ```bash
 pip install -e '.[embeddings]'   # rag/vectors.faiss (faiss + model2vec)
 pip install -e '.[grepast]'      # AST-context query previews
-pip install -e '.[vertex]'       # Vertex/Gemini LLM commands (`plan`, `plan-repair`)
+pip install -e '.[vertex]'       # Vertex/Gemini LLM commands (`plan`, `plan-repair`, `write-wiki`)
 # brew install universal-ctags semgrep ast-grep   # richer symbol/query lanes
 ```
 

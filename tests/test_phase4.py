@@ -1,0 +1,1018 @@
+"""Phase 4 (write-wiki) tests — fake-provider only, no live Gemini/Vertex.
+
+A tiny *synthetic* but schema-faithful Phase 1-3 bundle is hand-written (matching
+the accepted-run shapes: document-plan, section-plans, readiness report,
+retrieval-validation with all required contract checks, evidence manifest, and
+per-section EvidencePackets with resolvable SHAs). Tests then exercise
+``wiki_generator.libs.writing`` with an injected fake provider, plus the CLI via
+the ``gemini-gem`` import path (which makes no API call).
+
+Run with stdlib only: ``python -m unittest discover -s tests``.
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC = os.path.join(ROOT, "src")
+sys.path.insert(0, SRC)
+
+from wiki_generator.libs import util  # noqa: E402
+from wiki_generator.libs import writing  # noqa: E402
+from wiki_generator.libs.writing import bundle as wbundle  # noqa: E402
+from wiki_generator.libs.writing.options import (  # noqa: E402
+    PROVIDER_GEMINI_GEM,
+    PROVIDER_VERTEX,
+    WritingOptions,
+)
+from wiki_generator.libs.writing.provider import SectionResponse  # noqa: E402
+
+REQUIRED_CONTRACT_CHECKS = (
+    "all_sections_have_packets", "document_plan_valid", "section_plans_valid_jsonl",
+    "section_plans_cover_order", "capabilities_consistent", "packets_schema_valid",
+    "evidence_anchors_resolve", "no_plan_only_evidence", "no_context_artifact_evidence",
+)
+
+
+# --- synthetic-bundle builder -------------------------------------------------
+def _section_plan(sid, title, order, *, files=(), contracts=(),
+                  search_hints=("orient",), context_artifacts=("derived/planning-digest.md",),
+                  expected=()):
+    return {
+        "schema_version": "phase2-section-plan-v1", "section_id": sid,
+        "section_role": "source", "title": title, "order": order, "parent": None,
+        "priority": "high", "purpose": f"Document {title}.",
+        "goal": f"Understand {title}.", "rationale": "test",
+        "required_topics": [f"Explain {title}."], "key_questions": ["What is it?"],
+        "retrieval_needs": {
+            "query_packs": [], "symbols": [],
+            "files": [{"input": f, "path": f, "anchor": None,
+                       "anchor_confidence": None, "resolution": "file_exists",
+                       "candidates": []} for f in files],
+            "contracts": [{"input": c} for c in contracts],
+            "tests": [], "graph_nodes": [],
+            "search_hints": [{"text": h, "scope": [], "reason": "planner search hint"}
+                             for h in search_hints],
+            "context_artifacts": [{"path": p, "role": "planner_context",
+                                   "citeable_as_evidence": False}
+                                  for p in context_artifacts]},
+        "expected_evidence_types": list(expected), "depends_on": [],
+        "verification_needs": [], "estimated_size": "S", "known_gaps": [],
+        "normalization_warnings": []}
+
+
+def _ev_span(eid, path, sl, el, symbol_id, excerpt, conf="exact"):
+    return {"evidence_id": eid, "lane": "file_anchor", "type": "source_span",
+            "source": {"artifact": "rag/spans.jsonl", "path": path,
+                       "range": {"start_line": sl, "end_line": el},
+                       "span_id": f"span:{path}:{sl}-{el}:function",
+                       "symbol_id": symbol_id},
+            "excerpt": excerpt, "provenance": {"matched_by": "file_range"},
+            "scores": {"lane_rank": 1, "lane_score": None, "bm25": None,
+                       "vector": None}, "confidence": conf,
+            "dedupe_key": f"{path}:{sl}-{el}"}
+
+
+def _ev_route(eid, route, method, excerpt):
+    return {"evidence_id": eid, "lane": "contract", "type": "route_operation",
+            "source": {"artifact": "contracts/openapi.json",
+                       "json_pointer": f"/paths/~1{route.strip('/')}/{method.lower()}",
+                       "route": route, "method": method},
+            "excerpt": excerpt, "provenance": {"matched_by": "openapi_operation"},
+            "scores": {"lane_rank": 1, "lane_score": None, "bm25": None,
+                       "vector": None}, "confidence": "exact",
+            "dedupe_key": f"openapi|{route}|{method}"}
+
+
+def _ev_chunk(eid, path, sl, el, excerpt, conf="medium"):
+    return {"evidence_id": eid, "lane": "bm25", "type": "source_chunk",
+            "source": {"artifact": "rag/chunks.jsonl", "path": path,
+                       "range": {"start_line": sl, "end_line": el},
+                       "chunk_id": f"chunk:{path}:{sl}-{el}"},
+            "excerpt": excerpt, "provenance": {"matched_by": "bm25"},
+            "scores": {"lane_rank": 1, "lane_score": None, "bm25": 2.0,
+                       "vector": None}, "confidence": conf,
+            "dedupe_key": f"{path}:{sl}-{el}|bm25"}
+
+
+def _packet(sid, title, order, evidence, sha):
+    return {
+        "schema_version": "phase3-evidence-packet-v1", "section_id": sid,
+        "title": title, "order": order, "retrieval_mode": "lexical-symbolic",
+        "source_plan": {"document_plan_path": "plans/document-plan.json",
+                        "section_plans_path": "plans/section-plans.jsonl",
+                        "section_plan_sha256": sha},
+        "work_order": {"purpose": f"Document {title}.", "required_topics": [],
+                       "expected_evidence_types": [],
+                       "retrieval_needs": {"query_packs": [], "symbols": [],
+                                           "files": [], "contracts": [], "tests": [],
+                                           "graph_nodes": []},
+                       "context_artifacts": ["derived/planning-digest.md"]},
+        "evidence": evidence,
+        "lane_summary": {"file_anchor": {"requested": 1, "returned": len(evidence),
+                                         "status": "pass"}},
+        "coverage": {"satisfied": [], "missing": [], "warnings": []},
+        "validation": {"status": "pass", "errors": [], "warnings": []}}
+
+
+def make_bundle(root, *, with_manifest=True):
+    """Write a small, schema-faithful, gate-passing Phase 1-3 bundle.
+
+    Two sections: 'overview' (one bm25 chunk citing README) and 'service' (a
+    file_anchor span over pkg/svc.py + a GET /items route). Returns the root."""
+    plans = os.path.join(root, "plans")
+    evid = os.path.join(root, "evidence")
+    packets_dir = os.path.join(evid, "packets")
+    os.makedirs(packets_dir, exist_ok=True)
+
+    sections = [
+        _section_plan("overview", "Overview", 1, search_hints=("repo overview",)),
+        _section_plan("service", "Service Layer", 2, files=("pkg/svc.py",),
+                      contracts=("GET /items",), expected=()),
+    ]
+    doc = {"schema_version": "phase2-plan-v1",
+           "repo": {"name": "demo", "root": root},
+           "title": "Demo Documentation Plan",
+           "purpose": "A demo service for testing Phase 4.",
+           "summary": "", "audience": "developers",
+           "section_order": [s["section_id"] for s in sections],
+           "coverage_goals": [], "known_gaps": [],
+           "source_raw_response": "plans/raw.md", "provider": "test",
+           "normalization": {"generated_by": "test", "unresolved_count": 0,
+                             "warnings": []}}
+    util.write_json(os.path.join(plans, "document-plan.json"), doc)
+
+    # section-plans.jsonl: serialize with the SAME json.dumps used for the SHA.
+    raw_lines = {s["section_id"]: json.dumps(s) for s in sections}
+    with open(os.path.join(plans, "section-plans.jsonl"), "w", encoding="utf-8") as f:
+        for s in sections:
+            f.write(raw_lines[s["section_id"]] + "\n")
+    sha = {sid: f"sha256:{util.sha256_text(line)}" for sid, line in raw_lines.items()}
+
+    util.write_text(os.path.join(plans, "phase3-readiness-report.md"),
+                    "# Phase 3 Readiness Report\n\nStatus: PASS\nFailures: 0\n"
+                    "Warnings: 0\nSections: 2\n")
+    util.write_text(os.path.join(plans, "normalization-report.md"),
+                    "# normalization report\n")
+
+    packets = {
+        "overview": _packet("overview", "Overview", 1, [
+            _ev_chunk("ev:overview:0001", "README.md", 1, 8,
+                      "Demo is a Retrieval service. See README.md for the overview.")],
+            sha["overview"]),
+        "service": _packet("service", "Service Layer", 2, [
+            _ev_span("ev:service:0001", "pkg/svc.py", 5, 12,
+                     "python pkg.svc/work().",
+                     "def work(n):\n    return [Item(name=str(i)) for i in range(n)]"),
+            _ev_route("ev:service:0002", "/items", "GET",
+                      '{"operationId": "list_items", "x-source": "pkg/api/routes.py"}')],
+            sha["service"]),
+    }
+    packet_paths = []
+    for sid, pkt in packets.items():
+        util.write_json(os.path.join(packets_dir, f"{sid}.json"), pkt)
+        packet_paths.append(f"evidence/packets/{sid}.json")
+    util.write_jsonl(os.path.join(evid, "evidence-packets.jsonl"),
+                     [packets[s["section_id"]] for s in sections])
+
+    validation = {
+        "schema_version": "phase3-retrieval-validation-v1", "status": "pass",
+        "failure_category": None, "retrieval_mode": "lexical-symbolic",
+        "counts": {"sections_expected": 2, "sections_processed": 2,
+                   "packets_written": 2, "evidence_items": 3},
+        "contract_checks": [{"name": n, "status": "pass", "details": "ok"}
+                            for n in REQUIRED_CONTRACT_CHECKS],
+        "section_results": [{"section_id": s["section_id"], "status": "pass",
+                             "evidence_count": len(packets[s["section_id"]]["evidence"]),
+                             "missing_expected_evidence_types": [], "warnings": []}
+                            for s in sections],
+        "errors": [], "warnings": []}
+    util.write_json(os.path.join(evid, "retrieval-validation.json"), validation)
+    util.write_json(os.path.join(evid, "evidence-manifest.json"), {
+        "schema_version": "phase3-evidence-manifest-v1", "bundle_root": root,
+        "document_plan": "plans/document-plan.json",
+        "section_plans": "plans/section-plans.jsonl",
+        "retrieval_mode": "lexical-symbolic", "section_count": 2, "packet_count": 2,
+        "combined_packets": "evidence/evidence-packets.jsonl",
+        "packet_paths": packet_paths, "validation": "evidence/retrieval-validation.json",
+        "report": "evidence/retrieval-report.md", "status": "pass"})
+
+    util.write_json(os.path.join(root, "run-metadata.json"),
+                    {"generator": "test", "git": {"head_commit": "abc"}})
+    if with_manifest:
+        # a clean command manifest with a Phase 3 invocation and NO --force
+        util.write_text(os.path.join(root, "command-manifest.tsv"),
+                        "git_status\tgit status\t0\n"
+                        "phase3_retrieve_evidence\tscripts/phase3_retrieve_evidence.sh "
+                        "--out " + root + " --with-vectors\t0\n")
+    return root
+
+
+# --- fake provider ------------------------------------------------------------
+def valid_markdown(sid, title, evidence_ids, *, body=None):
+    cites = "".join(f"[{i}]" for i in evidence_ids)
+    text = body or (f"The {title} subsystem is implemented as described by the "
+                    f"source evidence. {cites}")
+    return f"## {title}\n\n{text}\n"
+
+
+def draft_json(sid, title, markdown, used=None):
+    return json.dumps({
+        "schema_version": "phase4-section-draft-v1", "section_id": sid,
+        "title": title, "markdown": markdown,
+        "used_evidence_ids": used or [],
+        "self_check": {"no_uncited_repo_claims": True,
+                       "no_context_artifact_citations": True,
+                       "no_placeholders": True}})
+
+
+class FakeProvider:
+    """Returns canned SectionResponses. ``by_section`` maps section_id -> either a
+    SectionResponse, a raw string, or a list (one per successive call, for rewrites)."""
+
+    def __init__(self, by_section, mode=PROVIDER_VERTEX, model="fake-model"):
+        self.mode = mode
+        self.model = model
+        self.by_section = by_section
+        self.calls = []
+
+    def generate(self, section_id, prompt):
+        self.calls.append(section_id)
+        val = self.by_section.get(section_id)
+        if isinstance(val, list):
+            n = sum(1 for c in self.calls if c == section_id) - 1
+            val = val[min(n, len(val) - 1)]
+        if isinstance(val, SectionResponse):
+            return val
+        if val is None:
+            val = draft_json(section_id, section_id, f"## {section_id}\n\nText.\n")
+        return SectionResponse(val, "STOP")
+
+
+def default_provider(b):
+    by = {}
+    for sid in b.section_order:
+        title = b.section_plans[sid]["title"]
+        ids = sorted(b.section_evidence_ids[sid])
+        by[sid] = draft_json(sid, title, valid_markdown(sid, title, ids), used=ids)
+    return FakeProvider(by)
+
+
+def opts_for(root, **kw):
+    base = dict(bundle_root=root, out_dir=os.path.join(root, "wiki"),
+                provider=PROVIDER_VERTEX)
+    base.update(kw)
+    return WritingOptions(**base)
+
+
+def gated(root, **kw):
+    return wbundle.load_and_gate(opts_for(root, **kw))
+
+
+# ---------------------------------------------------------------------------
+class TmpBundleMixin:
+    def fresh(self, **kw):
+        d = tempfile.mkdtemp(prefix="p4_")
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        root = os.path.join(d, "bundle")
+        os.makedirs(root)
+        make_bundle(root, **kw)
+        return root
+
+
+# ---------------------------------------------------------------------------
+class GateTests(TmpBundleMixin, unittest.TestCase):
+    """Every precondition gate fails closed before any model call."""
+
+    def test_clean_bundle_gates_pass(self):
+        b = gated(self.fresh())
+        self.assertEqual(b.section_order, ["overview", "service"])
+        self.assertEqual(len(b.evidence_index), 3)
+        self.assertTrue(all(c["status"] == "pass" for c in b.gate_report),
+                        [c for c in b.gate_report if c["status"] != "pass"])
+
+    def test_readiness_fail_blocks(self):
+        root = self.fresh()
+        util.write_text(os.path.join(root, "plans", "phase3-readiness-report.md"),
+                        "# R\n\nStatus: FAIL\nFailures: 2\n")
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+    def test_readiness_failures_nonzero_blocks(self):
+        root = self.fresh()
+        util.write_text(os.path.join(root, "plans", "phase3-readiness-report.md"),
+                        "# R\n\nStatus: PASS\nFailures: 1\n")
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+    def test_missing_readiness_is_bad_input(self):
+        root = self.fresh()
+        os.remove(os.path.join(root, "plans", "phase3-readiness-report.md"))
+        with self.assertRaises(writing.BadInputArtifact):
+            gated(root)
+
+    def test_retrieval_not_pass_blocks(self):
+        root = self.fresh()
+        v = json.load(open(os.path.join(root, "evidence", "retrieval-validation.json")))
+        v["status"] = "fail"
+        v["failure_category"] = "bad_underspecified_normalized_plan"
+        util.write_json(os.path.join(root, "evidence", "retrieval-validation.json"), v)
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+    def test_retrieval_missing_contract_check_blocks(self):
+        root = self.fresh()
+        v = json.load(open(os.path.join(root, "evidence", "retrieval-validation.json")))
+        v["contract_checks"] = [c for c in v["contract_checks"]
+                                if c["name"] != "no_context_artifact_evidence"]
+        util.write_json(os.path.join(root, "evidence", "retrieval-validation.json"), v)
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+    def test_retrieval_count_mismatch_blocks(self):
+        root = self.fresh()
+        v = json.load(open(os.path.join(root, "evidence", "retrieval-validation.json")))
+        v["counts"]["packets_written"] = 1
+        util.write_json(os.path.join(root, "evidence", "retrieval-validation.json"), v)
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+    def test_missing_document_plan_is_bad_input(self):
+        root = self.fresh()
+        os.remove(os.path.join(root, "plans", "document-plan.json"))
+        with self.assertRaises(writing.BadInputArtifact):
+            gated(root)
+
+    def test_missing_packet_is_bad_input(self):
+        root = self.fresh()
+        os.remove(os.path.join(root, "evidence", "packets", "service.json"))
+        with self.assertRaises(writing.BadInputArtifact):
+            gated(root)
+
+    def test_stale_section_plan_sha_blocks(self):
+        root = self.fresh()
+        # mutate a section plan line so its sha no longer matches the packet
+        p = os.path.join(root, "plans", "section-plans.jsonl")
+        rows = [json.loads(l) for l in open(p) if l.strip()]
+        for r in rows:
+            if r["section_id"] == "service":
+                r["purpose"] = "MUTATED after packets were written"
+        with open(p, "w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+    def test_force_in_command_manifest_blocks(self):
+        root = self.fresh()
+        util.write_text(os.path.join(root, "command-manifest.tsv"),
+                        "phase3\tscripts/phase3_retrieve_evidence.sh --out " + root
+                        + " --force\t0\n")
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+    def test_no_manifest_without_accept_blocks(self):
+        root = self.fresh(with_manifest=False)
+        with self.assertRaises(writing.GateFailure):
+            gated(root)  # accept_no_force defaults to False
+
+    def test_no_manifest_with_accept_passes(self):
+        root = self.fresh(with_manifest=False)
+        b = gated(root, accept_no_force=True)
+        self.assertTrue(all(c["status"] == "pass" for c in b.gate_report))
+
+    def test_help_text_force_mention_not_treated_as_force(self):
+        # a manifest row that merely mentions --force inside a help string for a
+        # non-phase3 command must not trip the force gate
+        root = self.fresh()
+        util.write_text(os.path.join(root, "command-manifest.tsv"),
+                        "help\tscripts/phase3_retrieve_evidence.sh --help\t0\n"
+                        "phase3\tscripts/phase3_retrieve_evidence.sh --out " + root
+                        + "\t0\n")
+        b = gated(root)  # no real --force token in a phase3 invocation
+        self.assertTrue(all(c["status"] == "pass" for c in b.gate_report))
+
+    def test_source_hygiene_rejects_derived_evidence(self):
+        root = self.fresh()
+        pkt = json.load(open(os.path.join(root, "evidence", "packets", "service.json")))
+        pkt["evidence"][0]["source"]["path"] = "derived/planning-digest.md"
+        util.write_json(os.path.join(root, "evidence", "packets", "service.json"), pkt)
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+    def test_packet_validation_fail_blocks(self):
+        root = self.fresh()
+        pkt = json.load(open(os.path.join(root, "evidence", "packets", "overview.json")))
+        pkt["validation"]["status"] = "fail"
+        util.write_json(os.path.join(root, "evidence", "packets", "overview.json"), pkt)
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+
+# ---------------------------------------------------------------------------
+class HappyPathTests(TmpBundleMixin, unittest.TestCase):
+    def _run(self, root, **kw):
+        b = gated(root, **kw)
+        return writing.run(opts_for(root, **kw), provider=default_provider(b)), b
+
+    def test_full_pass_writes_all_outputs(self):
+        root = self.fresh()
+        res, _ = self._run(root)
+        self.assertEqual(res.status, "pass")
+        self.assertEqual(res.exit_code, 0)
+        wiki = os.path.join(root, "wiki")
+        for rel in ("index.md", "metadata/generated-sections.jsonl",
+                    "metadata/generated-document.json",
+                    "metadata/citation-manifest.json",
+                    "validation/writing-validation.json",
+                    "validation/writing-validation-report.md",
+                    "PHASE4_RUN_REPORT.md",
+                    "sections/001-overview.md", "sections/002-service.md",
+                    "audit/prompts/overview.md", "audit/responses/overview.raw.txt",
+                    "audit/responses/overview.parsed.json"):
+            self.assertTrue(os.path.isfile(os.path.join(wiki, rel)), rel)
+
+    def test_citation_manifest_resolves_every_used_citation(self):
+        root = self.fresh()
+        self._run(root)
+        man = json.load(open(os.path.join(root, "wiki", "metadata",
+                                          "citation-manifest.json")))
+        ids = {c["evidence_id"] for c in man["citations"]}
+        self.assertEqual(ids, {"ev:overview:0001", "ev:service:0001", "ev:service:0002"})
+        for c in man["citations"]:
+            self.assertTrue(c["source"].get("artifact"))
+            self.assertIn(c["owner_section_id"], ("overview", "service"))
+            self.assertTrue(c["used_in_sections"])
+
+    def test_generated_section_metadata_shape(self):
+        root = self.fresh()
+        self._run(root)
+        rows = [json.loads(l) for l in open(os.path.join(
+            root, "wiki", "metadata", "generated-sections.jsonl")) if l.strip()]
+        self.assertEqual([r["section_id"] for r in rows], ["overview", "service"])
+        svc = rows[1]
+        self.assertEqual(svc["markdown_path"], "wiki/sections/002-service.md")
+        self.assertEqual(svc["source_packet_path"], "evidence/packets/service.json")
+        self.assertTrue(svc["source_packet_sha256"].startswith("sha256:"))
+        self.assertEqual(set(svc["evidence_ids_used"]),
+                         {"ev:service:0001", "ev:service:0002"})
+        self.assertIn("derived/planning-digest.md",
+                      [c["path"] for c in svc["context_artifacts_consulted"]])
+        self.assertEqual(svc["generation"]["provider_mode"], PROVIDER_VERTEX)
+        self.assertEqual(svc["validation"]["status"], "pass")
+
+    def test_context_artifacts_consulted_never_cited(self):
+        root = self.fresh()
+        self._run(root)
+        man = json.load(open(os.path.join(root, "wiki", "metadata",
+                                          "citation-manifest.json")))
+        for c in man["citations"]:
+            self.assertFalse(str(c["source"].get("path", "")).startswith("derived/"))
+            self.assertFalse(str(c["source"].get("artifact", "")).startswith("derived/"))
+
+    def test_rerun_is_byte_identical(self):
+        root = self.fresh()
+        self._run(root)
+        first = _snapshot(os.path.join(root, "wiki"))
+        # rerun with a fresh gated bundle + identical fake provider
+        b = gated(root)
+        writing.run(opts_for(root), provider=default_provider(b))
+        self.assertEqual(first, _snapshot(os.path.join(root, "wiki")))
+
+    def test_no_timestamps_in_outputs(self):
+        root = self.fresh()
+        self._run(root)
+        blob = json.dumps(_snapshot(os.path.join(root, "wiki")))
+        for needle in ("generated_at", "timestamp", "created_at"):
+            self.assertNotIn(needle, blob)
+
+    def test_cross_section_citation_allowed_and_recorded(self):
+        root = self.fresh()
+        b = gated(root)
+        by = {
+            "overview": draft_json("overview", "Overview",
+                                   valid_markdown("overview", "Overview",
+                                                  ["ev:overview:0001"])),
+            # service cites overview's evidence (cross-section) plus its own
+            "service": draft_json("service", "Service Layer",
+                                  valid_markdown("service", "Service Layer",
+                                                 ["ev:overview:0001", "ev:service:0001"])),
+        }
+        res = writing.run(opts_for(root), provider=FakeProvider(by))
+        self.assertEqual(res.status, "pass")
+        rows = [json.loads(l) for l in open(os.path.join(
+            root, "wiki", "metadata", "generated-sections.jsonl")) if l.strip()]
+        svc = next(r for r in rows if r["section_id"] == "service")
+        self.assertIn("ev:overview:0001", svc["cross_section_citations"])
+        man = json.load(open(os.path.join(root, "wiki", "metadata",
+                                          "citation-manifest.json")))
+        ov = next(c for c in man["citations"] if c["evidence_id"] == "ev:overview:0001")
+        self.assertEqual(ov["owner_section_id"], "overview")
+        self.assertIn("service", ov["used_in_sections"])
+
+    def test_supported_identifier_in_backticks_passes(self):
+        root = self.fresh()
+        b = gated(root)
+        by = {
+            "overview": draft_json("overview", "Overview",
+                                   valid_markdown("overview", "Overview",
+                                                  ["ev:overview:0001"])),
+            "service": draft_json(
+                "service", "Service Layer",
+                "## Service Layer\n\nThe service layer lives in `pkg/svc.py` and "
+                "exposes the `GET /items` route. [ev:service:0001][ev:service:0002]\n"),
+        }
+        res = writing.run(opts_for(root), provider=FakeProvider(by))
+        self.assertEqual(res.status, "pass", res.message)
+
+
+# ---------------------------------------------------------------------------
+class WritingValidationTests(TmpBundleMixin, unittest.TestCase):
+    def _provider(self, root, service_md):
+        return FakeProvider({
+            "overview": draft_json("overview", "Overview",
+                                   valid_markdown("overview", "Overview",
+                                                  ["ev:overview:0001"])),
+            "service": service_md,
+        })
+
+    def test_invented_path_is_rejected(self):
+        root = self.fresh()
+        md = ("## Service Layer\n\nThe handler is defined in `app/ghost_module.py`. "
+              "[ev:service:0001]\n")
+        with self.assertRaises(writing.WritingValidationFailure):
+            writing.run(opts_for(root),
+                        provider=self._provider(root, draft_json("service",
+                                                                 "Service Layer", md)))
+
+    def test_context_artifact_citation_is_rejected_not_rewritten(self):
+        root = self.fresh()
+        md = ("## Service Layer\n\nSee `derived/planning-digest.md` for details. "
+              "[ev:service:0001]\n")
+        prov = self._provider(root, draft_json("service", "Service Layer", md))
+        with self.assertRaises(writing.WritingValidationFailure):
+            writing.run(opts_for(root, max_rewrite_attempts=2), provider=prov)
+        # terminal: no rewrite attempted (service called exactly once)
+        self.assertEqual(prov.calls.count("service"), 1)
+
+    def test_placeholder_is_rejected(self):
+        root = self.fresh()
+        md = "## Service Layer\n\nTODO: document this. [ev:service:0001]\n"
+        with self.assertRaises(writing.WritingValidationFailure):
+            writing.run(opts_for(root),
+                        provider=self._provider(root, draft_json("service",
+                                                                 "Service Layer", md)))
+
+    def test_truncation_finish_reason_fails(self):
+        root = self.fresh()
+        resp = SectionResponse(draft_json("service", "Service Layer",
+                                          valid_markdown("service", "Service Layer",
+                                                         ["ev:service:0001"])),
+                               "MAX_TOKENS")
+        with self.assertRaises(writing.WritingValidationFailure):
+            writing.run(opts_for(root), provider=self._provider(root, resp))
+
+    def test_unresolved_citation_rewrite_then_success(self):
+        root = self.fresh()
+        bad = draft_json("service", "Service Layer",
+                         valid_markdown("service", "Service Layer", ["ev:service:9999"]))
+        good = draft_json("service", "Service Layer",
+                          valid_markdown("service", "Service Layer", ["ev:service:0001"]))
+        prov = FakeProvider({
+            "overview": draft_json("overview", "Overview",
+                                   valid_markdown("overview", "Overview",
+                                                  ["ev:overview:0001"])),
+            "service": [bad, good]})
+        res = writing.run(opts_for(root, max_rewrite_attempts=1), provider=prov)
+        self.assertEqual(res.status, "pass")
+        self.assertEqual(prov.calls.count("service"), 2)  # one rewrite happened
+
+    def test_unresolved_citation_rewrite_exhausted_fails(self):
+        root = self.fresh()
+        bad = draft_json("service", "Service Layer",
+                         valid_markdown("service", "Service Layer", ["ev:service:9999"]))
+        prov = FakeProvider({
+            "overview": draft_json("overview", "Overview",
+                                   valid_markdown("overview", "Overview",
+                                                  ["ev:overview:0001"])),
+            "service": [bad, bad]})
+        with self.assertRaises(writing.WritingValidationFailure):
+            writing.run(opts_for(root, max_rewrite_attempts=1), provider=prov)
+        self.assertEqual(prov.calls.count("service"), 2)  # capped at 1 rewrite
+
+    def test_malformed_json_rewrite_then_success(self):
+        root = self.fresh()
+        good = draft_json("service", "Service Layer",
+                          valid_markdown("service", "Service Layer", ["ev:service:0001"]))
+        prov = FakeProvider({
+            "overview": draft_json("overview", "Overview",
+                                   valid_markdown("overview", "Overview",
+                                                  ["ev:overview:0001"])),
+            "service": ["this is not json at all", good]})
+        res = writing.run(opts_for(root, max_rewrite_attempts=1), provider=prov)
+        self.assertEqual(res.status, "pass")
+
+    def test_provider_no_text_is_provider_failure(self):
+        root = self.fresh()
+        prov = self._provider(root, SectionResponse(None, "SAFETY",
+                                                    error="safety block"))
+        with self.assertRaises(writing.ProviderFailure):
+            writing.run(opts_for(root), provider=prov)
+
+    def test_rewrite_audit_written(self):
+        root = self.fresh()
+        bad = draft_json("service", "Service Layer",
+                         valid_markdown("service", "Service Layer", ["ev:service:9999"]))
+        good = draft_json("service", "Service Layer",
+                          valid_markdown("service", "Service Layer", ["ev:service:0001"]))
+        prov = FakeProvider({
+            "overview": draft_json("overview", "Overview",
+                                   valid_markdown("overview", "Overview",
+                                                  ["ev:overview:0001"])),
+            "service": [bad, good]})
+        writing.run(opts_for(root, max_rewrite_attempts=1), provider=prov)
+        adir = os.path.join(root, "wiki", "audit", "rewrites", "service-attempt-1")
+        for name in ("prompt.md", "response.raw.txt", "problems.json"):
+            self.assertTrue(os.path.isfile(os.path.join(adir, name)), name)
+
+
+# ---------------------------------------------------------------------------
+class GemAndProviderConfigTests(TmpBundleMixin, unittest.TestCase):
+    def test_prepare_prompts_only_no_generation(self):
+        root = self.fresh()
+        res = writing.run(opts_for(root, provider=PROVIDER_GEMINI_GEM,
+                                   prepare_only=True))
+        self.assertEqual(res.status, "prepared")
+        pdir = os.path.join(root, "wiki", "audit", "prompts")
+        self.assertTrue(os.path.isfile(os.path.join(pdir, "overview.md")))
+        self.assertTrue(os.path.isfile(os.path.join(pdir, "service.md")))
+        self.assertTrue(os.path.isfile(os.path.join(pdir, "README_GEM_HANDOFF.md")))
+        # no generation happened
+        self.assertFalse(os.path.exists(os.path.join(root, "wiki", "index.md")))
+
+    def test_gem_import_validate_and_assemble(self):
+        root = self.fresh()
+        b = gated(root, provider=PROVIDER_GEMINI_GEM)
+        rdir = os.path.join(root, "wiki", "audit", "responses")
+        os.makedirs(rdir, exist_ok=True)
+        for sid in b.section_order:
+            title = b.section_plans[sid]["title"]
+            ids = sorted(b.section_evidence_ids[sid])
+            util.write_text(os.path.join(rdir, f"{sid}.raw.txt"),
+                            draft_json(sid, title, valid_markdown(sid, title, ids)))
+        res = writing.run(opts_for(root, provider=PROVIDER_GEMINI_GEM,
+                                   responses_in=rdir))
+        self.assertEqual(res.status, "pass")
+        rows = [json.loads(l) for l in open(os.path.join(
+            root, "wiki", "metadata", "generated-sections.jsonl")) if l.strip()]
+        self.assertEqual(rows[0]["generation"]["provider_mode"], PROVIDER_GEMINI_GEM)
+        self.assertIsNone(rows[0]["generation"]["model"])
+
+    def test_gem_missing_response_is_provider_failure(self):
+        root = self.fresh()
+        rdir = os.path.join(root, "wiki", "audit", "responses")
+        os.makedirs(rdir, exist_ok=True)
+        util.write_text(os.path.join(rdir, "overview.raw.txt"),
+                        draft_json("overview", "Overview",
+                                   valid_markdown("overview", "Overview",
+                                                  ["ev:overview:0001"])))
+        # service response missing
+        with self.assertRaises(writing.ProviderFailure):
+            writing.run(opts_for(root, provider=PROVIDER_GEMINI_GEM,
+                                 responses_in=rdir))
+
+    def test_vertex_provider_requires_project(self):
+        from wiki_generator.libs.writing.provider import build_provider
+        from wiki_generator.libs.writing.errors import ProviderFailure
+        o = opts_for("/x", provider=PROVIDER_VERTEX, project=None, location="us")
+        try:
+            with self.assertRaises(ProviderFailure):
+                build_provider(o)
+        except ProviderFailure:
+            self.skipTest("google-genai not installed; SDK import path covered")
+
+    def test_gemini_api_requires_key(self):
+        from wiki_generator.libs.writing.provider import build_provider
+        from wiki_generator.libs.writing.options import PROVIDER_GEMINI_API
+        from wiki_generator.libs.writing.errors import ProviderFailure
+        o = opts_for("/x", provider=PROVIDER_GEMINI_API, api_key=None)
+        try:
+            with self.assertRaises(ProviderFailure):
+                build_provider(o)
+        except ProviderFailure:
+            self.skipTest("google-genai not installed; SDK import path covered")
+
+    def test_options_reject_bad_values(self):
+        with self.assertRaises(ValueError):
+            opts_for("/x", provider="not-a-mode")
+        with self.assertRaises(ValueError):
+            opts_for("/x", max_output_tokens=0)
+        with self.assertRaises(ValueError):
+            opts_for("/x", max_rewrite_attempts=3)
+
+    def test_8192_warns_for_gemini_pro(self):
+        o = opts_for("/x", provider=PROVIDER_VERTEX, model="gemini-2.5-pro",
+                     max_output_tokens=8192)
+        self.assertIsNotNone(o.truncation_risk())
+        o2 = opts_for("/x", provider=PROVIDER_VERTEX, model="gemini-2.5-pro",
+                      max_output_tokens=32768)
+        self.assertIsNone(o2.truncation_risk())
+
+
+# ---------------------------------------------------------------------------
+class UnitTests(unittest.TestCase):
+    def test_citation_regex(self):
+        from wiki_generator.libs.writing import citations as c
+        md = "a [ev:overview:0001] b [ev:api-agents:0042][ev:api-agents:0001] c"
+        self.assertEqual(c.extract_citations(md),
+                         ["ev:overview:0001", "ev:api-agents:0042", "ev:api-agents:0001"])
+
+    def test_placeholder_detector(self):
+        from wiki_generator.libs.writing import citations as c
+        self.assertTrue(c.find_placeholders("TODO: fix"))
+        self.assertTrue(c.find_placeholders("I cannot determine this."))
+        self.assertTrue(c.find_placeholders("## Heading\n\n## Next"))  # empty heading
+        self.assertFalse(c.find_placeholders("Real prose with no markers."))
+
+    def test_parse_fenced_and_balanced(self):
+        from wiki_generator.libs.writing.parse import parse_section_response
+        obj, _ = parse_section_response('prefix\n```json\n{"a": 1}\n```\nsuffix')
+        self.assertEqual(obj, {"a": 1})
+        obj2, _ = parse_section_response('garbage {"b": {"c": 2}} trailing')
+        self.assertEqual(obj2, {"b": {"c": 2}})
+        obj3, note = parse_section_response("not json")
+        self.assertIsNone(obj3)
+
+    def test_readiness_parser(self):
+        from wiki_generator.libs.writing.bundle import parse_readiness
+        r = parse_readiness("# R\n\nStatus: PASS\nFailures: 0\nWarnings: 3\n")
+        self.assertEqual((r["status"], r["failures"], r["warnings"]), ("PASS", 0, 3))
+        from wiki_generator.libs.writing.errors import BadInputArtifact
+        with self.assertRaises(BadInputArtifact):
+            parse_readiness("no status here")
+
+    def test_invented_vs_supported_identifier(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = "def work(n): in pkg/svc.py route /items GET"
+        r = analyze_claims("Uses `pkg/svc.py` here. [ev:x:0001]", available)
+        self.assertEqual(r["invented_identifiers"], [])
+        r2 = analyze_claims("Uses `app/ghost.py` here. [ev:x:0001]", available)
+        self.assertIn("app/ghost.py", r2["invented_identifiers"])
+
+    def test_uncited_paragraph_detection(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = "pkg/svc.py is here"
+        r = analyze_claims("The file `pkg/svc.py` does work.", available)  # no citation
+        self.assertTrue(r["uncited_paragraphs"])
+        r2 = analyze_claims("The file `pkg/svc.py` does work. [ev:x:0001]", available)
+        self.assertFalse(r2["uncited_paragraphs"])
+
+    def test_context_artifact_reference_detector(self):
+        from wiki_generator.libs.writing.citations import find_context_artifact_references
+        self.assertTrue(find_context_artifact_references("see `derived/planning-gaps.md`"))
+        self.assertTrue(find_context_artifact_references("see `plans/document-plan.json`"))
+        self.assertFalse(find_context_artifact_references("see `pkg/svc.py`"))
+
+    def test_structural_draft_errors(self):
+        from wiki_generator.libs.writing.schema import structural_draft_errors
+        self.assertEqual(structural_draft_errors(
+            {"schema_version": "phase4-section-draft-v1", "section_id": "s",
+             "title": "S", "markdown": "x"}, expected_section_id="s"), [])
+        errs = structural_draft_errors({"section_id": "other", "markdown": ""},
+                                       expected_section_id="s")
+        self.assertTrue(any("section_id" in e for e in errs))
+        self.assertTrue(any("markdown" in e for e in errs))
+
+
+# ---------------------------------------------------------------------------
+class CliTests(TmpBundleMixin, unittest.TestCase):
+    def _cmd(self, *args, **kw):
+        env = dict(os.environ)
+        env["PYTHONPATH"] = SRC + os.pathsep + env.get("PYTHONPATH", "")
+        return subprocess.run([sys.executable, "-m", "wiki_generator", *args],
+                              cwd=ROOT, capture_output=True, text=True, timeout=120,
+                              env=env, **kw)
+
+    def test_help_lists_phase4_writing_only(self):
+        res = self._cmd("write-wiki", "--help")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("Phase 4", res.stdout)
+        self.assertIn("writing/synthesis", res.stdout)
+        # never offers a phase-3 retrieval / repair knob
+        self.assertNotIn("--section", res.stdout)
+        self.assertNotIn("--force", res.stdout)
+
+    def test_prepare_only_smoke(self):
+        root = self.fresh()
+        res = self._cmd("write-wiki", "--bundle", root, "--provider", "gemini-gem",
+                        "--prepare-prompts-only")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertTrue(os.path.isfile(os.path.join(
+            root, "wiki", "audit", "prompts", "overview.md")))
+
+    def test_gem_full_run_via_cli(self):
+        root = self.fresh()
+        # prepare, then write gem responses, then validate+assemble — all no-API
+        self._cmd("write-wiki", "--bundle", root, "--provider", "gemini-gem",
+                  "--prepare-prompts-only")
+        rdir = os.path.join(root, "wiki", "audit", "responses")
+        os.makedirs(rdir, exist_ok=True)
+        b = gated(root, provider=PROVIDER_GEMINI_GEM)
+        for sid in b.section_order:
+            title = b.section_plans[sid]["title"]
+            ids = sorted(b.section_evidence_ids[sid])
+            util.write_text(os.path.join(rdir, f"{sid}.raw.txt"),
+                            draft_json(sid, title, valid_markdown(sid, title, ids)))
+        res = self._cmd("write-wiki", "--bundle", root, "--provider", "gemini-gem",
+                        "--responses-in", rdir, "--validate-and-assemble")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertTrue(os.path.isfile(os.path.join(root, "wiki", "index.md")))
+
+    def test_fails_before_provider_when_readiness_fail(self):
+        root = self.fresh()
+        util.write_text(os.path.join(root, "plans", "phase3-readiness-report.md"),
+                        "# R\n\nStatus: FAIL\nFailures: 3\n")
+        res = self._cmd("write-wiki", "--bundle", root, "--provider", "gemini-gem",
+                        "--validate-and-assemble")
+        self.assertEqual(res.returncode, 3, res.stderr)
+        self.assertFalse(os.path.exists(os.path.join(root, "wiki", "index.md")))
+
+    def test_fails_before_provider_when_retrieval_not_pass(self):
+        root = self.fresh()
+        v = json.load(open(os.path.join(root, "evidence", "retrieval-validation.json")))
+        v["status"] = "fail"
+        v["failure_category"] = "retriever_implementation_bug"
+        util.write_json(os.path.join(root, "evidence", "retrieval-validation.json"), v)
+        res = self._cmd("write-wiki", "--bundle", root, "--provider", "gemini-gem",
+                        "--validate-and-assemble")
+        self.assertEqual(res.returncode, 3, res.stderr)
+
+
+# ---------------------------------------------------------------------------
+class GateCoverageTests(TmpBundleMixin, unittest.TestCase):
+    """Spec "Unit tests for validators" — packet presence/coherence + hygiene."""
+
+    def _mutate_packet(self, root, sid, fn):
+        p = os.path.join(root, "evidence", "packets", f"{sid}.json")
+        pkt = json.load(open(p))
+        fn(pkt)
+        util.write_json(p, pkt)
+
+    def test_duplicate_evidence_ids_in_packet_blocks(self):
+        root = self.fresh()
+        def dup(pkt):
+            pkt["evidence"].append(dict(pkt["evidence"][0]))  # repeat id 0001
+        self._mutate_packet(root, "service", dup)
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+    def test_packet_order_mismatch_blocks(self):
+        root = self.fresh()
+        self._mutate_packet(root, "service", lambda p: p.__setitem__("order", 99))
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+    def test_packet_title_mismatch_blocks(self):
+        root = self.fresh()
+        self._mutate_packet(root, "service",
+                            lambda p: p.__setitem__("title", "Wrong Title"))
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+    def test_packet_wrong_section_id_blocks(self):
+        root = self.fresh()
+        self._mutate_packet(root, "service",
+                            lambda p: p.__setitem__("section_id", "elsewhere"))
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+    def test_source_hygiene_rejects_plans_evidence(self):
+        root = self.fresh()
+        self._mutate_packet(root, "service",
+                            lambda p: p["evidence"][0]["source"].__setitem__(
+                                "path", "plans/document-plan.json"))
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+    def test_source_hygiene_rejects_wiki_evidence(self):
+        root = self.fresh()
+        self._mutate_packet(root, "service",
+                            lambda p: p["evidence"][0]["source"].__setitem__(
+                                "artifact", "wiki/sections/001-overview.md"))
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+    def test_normal_section_with_no_evidence_is_rejected(self):
+        # A normal section "backed only by diagnostics" has no citeable evidence;
+        # Phase 3 marks it validation:fail and Gate 5 rejects it (no wiki).
+        root = self.fresh()
+        def empty(pkt):
+            pkt["evidence"] = []
+            pkt["validation"]["status"] = "fail"
+        self._mutate_packet(root, "overview", empty)
+        with self.assertRaises(writing.GateFailure):
+            gated(root)
+
+
+# ---------------------------------------------------------------------------
+class ValidatorUnitTests(TmpBundleMixin, unittest.TestCase):
+    """Direct unit coverage of the citation/claim validators (spec test list)."""
+
+    def test_resolve_citations_resolves_rejects_and_marks_cross_section(self):
+        from wiki_generator.libs.writing.citations import resolve_citations
+        index = {"ev:overview:0001": object(), "ev:service:0001": object()}
+        sec_ids = {"overview": {"ev:overview:0001"}, "service": {"ev:service:0001"}}
+        md = ("ok [ev:overview:0001] cross [ev:service:0001] unknown "
+              "[ev:overview:9999] malformed [ev:overview:1]")
+        r = resolve_citations(md, section_id="overview", evidence_index=index,
+                              section_evidence_ids=sec_ids)
+        self.assertEqual(set(r["resolved"]), {"ev:overview:0001", "ev:service:0001"})
+        self.assertIn("ev:overview:9999", r["unresolved"])      # unknown id
+        # ev:overview:1 has the wrong digit width -> not a well-formed citation
+        self.assertNotIn("ev:overview:1", r["resolved"])
+        self.assertEqual(r["cross_section"], ["ev:service:0001"])
+
+    def test_invented_path_basename_collision_is_flagged(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = 'evidence path {"path": "test/ghost.py"} only'
+        r = analyze_claims("The handler is in `app/ghost.py`. [ev:x:0001]", available)
+        self.assertIn("app/ghost.py", r["invented_identifiers"])
+
+    def test_context_artifact_basename_is_not_false_positive(self):
+        from wiki_generator.libs.writing.citations import (
+            find_context_artifact_references)
+        # a target repo's OWN doc that merely shares a basename is NOT flagged ...
+        self.assertEqual(
+            find_context_artifact_references("see `docs/repo-summary.md` here"), [])
+        # ... but a real bundle context/plan artifact still is.
+        self.assertTrue(
+            find_context_artifact_references("see `derived/planning-gaps.md`"))
+        self.assertTrue(
+            find_context_artifact_references("see `plans/section-plans.jsonl`"))
+
+    def test_unused_manifest_citation_is_rejected(self):
+        # validate_document must fail if the manifest carries a citation that no
+        # section file actually uses (spec citation-resolution tests).
+        root = self.fresh()
+        b = gated(root)
+        writing.run(opts_for(root), provider=default_provider(b))
+        from wiki_generator.libs.writing.validate import validate_document
+        out_dir = os.path.join(root, "wiki")
+        generated = [json.loads(l) for l in open(os.path.join(
+            out_dir, "metadata", "generated-sections.jsonl")) if l.strip()]
+        manifest = json.load(open(os.path.join(out_dir, "metadata",
+                                               "citation-manifest.json")))
+        # ev:overview:0002 does not exist in any section file (overview has only
+        # 0001), so it is an unused manifest entry the validator must reject.
+        manifest["citations"].append({"evidence_id": "ev:overview:0002",
+                                      "source": {"artifact": "x"}})
+        b2 = gated(root)
+        vd = validate_document(b2, generated, manifest, out_dir)
+        self.assertEqual(vd["status"], "fail")
+        self.assertTrue(any("no_unused_manifest_citations" in f
+                            for f in vd["failures"]))
+
+
+# ---------------------------------------------------------------------------
+class IsolationTests(unittest.TestCase):
+    """Phase 4 must never invoke Phase 3 retrieval, Phase 2 repair, or a planner.
+
+    Checks the *invocation mechanisms*, not string literals: Phase 4 legitimately
+    reads the string ``retrieve-evidence`` out of a command manifest (provenance)
+    and reuses ``evidence.schema.validate_packet`` (a pure validator), neither of
+    which runs another phase."""
+
+    def test_writing_package_spawns_no_process_and_calls_no_phase_command(self):
+        import glob
+        files = (glob.glob(os.path.join(SRC, "wiki_generator", "libs", "writing",
+                                        "*.py"))
+                 + [os.path.join(SRC, "wiki_generator", "libs", "commands",
+                                 "write_wiki.py")])
+        # process spawning + calling another phase's command/orchestrator entrypoint
+        banned = ("subprocess", "os.system", "os.popen", "os.exec",
+                  "evidence.run(", "import retrieve_evidence", "import plan_repair",
+                  "import normalize_plan", "import decompose", "commands.plan")
+        for f in files:
+            text = open(f, encoding="utf-8").read()
+            for token in banned:
+                self.assertNotIn(token, text, f"{os.path.basename(f)} -> {token}")
+
+
+def _snapshot(d: str) -> dict:
+    out = {}
+    for base, _, files in os.walk(d):
+        for name in files:
+            p = os.path.join(base, name)
+            with open(p, encoding="utf-8") as f:
+                out[os.path.relpath(p, d)] = f.read()
+    return out
+
+
+if __name__ == "__main__":
+    unittest.main()

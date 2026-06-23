@@ -12,6 +12,7 @@ module stays deliberately small.
     python -m wiki_generator plan          --bundle <bundle> [--project P --location L]  (Vertex AI; LLM step)
     python -m wiki_generator normalize-plan --bundle <bundle> --raw-response <file> [--out <dir>]
     python -m wiki_generator retrieve-evidence --bundle <bundle> [--out <dir>]   (Phase 3)
+    python -m wiki_generator write-wiki     --bundle <bundle> --provider {gemini-gem|gemini-api|vertex}  (Phase 4)
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ from .libs.commands import normalize_plan as normalize_plan_cmd
 from .libs.commands import plan as plan_cmd
 from .libs.commands import plan_repair as plan_repair_cmd
 from .libs.commands import retrieve_evidence as retrieve_evidence_cmd
+from .libs.commands import write_wiki as write_wiki_cmd
 
 _TOGGLE = ("auto", "on", "off")
 DEFAULT_BUDGET_TOKENS = 250_000
@@ -198,6 +200,64 @@ def build_parser() -> argparse.ArgumentParser:
                      type=int, default=None,
                      help="max evidence items kept per section (default: stable "
                           "implementation constant)")
+
+    _ww_help = ("Phase 4: writing/synthesis only. Consume a clean Phase 1-3 bundle, "
+                "gate on upstream success, generate grounded DeepWiki-style sections "
+                "with EvidencePacket citations, and assemble the wiki. Never re-runs "
+                "Phase 3, never repairs the plan, never invents fallback evidence.")
+    ww = sub.add_parser("write-wiki", help=_ww_help, description=_ww_help)
+    ww.add_argument("--bundle", required=True,
+                    help="path to the accepted Phase 1/2/3 bundle root")
+    ww.add_argument("--out", dest="out_dir", default=None,
+                    help="output directory for the wiki (default <bundle>/wiki)")
+    ww.add_argument("--provider", default="vertex",
+                    choices=("gemini-gem", "gemini-api", "vertex"),
+                    help="execution mode: gemini-gem (manual Gem prompt/response "
+                         "handoff), gemini-api (direct GEMINI_API_KEY; NOT Vertex), "
+                         "or vertex (Vertex AI). Default: vertex")
+    ww.add_argument("--model", default="gemini-2.5-pro",
+                    help="model id for gemini-api/vertex (default gemini-2.5-pro)")
+    ww.add_argument("--temperature", type=float, default=None,
+                    help="sampling temperature for gemini-api/vertex (default 0.1)")
+    ww.add_argument("--max-output-tokens", dest="max_output_tokens", type=int,
+                    default=None,
+                    help="max output tokens (default 32768; <32768 warns for "
+                         "gemini-2.5-pro full-section synthesis, 8192 can truncate)")
+    ww.add_argument("--prepare-prompts-only", dest="prepare_prompts_only",
+                    action="store_true",
+                    help="write per-section prompt packets and stop (no model "
+                         "call); for the Gemini Gem handoff")
+    ww.add_argument("--validate-and-assemble", dest="validate_and_assemble",
+                    action="store_true",
+                    help="default phase: generate/import responses, validate, and "
+                         "assemble (informational; this is the default when "
+                         "--prepare-prompts-only is not set)")
+    ww.add_argument("--prompt-out", dest="prompt_out", default=None,
+                    help="directory for prepared prompts (default "
+                         "<out>/audit/prompts)")
+    ww.add_argument("--responses-in", dest="responses_in", default=None,
+                    help="directory of verbatim raw Gem responses to import "
+                         "(gemini-gem mode; default <out>/audit/responses)")
+    ww.add_argument("--max-rewrite-attempts", dest="max_rewrite_attempts", type=int,
+                    default=None,
+                    help="bounded format/citation rewrites for gemini-api/vertex "
+                         "(0..2; default 1). Never used to add evidence.")
+    ww.add_argument("--project", default=None,
+                    help="GCP project for vertex (default $GOOGLE_CLOUD_PROJECT)")
+    ww.add_argument("--location", default=None,
+                    help="Vertex location (default $GOOGLE_CLOUD_LOCATION or "
+                         "us-central1)")
+    ww.add_argument("--accept-no-force", dest="accept_no_force",
+                    action="store_true",
+                    help="operator assertion that Phase 3 was not force-run after a "
+                         "readiness FAIL, used only when the bundle carries no "
+                         "command manifest (fails closed otherwise)")
+    ww.add_argument("--style", default="deepwiki",
+                    help="style profile (default deepwiki)")
+    ww.add_argument("--audit-raw", dest="audit_raw", action="store_true",
+                    default=True, help="audit raw prompt/response (default on)")
+    ww.add_argument("--no-audit-raw", dest="no_audit_raw", action="store_true",
+                    help="(reserved) disable raw audit; audit is on by default")
     return p
 
 
@@ -221,6 +281,8 @@ def main(argv: list[str] | None = None) -> int:
         return plan_repair_cmd.run(args)
     if args.command == "retrieve-evidence":
         return retrieve_evidence_cmd.run(args)
+    if args.command == "write-wiki":
+        return write_wiki_cmd.run(args)
     return 2  # pragma: no cover - argparse enforces a known command
 
 

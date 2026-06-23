@@ -8,13 +8,13 @@ export OUT=/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/runs/$(date +%
 
 # Runbook — generate a DeepWiki plan for any repo
 
-End-to-end commands for the implemented Phase 1-3 pipeline. Phase 1 and Phase 3
-are deterministic and LLM-free. Phase 2 Step 1 (`plan`) and optional Step 1b
-(`plan-repair`) are the implemented LLM-backed steps. Phase 4 writing/synthesis
-is currently **SPEC ONLY / future implementation** in
-`PHASE4_WRITING_SYNTHESIS_SPEC.md`.
+End-to-end commands for the implemented Phase 1-4 pipeline. Phase 1 and Phase 3
+are deterministic and LLM-free. Phase 2 Step 1 (`plan`), optional Step 1b
+(`plan-repair`), and Phase 4 (`write-wiki`) are the LLM-backed steps. Phase 4
+writing/synthesis is **implemented** per `PHASE4_WRITING_SYNTHESIS_SPEC.md`
+(§6 below).
 
-> **Current readiness status (2026-06-22):** The `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` patches are **implemented and validated**. Phase 2 `normalize-plan` stays deterministic; when it reports a planner-quality `FAIL`, the bounded `plan-repair` step (Phase 2 Step 1b, §4b below) re-prompts Vertex/Gemini, re-validates with the same strict gate, and writes canonical artifacts only on `PASS` (fails loudly otherwise). A clean fresh validation run — readiness `PASS` → `phase3_retrieve_evidence.sh` without `--force` → evidence validation `pass` (16/16 sections, 569 items) — is at `13-e2e-allphases/runs/20260622-234038`. Phase 4 is **ready to reopen for that fresh bundle** and is **SPEC ONLY / not implemented** in `PHASE4_WRITING_SYNTHESIS_SPEC.md`; never use forced Phase-3-after-`FAIL` output as a Phase 4 GO.
+> **Current readiness status (2026-06-22):** The `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` patches are **implemented and validated**. Phase 2 `normalize-plan` stays deterministic; when it reports a planner-quality `FAIL`, the bounded `plan-repair` step (Phase 2 Step 1b, §4b below) re-prompts Vertex/Gemini, re-validates with the same strict gate, and writes canonical artifacts only on `PASS` (fails loudly otherwise). A clean fresh validation run — readiness `PASS` → `phase3_retrieve_evidence.sh` without `--force` → evidence validation `pass` (16/16 sections, 569 items) — is at `13-e2e-allphases/runs/20260622-234038`. Phase 4 (`write-wiki`, §6) is **implemented** and consumes that fresh bundle; it independently re-checks every gate and fails closed, so forced Phase-3-after-`FAIL` output can never become a wiki. No live Vertex/Gemini Phase 4 generation has been run; it is validated by a fake-provider suite.
 
 ```
 Phase 1  Step 1 decompose   -> raw artifact bundle
@@ -31,8 +31,10 @@ Phase 2  Step 1 plan         -> Gemini/Kimi plan -> plans/phase2-<provider>-resp
 Phase 3  retrieve-evidence   -> evidence/packets/<section_id>.json (+ manifest,
                                 validation, report) — deterministic, no LLM
                                 (refuses to run if readiness report is not PASS)
-Phase 4  write/synthesize    -> SPEC ONLY in PHASE4_WRITING_SYNTHESIS_SPEC.md
-                                (not implemented; no command yet)
+Phase 4  write-wiki          -> wiki/index.md + sections/ + metadata/citation-
+                                manifest.json + audit/ + validation/ +
+                                PHASE4_RUN_REPORT.md (LLM-backed; gates + fails
+                                closed; gemini-gem | gemini-api | vertex)
 ```
 
 Step 5 (`build-retrieval`) is independent of the planner upload — it only needs
@@ -303,31 +305,64 @@ upstream artifact / plan / code per `retrieval-report.md`, then rerun the same
 all-sections command. The vector lane runs only when capabilities report `hybrid`;
 in `lexical-symbolic` mode it is skipped (not a failure).
 
-## 6. Phase 4 — writing/synthesis (spec only)
+## 6. Phase 4 — writing/synthesis (`write-wiki`)
 
-Phase 4 is ready to design/implement **only after** a clean Phase 1-3 bundle like:
+Phase 4 is **implemented** (`PHASE4_WRITING_SYNTHESIS_SPEC.md`). It consumes a
+clean accepted Phase 1-3 bundle such as:
 
 ```text
 /Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/runs/20260622-234038
 ```
 
-Current status: **SPEC ONLY / not implemented**. Read:
+It gates on Phase 1-3 success before any model call — readiness `PASS`/Failures 0,
+retrieval validation `pass` with all required contract checks, no forced/stale
+provenance (packet `section_plan_sha256` must match the live section plans), no
+evidence sourced from `plans/`/`derived/`/context artifacts, and one valid packet
+per planned section — then writes `wiki/index.md`, per-section Markdown, a
+citation manifest, a raw prompt/response audit, a writing-validation report, and
+`PHASE4_RUN_REPORT.md`. It cites only Phase 3 EvidencePacket `evidence_id`s, and
+fails closed on missing, stale, forced, or unsupported evidence. It never reruns
+Phase 3, repairs the plan, or invents fallback evidence.
 
-```text
-PHASE4_WRITING_SYNTHESIS_SPEC.md
+Three provider modes (all default to temperature `0.1` and `max_output_tokens`
+`32768`; `8192` is warned against for `gemini-2.5-pro` because it can truncate):
+
+```bash
+export BUNDLE=/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/runs/20260622-234038
+
+# (A) Vertex AI Gemini 2.5 Pro
+pip install -e '.[vertex]'
+gcloud auth application-default login
+export GOOGLE_CLOUD_PROJECT=my-gcp-project GOOGLE_CLOUD_LOCATION=us-central1
+scripts/phase4_write_wiki.sh --out "$BUNDLE" --provider vertex
+#   or: wiki-generator write-wiki --bundle "$BUNDLE" --provider vertex \
+#         --project my-gcp-project --location us-central1
+
+# (B) Direct Gemini API key (NOT Vertex)
+export GEMINI_API_KEY=...
+scripts/phase4_write_wiki.sh --out "$BUNDLE" --provider gemini-api
+
+# (C) Gemini Gem handoff (no API call): prepare prompts, paste into the Gem,
+#     save verbatim responses, then validate + assemble.
+scripts/phase4_write_wiki.sh --out "$BUNDLE" --provider gemini-gem --prepare-prompts-only
+#   ... paste wiki/audit/prompts/<section>.md into the Gem, save responses to
+#       wiki/audit/responses/<section>.raw.txt ...
+scripts/phase4_write_wiki.sh --out "$BUNDLE" --provider gemini-gem \
+    --responses-in "$BUNDLE/wiki/audit/responses"
 ```
 
-The spec defines two future execution modes:
+Exit codes: `0` PASS/prepared · `2` bad/missing input · `3` upstream gate failure
+(fix readiness/Phase 2/Phase 3) · `4` provider failure · `5` writing-validation
+failure · `1` internal bug. A bounded format/citation rewrite (`--max-rewrite-attempts`,
+hard cap 2, every attempt audited under `wiki/audit/rewrites/`) may fix malformed
+JSON or citation-syntax issues for the live-model providers; it never adds
+evidence and never runs for terminal failures (cited context artifact, invented
+identifier, placeholder, truncation). If the bundle carries no command manifest,
+pass `--accept-no-force` to assert Phase 3 was not force-run.
 
-1. Gemini Gem / direct Gemini mode.
-2. Vertex AI mode with `gemini-2.5-pro`.
-
-Both must use low temperature, audit raw prompts/responses, and use generous
-output token caps for `gemini-2.5-pro` (`32768+`, not `8192`) to avoid truncation.
-Phase 4 must consume the clean Phase 1-3 bundle, validate readiness/retrieval
-first, cite only Phase 3 EvidencePacket evidence IDs, and fail closed on stale,
-forced, missing, or unsupported evidence. It must not rerun Phase 3 or invent
-fallback evidence.
+A live Vertex/Gemini Phase 4 generation has not been run here; the implementation
+is validated by a fake-provider test suite (`tests/test_phase4.py`) that needs no
+live model.
 
 ---
 
