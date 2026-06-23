@@ -1,5 +1,7 @@
 # Phase 1/2/3 Readiness Iteration Spec
 
+> **Status note (2026-06-22):** This remains the baseline readiness-iteration spec, but current implementation work must start with `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md`. Iteration 2 is an incremental amendment and supersedes this file where they conflict: Patch 1 broad directory refs become visible `search_hints[]` warnings when safely routed; Patch 2 malformed SectionPlan JSONL requires bounded Phase 2 repair/re-prompt or loud failure; Patch 3 diagnostic-only/known-gaps sections are not normal source-evidence sections and must not be rescued by generic BM25/vector fallback. Do not treat any forced Phase 3 run against readiness `FAIL` as Phase 4 GO.
+
 ## Amendment status: iteration on `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`
 
 This spec is an **iteration/amendment** on the existing `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`; it is **not a replacement**. The existing Phase 3 spec is done and must remain unchanged.

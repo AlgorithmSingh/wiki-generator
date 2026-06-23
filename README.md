@@ -34,6 +34,8 @@ This implements `PHASE1_DECOMPOSITION_PLAN.md` (Step 1),
 `PHASE2_PLAN_NORMALIZATION_SPEC.md` (Phase 2 Step 2), and
 `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` (Phase 3).
 
+> **Current readiness note (2026-06-22):** For the next readiness implementation pass, read `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` first. It is an incremental amendment on top of `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_SPEC.md`; it does not modify `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. Phase 4 is **NO-GO** from any forced Phase 3 run after readiness `FAIL`; require the Iteration 2 patches, readiness `PASS`, and Phase 3 without `--force` before Phase 4.
+
 ## Architecture
 
 `src/` layout with a **thin entry / deep libs** split:

@@ -11,6 +11,8 @@ End-to-end commands for the full pipeline. Phase 1 is deterministic and LLM-free
 Phase 2 Step 1 is the only LLM call (a Gemini/Kimi Gem) and happens outside this
 tool; Phase 2 Step 2 (`normalize-plan`) is deterministic again.
 
+> **Current readiness status (2026-06-22):** For readiness patch work, read `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` first. Existing forced Phase 3 output after readiness `FAIL` is diagnostic and is a **NO-GO for Phase 4**. Normal product validation requires implementing the Iteration 2 patches, re-normalizing/repairing as needed, getting readiness `PASS`, and running Phase 3 without `--force`.
+
 ```
 Phase 1  Step 1 decompose   -> raw artifact bundle
          Step 2 condense     -> derived/planning-*.md condensates
