@@ -133,6 +133,23 @@ Implemented after the planning-obligation slice:
 Do not begin the next pipeline-expansion slice without a concrete prompt, and do
 not run a live/billed retry without explicit user approval.
 
+### Next-slice acceptance summary
+
+The next Phase 2 slice should be accepted only if non-live tests show:
+
+- the planner prompt/context uses `planning-coverage-signals.md` as context only;
+- enhancement mode gates the normalized plan before Phase 3;
+- missing mandatory families fail loudly with actionable diagnostics;
+- baseline mode remains non-breaking/report-only;
+- deterministic code does not synthesize or heal missing pages/labels/source
+  obligations;
+- any LLM re-prompt is bounded, audited, diagnostic-fed, and followed by the same
+  strict normalized-plan gate;
+- `coverage_labels[]`, `parent_section_id`, merged `required_topics[]`, and
+  `expected_sources[]` continue to survive normalization;
+- compact/missing-family fixtures fail enhancement mode, expanded hierarchical
+  fixtures pass, and Milestone 1 malformed-citation validation remains intact.
+
 ## Required guardrails
 
 - Do not modify `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`.

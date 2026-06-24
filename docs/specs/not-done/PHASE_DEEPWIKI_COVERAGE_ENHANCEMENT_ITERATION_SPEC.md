@@ -413,6 +413,35 @@ Implemented:
 5. **Benchmark-only comparison.** Compare against `ragflow-deepwiki.md` only as a
    structure/coverage benchmark, never as citeable evidence.
 
+### Next-slice acceptance — Phase 2 enhancement-mode upstream prevention
+
+The next implementation slice is accepted only when it proves all of the
+following in non-live tests:
+
+- Phase 2 planning prompt/context explicitly includes and explains
+  `planning-coverage-signals.md` as planner context, not citeable evidence.
+- Enhancement mode has a deterministic gate that evaluates the normalized plan
+  against all thirteen mandatory coverage families before Phase 3 retrieval.
+- A normalized plan missing mandatory families fails enhancement mode loudly with
+  actionable diagnostics naming the missing families and remediation.
+- Baseline mode remains non-breaking and report-only for compact or legacy plans.
+- Deterministic code does **not** synthesize, silently add, or auto-heal missing
+  pages, labels, or source obligations. Deterministic stages must prevent bad
+  artifacts by stronger prompt contracts, schemas, normalization, validation, or
+  explicit failure.
+- If bounded LLM re-prompt/repair is added for the LLM-authored Phase 2 plan, it
+  is narrow, audited, capped, fed exact coverage diagnostics, and followed by the
+  same strict normalized-plan enhancement gate. It must not be retry-until-green.
+- Planner outputs and normalized artifacts still preserve `coverage_labels[]`,
+  `parent_section_id`, merged `required_topics[]`, and `expected_sources[]`.
+- Tests prove: an expanded hierarchical plan with all families passes; a plan
+  missing frontend/memory/queue fails enhancement mode; a broad parent page alone
+  does not satisfy a deep child family; malformed citation validation from
+  Milestone 1 remains intact.
+- No live Vertex/Gemini/API calls, no real Phase 1/2/3/4 pipeline retry, no
+  historical wiki artifact edits, no validator weakening, and no changes to
+  `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`.
+
 ### Milestone 2 acceptance criteria
 
 A later implementation must demonstrate:
