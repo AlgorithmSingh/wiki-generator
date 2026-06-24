@@ -56,6 +56,16 @@ Constraints (repeat of the Gem rules, in case they aren't loaded):
   Do **not** create a "Known gaps / unverified" section from it; attach uncertainty
   to the affected real sections via `verification_needs[]`. Every normal section
   needs real retrieval signals.
+- **DeepWiki coverage enhancement.** Plan a broad, hierarchical guide. Where the
+  digest has real signal, give each mandatory topic family its own page (or child
+  page under a subsystem) and tag it with a canonical `coverage_labels[]` value:
+  `frontend`, `memory`, `queue-system`, `helm-k8s`, `ci-cd-build`, `go-native`,
+  `retrieval-internals`, `doc-processing`, `llm-internals`,
+  `user-tenant-admin-health`, `sandbox-executor`, `migrations-operations`,
+  `glossary`. Use `parent_section_id` for child pages. A broad parent page does
+  **not** cover a deep child topic unless that child has its own page, label, and
+  evidence. Do not invent a family the digest shows no signal for — note its absence
+  in `known_gaps[]`.
 - Treat `CALLS_APPROX` edges, lexical query hits, the derived OpenAPI contract, and
   the static-only test scan as approximate — any section relying on them must list a
   `verification_needs` entry.

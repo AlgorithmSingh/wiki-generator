@@ -201,6 +201,19 @@ def _readme(repo_root: str, source_bundle: str, generated_at: str,
           "must have a real retrieval signal (exact handle, query pack, or search "
           "hint).",
           "",
+          "### DeepWiki coverage enhancement", "",
+          "Plan a broad, hierarchical guide, not a compact summary. Where the digest "
+          "has real signal, give each mandatory topic family its own page (or child "
+          "page under a subsystem via `parent_section_id`) and tag it with a "
+          "canonical `coverage_labels[]` value: `frontend`, `memory`, "
+          "`queue-system`, `helm-k8s`, `ci-cd-build`, `go-native`, "
+          "`retrieval-internals`, `doc-processing`, `llm-internals`, "
+          "`user-tenant-admin-health`, `sandbox-executor`, `migrations-operations`, "
+          "`glossary`. A broad parent page does **not** count as coverage for a deep "
+          "child topic unless that child has its own page, label, and evidence. Do "
+          "not invent a family the digest shows no signal for — note its absence in "
+          "`known_gaps[]`.",
+          "",
           "Produce:",
           "",
           "```text",

@@ -50,7 +50,8 @@ filename (a one-line text fence naming the file, then the content):
 sections:[{id(kebab), title, order, parent, purpose, rationale, priority}]}
 2. plans/document-plan.md — the same plan as a readable outline.
 3. plans/section-plans.jsonl — one JSON object per line, 1:1 with the sections, \
-each {section_id, title, goal, coverage_requirements[], key_questions[], \
+each {section_id, title, parent_section_id, coverage_labels[], goal, \
+coverage_requirements[], required_topics[], key_questions[], \
 evidence_needs:{symbol_ids[], file_anchors[], query_packs[], graph_nodes[], \
 contracts[], search_hints[], context_artifacts[]}, depends_on[], \
 verification_needs[], estimated_size}.
@@ -84,14 +85,29 @@ planning-gaps.md is internal planning/provenance context, NOT source evidence: d
 not put it in file_anchors[] and do not create a "Known gaps / unverified" section \
 from it — attach uncertainty to affected sections via verification_needs[]. Every \
 section must have a real retrieval signal (an exact handle, query pack, or search hint).
-Use stable kebab ids (section_id must equal a document-plan id)."""
+Use stable kebab ids (section_id must equal a document-plan id).
+
+DeepWiki coverage enhancement: plan a broad, hierarchical guide. Where the digest \
+has real signal, give each mandatory topic family its own page (or child page under \
+a subsystem via parent_section_id) and tag it with a canonical coverage_labels[] \
+value: frontend, memory, queue-system, helm-k8s, ci-cd-build, go-native, \
+retrieval-internals, doc-processing, llm-internals, user-tenant-admin-health, \
+sandbox-executor, migrations-operations, glossary. A broad parent page does NOT \
+count as coverage for a deep child topic unless that child has its own page, label, \
+and evidence. Do not invent a family the digest shows no signal for — note its \
+absence in known_gaps[]."""
 
 _DEFAULT_KICKOFF = """You are planning the DeepWiki for the repository summarized \
 in the attached Phase 1 decomposition digest. Work only from the attached upload. \
 Begin by listing the major runtime surfaces and subsystems you see, then produce \
 the three artifacts exactly as specified. Fill exact lanes only with exact \
 handles from `planning-handles.md`; put broad recall requests in `search_hints[]` \
-and digest/condensate documents in `context_artifacts[]`."""
+and digest/condensate documents in `context_artifacts[]`. Plan a broad, \
+hierarchical guide: give each mandatory DeepWiki topic family the digest supports \
+its own page (or child page via parent_section_id) tagged with a canonical \
+coverage_labels[] value (frontend, memory, queue-system, helm-k8s, ci-cd-build, \
+go-native, retrieval-internals, doc-processing, llm-internals, \
+user-tenant-admin-health, sandbox-executor, migrations-operations, glossary)."""
 
 
 def _resolve_text(explicit: str | None, candidates: list[str], default: str,

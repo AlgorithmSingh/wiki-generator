@@ -314,10 +314,14 @@ def _document_plan_md(result: Result) -> str:
     for sid in dp["section_order"]:
         s = by_id[sid]
         prefix = f"{s['order']}. "
-        suffix = f"  _(under `{s['parent']}`)_" if s.get("parent") else ""
+        parent_disp = s.get("parent_section_id") or s.get("parent")
+        suffix = f"  _(under `{parent_disp}`)_" if parent_disp else ""
         L.append(f"{prefix}**{s['title']}** — `{sid}`{suffix}")
         if s.get("purpose"):
             L.append(f"   - Purpose: {s['purpose']}")
+        if s.get("coverage_labels"):
+            L.append("   - Coverage labels: "
+                     + ", ".join(f"`{c}`" for c in s["coverage_labels"]))
         nh = s["retrieval_needs"]
         bits = []
         if nh["query_packs"]:
@@ -339,6 +343,36 @@ def _document_plan_md(result: Result) -> str:
             L.append(f"   - ⚠ {len(s['normalization_warnings'])} normalization warning(s)")
         L.append("")
     return "\n".join(L) + "\n"
+
+
+def _coverage_summary_md(result: Result) -> list[str]:
+    """A non-enforcing DeepWiki coverage matrix for the normalization report.
+
+    Milestone 2: evaluated in **baseline (report-only)** mode so it never gates
+    ``normalize-plan`` or changes readiness — it only surfaces which mandatory
+    topic families the plan already covers and which to add for coverage-enhanced
+    mode. The enforcing gate is the explicit ``validate-coverage --mode
+    enhancement`` command. The reference DeepWiki export is a coverage/structure
+    benchmark only, never citeable evidence."""
+    # Local import keeps the planning writer decoupled from the coverage package
+    # at module load and avoids any import cycle.
+    from .. import coverage as _coverage
+
+    report = _coverage.evaluate_plan_coverage(
+        result.document_plan, result.sections, mode=_coverage.MODE_BASELINE)
+    missing = ", ".join(f"`{k}`" for k in report.missing_mandatory) or "_none_"
+    return [
+        "## DeepWiki coverage (benchmark, non-enforcing)", "",
+        f"- Mandatory topic families planned: "
+        f"**{report.covered_count}/{report.family_count}** "
+        "(baseline / report-only — does not gate normalize-plan)",
+        f"- Plan for coverage-enhanced mode: {missing}",
+        "",
+        "> Reference DeepWiki export is a coverage/structure benchmark only, never "
+        "citeable evidence; line count is a warning signal, not the objective. Run "
+        "`validate-coverage --mode enhancement` to enforce the coverage gate.",
+        "",
+    ]
 
 
 def _report_md(result: Result, out_dir: str, strict: bool,
@@ -382,6 +416,7 @@ def _report_md(result: Result, out_dir: str, strict: bool,
     else:
         L.append("_none_")
     L.append("")
+    L += _coverage_summary_md(result)
     mode = "strict" if strict else "lenient (allow-unresolved)"
     verdict = "PASS ✅" if strict_pass else "FAIL ⚠️"
     L += [f"## Mode: {mode}", "",

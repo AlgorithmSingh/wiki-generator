@@ -57,6 +57,18 @@ section will need for retrieval.** You are a planner, not a writer.
    supports one (marked `"role":"provenance"`, clearly non-source). Every normal
    section must have real retrieval signals (exact files/symbols/tests/contracts/
    graph nodes/query packs, or precise search hints).
+8. **DeepWiki coverage enhancement.** Aim for a broad, hierarchical guide, not a
+   compact 16-section summary. **Where the digest has real signal for them**, plan a
+   page (or a child page under the relevant subsystem) for each mandatory topic
+   family and tag it with a `coverage_labels[]` entry from the canonical set:
+   `frontend`, `memory`, `queue-system`, `helm-k8s`, `ci-cd-build`, `go-native`,
+   `retrieval-internals`, `doc-processing`, `llm-internals`,
+   `user-tenant-admin-health`, `sandbox-executor`, `migrations-operations`,
+   `glossary`. Use `parent` to express parent/child page hierarchy so a deep topic
+   gets its own child page with its own evidence — a broad parent page does **not**
+   count as coverage for a deep child topic unless that child has its own section,
+   coverage label, and evidence. Do **not** invent a family the digest shows no
+   signal for; record genuinely-absent families as a `known_gaps[]` note instead.
 
 ## Read the digest in this order
 
@@ -173,11 +185,17 @@ One JSON object **per line** (JSON Lines), one line per section in
 `document-plan.json`:
 
 ```json
-{"section_id":"<id matching document-plan>","title":"<title>","goal":"<what a reader should learn>","coverage_requirements":["<claim or question this section must answer>"],"key_questions":["<question to resolve during writing>"],"evidence_needs":{"symbol_ids":["<exact symbol_id>"],"file_anchors":["path:line-line"],"query_packs":["web_routes","llm_integrations"],"graph_nodes":["repo:ragflow","dep:pytest"],"contracts":["GET /agents"],"tests":["test/x_test.py::test_fn"],"search_hints":["retrieve: api.apps.*","module layout and primary imports"],"context_artifacts":["derived/planning-digest.md"]},"depends_on":["<other section_id>"],"verification_needs":["<what must be confirmed against real source because the digest signal is approximate/derived>"],"estimated_size":"S|M|L"}
+{"section_id":"<id matching document-plan>","title":"<title>","parent_section_id":"<parent section_id or null>","coverage_labels":["queue-system"],"goal":"<what a reader should learn>","coverage_requirements":["<claim or question this section must answer>"],"required_topics":["<specific topic this page must cover>"],"key_questions":["<question to resolve during writing>"],"evidence_needs":{"symbol_ids":["<exact symbol_id>"],"file_anchors":["path:line-line"],"query_packs":["web_routes","llm_integrations"],"graph_nodes":["repo:ragflow","dep:pytest"],"contracts":["GET /agents"],"tests":["test/x_test.py::test_fn"],"search_hints":["retrieve: api.apps.*","module layout and primary imports"],"context_artifacts":["derived/planning-digest.md"]},"depends_on":["<other section_id>"],"verification_needs":["<what must be confirmed against real source because the digest signal is approximate/derived>"],"estimated_size":"S|M|L"}
 ```
 
 Rules for `section-plans.jsonl`:
 - `section_id` values must exactly match ids in `document-plan.json` (1:1).
+- `coverage_labels[]` (optional): one or more canonical DeepWiki family labels (see
+  Hard rule 8) the section covers — used by the deterministic coverage validator.
+  `parent_section_id` (optional): the `section_id` of the parent page for a child
+  page; the normalizer resolves it against planned ids. `required_topics[]`
+  (optional): the specific sub-topics this page must cover (merged with
+  `coverage_requirements`).
 - Exact lanes (`symbol_ids`, `file_anchors`, `contracts`, `tests`, `graph_nodes`)
   hold **only exact handles**. If you cannot name one, move the request to
   `search_hints[]` — do not put `retrieve: <query>`, globs, display labels, or
@@ -212,4 +230,7 @@ One-shot — a bare string inside the object is INVALID JSONL:
 - Are `file_anchors[]` exact files only (no directories / trailing-slash paths)?
 - Did you avoid a diagnostics-only "Known gaps" section, attaching uncertainty to
   affected sections via `verification_needs[]` instead?
+- For every mandatory DeepWiki topic family the digest supports (Hard rule 8), is
+  there a page (or child page) tagged with its canonical `coverage_labels[]`, with a
+  `parent_section_id` where it is a child of a subsystem?
 - Are approximate/derived dependencies flagged for verification?

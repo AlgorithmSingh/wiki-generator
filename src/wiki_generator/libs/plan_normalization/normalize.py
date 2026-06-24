@@ -110,6 +110,49 @@ def _as_list(v) -> list:
     return v if isinstance(v, list) else [v]
 
 
+# --- Milestone 2: coverage-enhanced planning fields ---------------------------
+_LABEL_CLEAN = re.compile(r"[^0-9a-z]+")
+
+
+def _coverage_label(x) -> str | None:
+    """Normalize one coverage label to the taxonomy's kebab-case form (e.g.
+    ``"Queue System"`` / ``"queue_system"`` → ``"queue-system"``), so an explicit
+    planner declaration matches the deterministic topic-family taxonomy exactly.
+    Returns ``None`` for empty/garbage input. Deterministic; no inference."""
+    if x is None:
+        return None
+    s = _LABEL_CLEAN.sub("-", str(x).casefold()).strip("-")
+    return s or None
+
+
+def _clean_labels(*sources) -> list[str]:
+    """Deduped, order-preserving list of kebab-normalized coverage labels merged
+    from several optional planner fields (SectionPlan + DocumentPlan meta)."""
+    out, seen = [], set()
+    for src in sources:
+        for x in _as_list(src):
+            lbl = _coverage_label(x)
+            if lbl and lbl not in seen:
+                seen.add(lbl)
+                out.append(lbl)
+    return out
+
+
+def _str_list(*sources) -> list[str]:
+    """Deduped, order-preserving list of non-empty strings merged from several
+    optional planner fields (verbatim — no normalization, this is prose/topics)."""
+    out, seen = [], set()
+    for src in sources:
+        for x in _as_list(src):
+            if x is None:
+                continue
+            s = x if isinstance(x, str) else str(x)
+            if s and s not in seen:
+                seen.add(s)
+                out.append(s)
+    return out
+
+
 def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
                    unresolved: list[dict], warnings: list[str]) -> dict:
     """Resolve a section's evidence needs into exact retrieval lanes.
@@ -373,6 +416,18 @@ def _build_section(nid: str, order: int, meta: dict | None, plan: dict | None,
         meta.get("role") or meta.get("kind") or meta.get("section_role")
         or plan.get("role") or plan.get("kind") or plan.get("section_role"))
 
+    # Milestone 2 (DeepWiki coverage enhancement): preserve the optional
+    # coverage-enhanced planning fields so the deterministic coverage validator
+    # (libs.coverage) can evaluate planned-topic obligations off the normalized
+    # plan. All additive and optional — a baseline plan that omits them is
+    # unaffected. `parent_section_id` (a hierarchy pointer for parent/child pages)
+    # is captured here as the planner provided it and resolved against the planned
+    # section ids in a post-pass by ``normalize``; `parent` keeps its existing
+    # (raw DocumentPlan meta) value for backward compatibility.
+    raw_parent = (meta.get("parent") if meta.get("parent") is not None
+                  else (plan.get("parent_section_id") or plan.get("parent_id")
+                        or plan.get("parent")))
+
     return {
         "schema_version": SECTION_SCHEMA,
         "section_id": nid,
@@ -380,12 +435,18 @@ def _build_section(nid: str, order: int, meta: dict | None, plan: dict | None,
         "title": title,
         "order": order,
         "parent": meta.get("parent"),
+        "parent_section_id": raw_parent,
+        "coverage_labels": _clean_labels(plan.get("coverage_labels"),
+                                         meta.get("coverage_labels")),
         "priority": meta.get("priority"),
         "purpose": meta.get("purpose") or plan.get("goal") or "",
         "goal": plan.get("goal") or "",
         "rationale": meta.get("rationale"),
-        "required_topics": _as_list(plan.get("coverage_requirements")),
-        "key_questions": _as_list(plan.get("key_questions")),
+        "required_topics": _str_list(plan.get("coverage_requirements"),
+                                     plan.get("required_topics")),
+        "key_questions": _str_list(plan.get("key_questions")),
+        "expected_sources": _str_list(plan.get("expected_sources"),
+                                      plan.get("expected_source_handles")),
         "retrieval_needs": needs,
         "expected_evidence_types": _expected_types(needs),
         "depends_on": _as_list(plan.get("depends_on")),
@@ -429,6 +490,35 @@ def _document_plan(doc: dict, section_order: list[str], lk: Lookups,
     }
 
 
+def _resolve_parents(sections: list[dict], id_map: dict[str, str],
+                     warnings: list[str]) -> None:
+    """Resolve each section's ``parent_section_id`` to a normalized planned id.
+
+    A parent reference the planner wrote against a raw id/title is mapped onto the
+    real normalized ``section_id`` when possible. A self-reference is dropped; an
+    unresolvable reference is kept verbatim with a NON-blocking warning (the
+    hierarchy hint is preserved, never silently lost, and never fails readiness)."""
+    for s in sections:
+        raw_parent = s.get("parent_section_id")
+        if not isinstance(raw_parent, str) or not raw_parent.strip():
+            s["parent_section_id"] = None
+            continue
+        key = raw_parent.strip()
+        resolved = id_map.get(key)
+        if resolved is None and _CLEAN_SLUG.match(key):
+            resolved = id_map.get(_slugify(key))
+        if resolved == s["section_id"]:
+            s["parent_section_id"] = None
+            warnings.append(f"[{s['section_id']}] parent references itself; dropped")
+        elif resolved:
+            s["parent_section_id"] = resolved
+        else:
+            s["parent_section_id"] = key
+            warnings.append(
+                f"[{s['section_id']}] parent_section_id {key!r} does not match any "
+                "planned section id (kept as a hierarchy hint, non-blocking)")
+
+
 def normalize(raw: RawPlan, lk: Lookups, source_raw_rel: str,
               provider: str | None) -> Result:
     warnings: list[str] = list(raw.warnings)
@@ -445,12 +535,22 @@ def normalize(raw: RawPlan, lk: Lookups, source_raw_rel: str,
     sections: list[dict] = []
     consumed: set[int] = set()
     order = 0
+    # Map every raw planner id/title onto its normalized section_id so a parent
+    # reference (which the planner writes against raw ids) resolves to a real
+    # planned section. First write wins on a collision.
+    id_map: dict[str, str] = {}
+
+    def _remember(nid: str, *keys) -> None:
+        for k in keys:
+            if isinstance(k, str) and k and k not in id_map:
+                id_map[k] = nid
 
     for s in meta_sections:
         order += 1
         oid = s.get("id")
         title = s.get("title")
         nid = _section_id(oid, title, used)
+        _remember(nid, nid, oid, title)
         plan = plans_by_id.get(oid)
         if plan is not None and id(plan) in consumed:
             plan = None  # already used by an earlier section (duplicate id)
@@ -468,8 +568,11 @@ def normalize(raw: RawPlan, lk: Lookups, source_raw_rel: str,
             continue
         order += 1
         nid = _section_id(sp.get("section_id"), sp.get("title"), used)
+        _remember(nid, nid, sp.get("section_id"), sp.get("title"))
         warnings.append(f"[{nid}] in section-plans but missing from DocumentPlan")
         sections.append(_build_section(nid, order, None, sp, lk, unresolved, warnings))
+
+    _resolve_parents(sections, id_map, warnings)
 
     section_order = [s["section_id"] for s in sections]
     document_plan = _document_plan(doc, section_order, lk, source_raw_rel,
