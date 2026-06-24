@@ -5,10 +5,10 @@
 Status: **Milestone 1 implemented. Milestone 2 is in progress: coverage
 taxonomy/validation, Phase 2 planning/PagePlan obligation preservation, and Phase
 1 deterministic coverage-signal expansion are implemented and tested. Pending
-next: Phase 2 enhancement-mode fail/repair using coverage signals, Phase 3
-page-level evidence and evidenced coverage, Phase 4 hierarchical writing and
-generated coverage, and non-live hierarchical E2E before any approved live
-retry**.
+next: Phase 2 enhancement-mode upstream prevention plus bounded LLM re-prompt
+only where needed using coverage signals, Phase 3 page-level evidence and
+evidenced coverage, Phase 4 hierarchical writing and generated coverage, and
+non-live hierarchical E2E before any approved live retry**.
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
 enhancement track. It consolidates the immediate malformed-citation validator
@@ -263,8 +263,11 @@ Additional desirable expansions:
    - Produce a planned topic taxonomy with parent pages, child pages, stable IDs,
      required topics, optional topics, source-category obligations, cross-links,
      and a coverage matrix.
-   - Fail or repair when mandatory topic families are absent in coverage-enhanced
-     mode.
+   - Prevent mandatory-family omissions through better prompt/context/schema and
+     deterministic gating; if the LLM-authored plan still misses mandatory
+     families in coverage-enhanced mode, allow only bounded audited LLM re-prompt
+     with exact diagnostics and loud failure after the cap. Do not add generic
+     healing loops around deterministic normalization or validation.
 
 3. **PagePlan obligations**
    - Each page/child section must state required topic bullets, expected source
@@ -390,10 +393,14 @@ Implemented:
 
 ### Remaining Milestone 2 work — active pending backlog
 
-1. **Phase 2 enhancement-mode fail/repair using coverage signals.** The next
-   implementation slice should consume `planning-coverage-signals.md`, require
-   stable parent/child pages with `coverage_labels[]`, and fail or repair when
-   mandatory families are absent in enhancement mode.
+1. **Phase 2 enhancement-mode upstream prevention using coverage signals.** The
+   next implementation slice should consume `planning-coverage-signals.md`,
+   require stable parent/child pages with `coverage_labels[]`, and prevent
+   mandatory-family omissions by improving the Phase 2 prompt/context/schema and
+   deterministic normalization/gating. Do not add a generic healing loop. If the
+   LLM-authored plan still misses mandatory families, allow only a bounded,
+   audited LLM re-prompt/repair with exact diagnostics and loud failure after the
+   cap.
 2. **Phase 3 page-level evidence and evidenced coverage.** Retrieve evidence per
    planned page/child section and report per-required-topic sufficiency while
    preserving deterministic, all-sections, no-force, no-retry-loop constraints.
@@ -453,8 +460,11 @@ Completed foundation:
 
 Pending active sequence:
 
-6. Implement Phase 2 enhancement-mode fail/repair that consumes the coverage
-   signals and fails loudly when mandatory families are absent.
+6. Implement Phase 2 enhancement-mode upstream prevention that consumes the
+   coverage signals and fails loudly when mandatory families are absent. Bounded
+   LLM re-prompt/repair is allowed only for the LLM-authored planning response,
+   with exact diagnostics, audit artifacts, and a hard cap; deterministic stages
+   must be fixed upstream rather than wrapped in healing loops.
 7. Extend Phase 3 to retrieve per planned page/child section and report evidenced
    per-topic sufficiency.
 8. Extend Phase 4 to write hierarchical pages and emit planned-vs-generated
@@ -466,8 +476,9 @@ Pending active sequence:
 
 Milestone 1 and the first Milestone 2 foundation slices are implemented. Future
 coding-agent work should keep validator behavior strict and proceed with the next
-concrete non-live slice: **Phase 2 enhancement-mode fail/repair using the Phase 1
-coverage signals**. Do not call Vertex/Gemini or any live model. Do not edit the
+concrete non-live slice: **Phase 2 enhancement-mode upstream prevention using the
+Phase 1 coverage signals, with bounded LLM re-prompt only if the LLM-authored plan
+misses mandatory families**. Do not call Vertex/Gemini or any live model. Do not edit the
 historical generated wiki in place. Do not modify
 `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. Keep validators strict.
 If a Milestone 2 slice is too large for one coding session, stop after a coherent

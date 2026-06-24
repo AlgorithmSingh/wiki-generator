@@ -18,8 +18,9 @@ Current implementation status: **Milestone 1 is implemented and tested.
 Milestone 2 is in progress: coverage taxonomy/validation, Phase 2
 planning/PagePlan obligation preservation, and Phase 1 deterministic
 coverage-signal expansion are implemented and tested (non-live). Pending next:
-Phase 2 enhancement-mode fail/repair using those signals, then Phase 3
-page-level evidence, Phase 4 hierarchical writing, and non-live hierarchical E2E.**
+Phase 2 enhancement-mode upstream prevention using those signals, with bounded
+LLM re-prompt only if the LLM-authored plan misses mandatory families; then Phase
+3 page-level evidence, Phase 4 hierarchical writing, and non-live hierarchical E2E.**
 
 ## Why this exists
 
@@ -115,9 +116,13 @@ Implemented after the planning-obligation slice:
 
 ### Remaining Milestone 2 work — active pending backlog
 
-- **Next slice:** Phase 2 enhancement-mode fail/repair using the coverage signals:
-  consume `planning-coverage-signals.md`, require stable parent/child pages with
-  `coverage_labels[]`, and fail or repair when mandatory families are absent.
+- **Next slice:** Phase 2 enhancement-mode upstream prevention using the coverage
+  signals: consume `planning-coverage-signals.md`, require stable parent/child
+  pages with `coverage_labels[]`, and fail loudly when mandatory families are
+  absent. Do not add a generic healing loop. If the LLM-authored planning response
+  misses required families, use only a bounded, audited LLM re-prompt/repair with
+  exact diagnostics and a hard cap; deterministic normalization/gating must be
+  fixed upstream.
 - **Then:** Phase 3 per-page/child evidence retrieval with per-required-topic
   sufficiency reporting, preserving all existing Phase 3 constraints.
 - **Then:** Phase 4 hierarchical writing emitting planned-vs-generated coverage
