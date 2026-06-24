@@ -97,6 +97,33 @@ A successful enhanced wiki must:
   mandatory topics;
 - treat `ragflow-deepwiki.md` only as a benchmark, not as source evidence.
 
+## Coverage sufficiency model
+
+The pipeline answers “is this enough?” in three explicit layers. No single phase is
+allowed to imply final sufficiency by itself.
+
+1. **Planned coverage — Phase 2.** The normalized plan must include the required
+   topic families, stable pages/child pages, `coverage_labels[]`, and
+   `required_topics[]`. This prevents a compact 16-section plan from silently
+   skipping important areas. It is necessary but not sufficient: it does not prove
+   evidence exists and does not prove the final wiki covered the topic.
+2. **Evidenced coverage — Phase 3.** Retrieval must map citeable EvidencePacket
+   items to each planned page and required topic. This is the next missing layer.
+   It should answer, for every planned topic: `sufficient`, `weak`, or `missing`,
+   with exact citeable evidence IDs/handles and remediation. Context artifacts,
+   `derived/`, `plans/`, generated wiki files, and `ragflow-deepwiki.md` remain
+   non-citeable.
+3. **Generated coverage — Phase 4.** The writer must actually explain the planned
+   and evidenced topics in the generated page, with valid citations and without
+   unsupported identifiers, malformed citations, placeholders, or filler.
+
+The intelligence comes from LLM planning and writing constrained by deterministic
+artifact contracts and gates. Phase 1 supplies deterministic repo signals, Phase 2
+uses LLM judgment to plan coverage, Phase 3 deterministically proves evidence
+sufficiency, and Phase 4 uses LLM synthesis under strict validation. The benchmark
+comparison against `ragflow-deepwiki.md` is a warning system for coverage/structure
+gaps, never citeable evidence and never the sole quality bar.
+
 ## Milestone 1 — immediate writing-validation enhancement
 
 This milestone is implemented locally and tested. It was the first implementation
@@ -436,9 +463,11 @@ generated coverage dimensions remain the next pending slices.
 
 ### Remaining Milestone 2 work — active pending backlog
 
-1. **Phase 3 page-level evidence and evidenced coverage.** Retrieve evidence per
-   planned page/child section and report per-required-topic sufficiency while
-   preserving deterministic, all-sections, no-force, no-retry-loop constraints.
+1. **Define and implement Phase 3 page-level evidence and evidenced coverage.**
+   Before coding broad retrieval changes, define what “enough evidence” means for
+   a planned page/topic. Then retrieve evidence per planned page/child section and
+   report per-required-topic sufficiency while preserving deterministic,
+   all-sections, no-force, no-retry-loop constraints.
 2. **Phase 4 hierarchical writing and generated coverage.** Generate hierarchical
    pages from page-level evidence, emit planned-vs-generated coverage metadata,
    and keep all citation/identifier/malformed-token validators strict.
@@ -448,10 +477,10 @@ generated coverage dimensions remain the next pending slices.
 4. **Benchmark-only comparison.** Compare against `ragflow-deepwiki.md` only as a
    structure/coverage benchmark, never as citeable evidence.
 
-### Next-slice acceptance — Phase 2 enhancement-mode planned-coverage upstream prevention
+### Completed-slice acceptance — Phase 2 enhancement-mode planned-coverage upstream prevention
 
-The next implementation slice is accepted only when it proves all of the
-following in non-live tests:
+This implementation slice is accepted because it proves all of the following in
+non-live tests:
 
 - Phase 2 planning prompt/context explicitly includes and explains
   `planning-coverage-signals.md` as planner context, not citeable evidence.
@@ -476,6 +505,29 @@ following in non-live tests:
 - No live Vertex/Gemini/API calls, no real Phase 1/2/3/4 pipeline retry, no
   historical wiki artifact edits, no validator weakening, and no changes to
   `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`.
+
+### Next-slice acceptance — Phase 3 evidenced coverage
+
+The next implementation slice should first define the Evidence Sufficiency
+Contract, then implement it. Acceptance should require non-live tests proving:
+
+- Phase 3 reads the normalized hierarchical plan, including `coverage_labels[]`,
+  `parent_section_id`, and `required_topics[]`.
+- Evidence packets or validation reports map citeable evidence items back to each
+  planned `section_id` and required topic.
+- Each required topic receives a deterministic status: `sufficient`, `weak`, or
+  `missing`, with counts, evidence IDs/handles, source categories, and remediation.
+- Enhancement mode fails loudly before Phase 4 when a required topic has missing
+  evidence, while baseline/legacy behavior remains non-breaking where explicitly
+  requested.
+- Context artifacts, `derived/`, `plans/`, generated wiki files, and
+  `ragflow-deepwiki.md` are never counted as citeable evidence.
+- No generic retrieval healing loop, no product `--section` retry mode, no
+  `--force` after readiness failure, no fallback rescue for no-signal sections,
+  and no validator weakening.
+- Tests include an expanded hierarchical fixture that passes evidenced coverage
+  and fixtures where a planned page/topic lacks evidence and fails with clear
+  diagnostics.
 
 ### Milestone 2 acceptance criteria
 
@@ -521,16 +573,14 @@ Completed foundation:
    hierarchy in normalized planning artifacts.
 5. Expand Phase 1 deterministic coverage signals and include them in planner
    context as non-citeable condensates.
+6. Implement the Phase 2 planned-coverage gate that consumes the coverage signals
+   and fails loudly when mandatory planned families are absent, without adding a
+   generic healing loop.
 
 Pending active sequence:
 
-6. Implement Phase 2 enhancement-mode upstream prevention that consumes the
-   coverage signals and fails loudly when mandatory families are absent. Bounded
-   LLM re-prompt/repair is allowed only for the LLM-authored planning response,
-   with exact diagnostics, audit artifacts, and a hard cap; deterministic stages
-   must be fixed upstream rather than wrapped in healing loops.
-7. Extend Phase 3 to retrieve per planned page/child section and report evidenced
-   per-topic sufficiency.
+7. Define and implement the Phase 3 Evidence Sufficiency Contract, then retrieve
+   per planned page/child section and report evidenced per-topic sufficiency.
 8. Extend Phase 4 to write hierarchical pages and emit planned-vs-generated
    coverage metadata.
 9. Run non-live/fake-provider hierarchical end-to-end validation.
@@ -540,10 +590,11 @@ Pending active sequence:
 
 Milestone 1 and the first Milestone 2 foundation slices are implemented. Future
 coding-agent work should keep validator behavior strict and proceed with the next
-concrete non-live slice: **Phase 2 enhancement-mode upstream prevention using the
-Phase 1 coverage signals, with bounded LLM re-prompt only if the LLM-authored plan
-misses mandatory families**. Do not call Vertex/Gemini or any live model. Do not edit the
-historical generated wiki in place. Do not modify
+concrete non-live slice: **define and implement Phase 3 evidenced coverage**. The
+agent should first define what “enough evidence” means for a planned page/topic,
+then implement deterministic mapping/reporting from planned `section_id` +
+`required_topics[]` to citeable EvidencePacket items. Do not call Vertex/Gemini or
+any live model. Do not edit the historical generated wiki in place. Do not modify
 `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. Keep validators strict.
 If a Milestone 2 slice is too large for one coding session, stop after a coherent
 non-live increment and report the remaining work clearly.

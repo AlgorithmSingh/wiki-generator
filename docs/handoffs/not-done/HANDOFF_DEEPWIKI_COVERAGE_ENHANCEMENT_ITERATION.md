@@ -58,6 +58,22 @@ pipeline/spec/planning/evidence-scope issue, not a simple LLM failure.
 - The LLM did create the malformed citation token.
 - The validator missed that malformed `ev:` token.
 
+## Coverage sufficiency model
+
+The coverage question is answered in layers, not by one phase:
+
+1. **Planned coverage (Phase 2):** the normalized plan names the required topic
+   families/pages/topics. This is now implemented through the planned-coverage
+   gate, but it does not prove evidence exists.
+2. **Evidenced coverage (Phase 3):** retrieval must prove that each planned page
+   and required topic has enough citeable repo evidence, or fail/report a clear
+   weak/missing status. This is the next work.
+3. **Generated coverage (Phase 4):** the final wiki must actually explain the
+   planned/evidenced topics with valid citations and strict validators.
+
+The benchmark export `ragflow-deepwiki.md` is only a coverage/structure warning
+signal. It must not be counted as evidence.
+
 ## Next coding-agent work
 
 Milestone 1 from the canonical spec is complete locally:
@@ -150,22 +166,24 @@ Implemented after the coverage-signal slice:
 Do not begin the next pipeline-expansion slice without a concrete prompt, and do
 not run a live/billed retry without explicit user approval.
 
-### Next-slice acceptance summary
+### Next-slice acceptance summary — Phase 3 evidenced coverage
 
-The next Phase 2 slice should be accepted only if non-live tests show:
+The next slice should be accepted only if non-live tests show:
 
-- the planner prompt/context uses `planning-coverage-signals.md` as context only;
-- enhancement mode gates planned coverage in the normalized plan before Phase 3; it does not claim evidence or generated-content readiness;
-- missing mandatory families fail loudly with actionable diagnostics;
-- baseline mode remains non-breaking/report-only;
-- deterministic code does not synthesize or heal missing pages/labels/source
-  obligations;
-- any LLM re-prompt is bounded, audited, diagnostic-fed, and followed by the same
-  strict normalized-plan gate;
-- `coverage_labels[]`, `parent_section_id`, merged `required_topics[]`, and
-  `expected_sources[]` continue to survive normalization;
-- compact/missing-family fixtures fail enhancement mode, expanded hierarchical
-  fixtures pass, and Milestone 1 malformed-citation validation remains intact.
+- Phase 3 reads the normalized hierarchical plan, including `coverage_labels[]`,
+  `parent_section_id`, and `required_topics[]`.
+- Evidence packets or validation reports map citeable evidence items back to each
+  planned `section_id` and required topic.
+- Each required topic receives deterministic `sufficient`, `weak`, or `missing`
+  status with counts, evidence IDs/handles, source categories, and remediation.
+- Enhancement mode fails loudly before Phase 4 when required-topic evidence is
+  missing; baseline/legacy behavior remains non-breaking where explicitly
+  requested.
+- Context artifacts, `derived/`, `plans/`, generated wiki files, and
+  `ragflow-deepwiki.md` are never counted as citeable evidence.
+- No generic retrieval healing loop, no product `--section` retry mode, no
+  `--force` after readiness failure, no fallback rescue for no-signal sections,
+  and no validator weakening.
 
 ## Required guardrails
 
