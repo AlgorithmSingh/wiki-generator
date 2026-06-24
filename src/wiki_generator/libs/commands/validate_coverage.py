@@ -6,7 +6,7 @@ report (JSON + Markdown), and maps the verdict to an exit code:
 
     0 = coverage PASS (all mandatory families planned, or baseline/report-only mode)
     2 = bad/missing input artifact (no normalized plan to check)
-    3 = coverage gate FAIL (enhancement mode: a mandatory topic family is missing)
+    3 = planned coverage gate FAIL (enhancement mode: a mandatory topic family is missing)
 
 It never calls a model, never runs Phase 1/2/3/4, and never edits plan or wiki
 artifacts — it only writes its own report under ``<bundle>/coverage`` (or ``--out``).
@@ -35,30 +35,28 @@ def run(args: argparse.Namespace) -> int:
         document_plan, sections = coverage.load_plan_for_coverage(bundle_root)
     except FileNotFoundError as e:
         log(f"validate-coverage: {e}")
-        return 2
+        return coverage.COVERAGE_GATE_INPUT_EXIT
 
     try:
-        report = coverage.evaluate_plan_coverage(document_plan, sections, mode=mode)
+        gate = coverage.gate_plan_coverage(document_plan, sections, mode=mode)
     except ValueError as e:
         log(f"validate-coverage: invalid request — {e}")
-        return 2
+        return coverage.COVERAGE_GATE_INPUT_EXIT
 
+    report = gate.report
     json_path = os.path.join(out_dir, "coverage-validation.json")
     md_path = os.path.join(out_dir, "coverage-validation-report.md")
     write_json(json_path, report.to_dict())
     write_text(md_path, coverage.render_markdown(report))
 
     log(f"validate-coverage: {bundle_root}")
-    log(f"  mode: {mode} ({'enforced' if report.enforced else 'report-only'})")
-    log(f"  families covered: {report.covered_count}/{report.family_count}  "
-        f"sections: {report.section_count}")
-    for key in report.missing_mandatory:
-        log(f"  missing mandatory family: {key}")
+    for line in gate.summary_lines():
+        log(f"  {line}")
     log(f"  report: {md_path}")
 
-    if report.status == "pass":
+    if gate.passed:
         log("validate-coverage: PASS")
-        return 0
-    log(f"validate-coverage: FAIL — {len(report.missing_mandatory)} mandatory "
-        "topic family(ies) not planned (see coverage-validation-report.md)")
-    return 3
+    else:
+        log(f"validate-coverage: FAIL — {len(report.missing_mandatory)} mandatory "
+            "topic family(ies) not planned (see coverage-validation-report.md)")
+    return gate.exit_code

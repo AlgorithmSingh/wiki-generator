@@ -16,11 +16,12 @@ spec files for this iteration.
 
 Current implementation status: **Milestone 1 is implemented and tested.
 Milestone 2 is in progress: coverage taxonomy/validation, Phase 2
-planning/PagePlan obligation preservation, and Phase 1 deterministic
-coverage-signal expansion are implemented and tested (non-live). Pending next:
-Phase 2 enhancement-mode upstream prevention using those signals, with bounded
-LLM re-prompt only if the LLM-authored plan misses mandatory families; then Phase
-3 page-level evidence, Phase 4 hierarchical writing, and non-live hierarchical E2E.**
+planning/PagePlan obligation preservation, Phase 1 deterministic coverage-signal
+expansion, and the Phase 2 enhancement-mode planned-coverage upstream-prevention gate
+(`normalize-plan --coverage-mode enhancement` deterministic planned-coverage boundary +
+coverage-signal-aware planner prompts) are implemented and tested (non-live).
+Pending next: Phase 3 page-level evidence, Phase 4 hierarchical writing, and
+non-live hierarchical E2E before any approved live retry.**
 
 ## Why this exists
 
@@ -114,16 +115,32 @@ Implemented after the planning-obligation slice:
 - `tests/test_coverage_signals.py` proves deterministic detection and upload
   integration.
 
+### Milestone 2 — Phase 2 enhancement-mode planned-coverage upstream-prevention gate (implemented, non-live)
+
+Implemented after the coverage-signal slice:
+
+- `src/wiki_generator/libs/coverage/validate.py` adds the shared deterministic gate
+  `gate_plan_coverage(...)` → `CoverageGate` (verdict + exit code + actionable
+  `summary_lines()`) and `load_plan_from_dir(...)`; exit codes 0/2/3;
+- `normalize-plan` gains `--coverage-mode {baseline,enhancement}` (default
+  `baseline`). `enhancement` gates the just-written normalized plan against all 13
+  families, writes `plans/coverage-gate.json` + `plans/coverage-gate-report.md`,
+  logs diagnostics, and exits 3 on a missing family before Phase 3. `baseline`
+  stays non-breaking (existing non-enforcing matrix only);
+- `validate-coverage` now shares the same gate. No generic healing loop was added;
+  bounded LLM re-prompt remains the separate audited `plan-repair` step;
+- planner prompts (`GEM_INSTRUCTIONS.md`, `KICKOFF_PROMPT.md`,
+  `plan._DEFAULT_SYSTEM`/`_DEFAULT_KICKOFF`) now explicitly cite
+  `planning-coverage-signals.md` as planner CONTEXT, not citeable evidence;
+- `coverage_labels[]`, `parent_section_id`, merged `required_topics[]`,
+  `expected_sources[]` continue to survive normalization;
+- `tests/test_phase2_enhancement_gate.py` proves pass/fail/exit-code behaviour,
+  missing-family diagnostics, broad-parent-not-deep-child, baseline non-breaking,
+  no synthesize/heal, prompt context-only references, and Milestone 1 intact.
+
 ### Remaining Milestone 2 work — active pending backlog
 
-- **Next slice:** Phase 2 enhancement-mode upstream prevention using the coverage
-  signals: consume `planning-coverage-signals.md`, require stable parent/child
-  pages with `coverage_labels[]`, and fail loudly when mandatory families are
-  absent. Do not add a generic healing loop. If the LLM-authored planning response
-  misses required families, use only a bounded, audited LLM re-prompt/repair with
-  exact diagnostics and a hard cap; deterministic normalization/gating must be
-  fixed upstream.
-- **Then:** Phase 3 per-page/child evidence retrieval with per-required-topic
+- **Next slice:** Phase 3 per-page/child evidence retrieval with per-required-topic
   sufficiency reporting, preserving all existing Phase 3 constraints.
 - **Then:** Phase 4 hierarchical writing emitting planned-vs-generated coverage
   metadata and keeping all validators strict.
@@ -138,7 +155,7 @@ not run a live/billed retry without explicit user approval.
 The next Phase 2 slice should be accepted only if non-live tests show:
 
 - the planner prompt/context uses `planning-coverage-signals.md` as context only;
-- enhancement mode gates the normalized plan before Phase 3;
+- enhancement mode gates planned coverage in the normalized plan before Phase 3; it does not claim evidence or generated-content readiness;
 - missing mandatory families fail loudly with actionable diagnostics;
 - baseline mode remains non-breaking/report-only;
 - deterministic code does not synthesize or heal missing pages/labels/source

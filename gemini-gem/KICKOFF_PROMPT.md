@@ -65,7 +65,14 @@ Constraints (repeat of the Gem rules, in case they aren't loaded):
   `glossary`. Use `parent_section_id` for child pages. A broad parent page does
   **not** cover a deep child topic unless that child has its own page, label, and
   evidence. Do not invent a family the digest shows no signal for — note its absence
-  in `known_gaps[]`.
+  in `known_gaps[]`. `planning-coverage-signals.md` maps where each family likely
+  lives (candidate paths, present/low/missing status, suggested
+  `coverage_labels[]`/`search_hints[]`); read it to decide which families deserve a
+  page. It is **planner context only, never citeable evidence** — do not put its
+  candidate paths in an exact `file_anchors[]` lane; cite exact handles from
+  `planning-handles.md` instead. A coverage-enhanced run gates the normalized plan
+  against all thirteen mandatory families before Phase 3, so omitting a supported
+  family fails loudly — plan the page.
 - Treat `CALLS_APPROX` edges, lexical query hits, the derived OpenAPI contract, and
   the static-only test scan as approximate — any section relying on them must list a
   `verification_needs` entry.

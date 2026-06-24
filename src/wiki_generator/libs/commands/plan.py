@@ -95,7 +95,13 @@ retrieval-internals, doc-processing, llm-internals, user-tenant-admin-health, \
 sandbox-executor, migrations-operations, glossary. A broad parent page does NOT \
 count as coverage for a deep child topic unless that child has its own page, label, \
 and evidence. Do not invent a family the digest shows no signal for — note its \
-absence in known_gaps[]."""
+absence in known_gaps[]. `planning-coverage-signals.md` maps where each family \
+likely lives (candidate paths, present/low/missing status, suggested \
+coverage_labels[]/search_hints[]) — it is planner CONTEXT only, never citeable \
+evidence: do not place its candidate paths in a file_anchors[] exact lane; cite \
+exact handles from planning-handles.md instead. A coverage-enhanced run gates the \
+normalized plan against all thirteen mandatory families before Phase 3, so omitting \
+a supported family fails loudly."""
 
 _DEFAULT_KICKOFF = """You are planning the DeepWiki for the repository summarized \
 in the attached Phase 1 decomposition digest. Work only from the attached upload. \
@@ -107,7 +113,9 @@ hierarchical guide: give each mandatory DeepWiki topic family the digest support
 its own page (or child page via parent_section_id) tagged with a canonical \
 coverage_labels[] value (frontend, memory, queue-system, helm-k8s, ci-cd-build, \
 go-native, retrieval-internals, doc-processing, llm-internals, \
-user-tenant-admin-health, sandbox-executor, migrations-operations, glossary)."""
+user-tenant-admin-health, sandbox-executor, migrations-operations, glossary). Use \
+`planning-coverage-signals.md` (planner context only, never citeable evidence) to \
+decide which families deserve their own page."""
 
 
 def _resolve_text(explicit: str | None, candidates: list[str], default: str,

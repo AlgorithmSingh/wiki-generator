@@ -161,6 +161,16 @@ def build_parser() -> argparse.ArgumentParser:
                    help="record unresolved references and continue (default)")
     n.add_argument("--provider", default="gemini",
                    help="planning provider name, recorded as metadata only")
+    n.add_argument("--coverage-mode", dest="coverage_mode", default="baseline",
+                   choices=("baseline", "enhancement"),
+                   help=("Phase 2 → Phase 3 planned coverage boundary. "
+                         "baseline (default): non-enforcing DeepWiki coverage "
+                         "matrix only, never gates the command (safe for "
+                         "compact/legacy plans). enhancement: deterministically "
+                         "gate the normalized plan against all 13 mandatory topic "
+                         "families and fail loudly (exit 3) on a missing family "
+                         "before Phase 3. This is a planned-coverage gate only; "
+                         "it never edits/heals the plan."))
 
     pr = sub.add_parser(
         "plan-repair",

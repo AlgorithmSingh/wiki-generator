@@ -3,12 +3,13 @@
 ## Status and source of truth
 
 Status: **Milestone 1 implemented. Milestone 2 is in progress: coverage
-taxonomy/validation, Phase 2 planning/PagePlan obligation preservation, and Phase
-1 deterministic coverage-signal expansion are implemented and tested. Pending
-next: Phase 2 enhancement-mode upstream prevention plus bounded LLM re-prompt
-only where needed using coverage signals, Phase 3 page-level evidence and
-evidenced coverage, Phase 4 hierarchical writing and generated coverage, and
-non-live hierarchical E2E before any approved live retry**.
+taxonomy/validation, Phase 2 planning/PagePlan obligation preservation, Phase 1
+deterministic coverage-signal expansion, and the Phase 2 enhancement-mode
+planned-coverage upstream-prevention gate (deterministic `normalize-plan --coverage-mode
+enhancement` boundary plus coverage-signal-aware planner prompts) are implemented
+and tested non-live. Pending next: Phase 3 page-level evidence and evidenced
+coverage, Phase 4 hierarchical writing and generated coverage, and non-live
+hierarchical E2E before any approved live retry**.
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
 enhancement track. It consolidates the immediate malformed-citation validator
@@ -325,7 +326,7 @@ Implemented:
 - `src/wiki_generator/libs/commands/validate_coverage.py` + the `validate-coverage`
   CLI subcommand — loads a bundle's normalized Phase 2 plan, writes
   `coverage/coverage-validation.json` + `coverage-validation-report.md`, and exits
-  `0` (pass / baseline), `2` (no normalized plan), or `3` (enhancement gate fail).
+  `0` (pass / baseline), `2` (no normalized plan), or `3` (planned-coverage enhancement gate fail).
 - `tests/test_coverage_validation.py` — proves a faithful compact 16-section
   baseline fails enhancement-mode coverage (passes report-only baseline mode); an
   expanded plan with all families passes; dropping frontend/memory/queue fails with
@@ -391,37 +392,71 @@ Implemented:
   missing/low-signal reporting, non-citeable markdown/JSON metadata, and upload
   integration.
 
+### Milestone 2 progress — Phase 2 enhancement-mode planned-coverage upstream-prevention gate (implemented, non-live)
+
+This slice adds the deterministic Phase 2 → Phase 3 planned-coverage boundary and
+makes the planner prompt/context explicitly consume the Phase 1 coverage signals.
+It is upstream prevention by **loud deterministic failure**, not a healing loop:
+the gate never synthesizes, adds, or repairs pages/labels/source obligations.
+
+Implemented:
+
+- `src/wiki_generator/libs/coverage/validate.py` adds a shared deterministic gate:
+  `gate_plan_coverage(...)` → `CoverageGate` (verdict + exit code + actionable
+  `summary_lines()`), plus `load_plan_from_dir(...)`; exit codes
+  `COVERAGE_GATE_PASS_EXIT=0` / `COVERAGE_GATE_INPUT_EXIT=2` /
+  `COVERAGE_GATE_FAIL_EXIT=3`.
+- `normalize-plan` gains `--coverage-mode {baseline,enhancement}` (default
+  `baseline`). `baseline` keeps the existing non-enforcing matrix in
+  `normalization-report.md` and never gates the command. `enhancement` runs the
+  deterministic gate over the just-written normalized plan, writes
+  `plans/coverage-gate.json` + `plans/coverage-gate-report.md`, logs diagnostics
+  naming missing families + remediation, and exits `3` before Phase 3 retrieval.
+- The standalone `validate-coverage` command now shares the same `gate_plan_coverage`
+  (identical enforcement). No generic healing loop is added; bounded LLM re-prompt
+  remains the existing, separately-audited `plan-repair` step (prompt/context/schema
+  improved first).
+- Planner prompt surfaces (`gemini-gem/GEM_INSTRUCTIONS.md`,
+  `gemini-gem/KICKOFF_PROMPT.md`, `plan._DEFAULT_SYSTEM`, `plan._DEFAULT_KICKOFF`;
+  the upload README already did) now explicitly cite `planning-coverage-signals.md`
+  as planner CONTEXT, not citeable evidence, and warn that a coverage-enhanced run
+  gates the plan against all thirteen families before Phase 3.
+- `coverage_labels[]`, `parent_section_id`, merged `required_topics[]`, and
+  `expected_sources[]` continue to survive normalization end-to-end.
+- `tests/test_phase2_enhancement_gate.py` proves: full expanded plan passes (exit 0);
+  missing frontend/memory/queue fails (exit 3) with exactly those diagnostics; a
+  broad parent page alone does not satisfy a deep child family; baseline default is
+  non-breaking (and an arg namespace without `coverage_mode` defaults to baseline);
+  the gate does not synthesize/heal the plan; planner surfaces cite the coverage
+  signals as context-only; Milestone 1 malformed-token validation remains intact.
+
+The gate is **not** wired into the default Phase 4 path (that would fail the compact
+fixture bundles); it is the explicit Phase 2 enhancement boundary. Evidenced and
+generated coverage dimensions remain the next pending slices.
+
 ### Remaining Milestone 2 work — active pending backlog
 
-1. **Phase 2 enhancement-mode upstream prevention using coverage signals.** The
-   next implementation slice should consume `planning-coverage-signals.md`,
-   require stable parent/child pages with `coverage_labels[]`, and prevent
-   mandatory-family omissions by improving the Phase 2 prompt/context/schema and
-   deterministic normalization/gating. Do not add a generic healing loop. If the
-   LLM-authored plan still misses mandatory families, allow only a bounded,
-   audited LLM re-prompt/repair with exact diagnostics and loud failure after the
-   cap.
-2. **Phase 3 page-level evidence and evidenced coverage.** Retrieve evidence per
+1. **Phase 3 page-level evidence and evidenced coverage.** Retrieve evidence per
    planned page/child section and report per-required-topic sufficiency while
    preserving deterministic, all-sections, no-force, no-retry-loop constraints.
-3. **Phase 4 hierarchical writing and generated coverage.** Generate hierarchical
+2. **Phase 4 hierarchical writing and generated coverage.** Generate hierarchical
    pages from page-level evidence, emit planned-vs-generated coverage metadata,
    and keep all citation/identifier/malformed-token validators strict.
-4. **Non-live hierarchical E2E.** Prove the expanded path with fake-provider or
+3. **Non-live hierarchical E2E.** Prove the expanded path with fake-provider or
    non-live fixtures before requesting explicit user approval for any billed
    Vertex/Gemini retry.
-5. **Benchmark-only comparison.** Compare against `ragflow-deepwiki.md` only as a
+4. **Benchmark-only comparison.** Compare against `ragflow-deepwiki.md` only as a
    structure/coverage benchmark, never as citeable evidence.
 
-### Next-slice acceptance — Phase 2 enhancement-mode upstream prevention
+### Next-slice acceptance — Phase 2 enhancement-mode planned-coverage upstream prevention
 
 The next implementation slice is accepted only when it proves all of the
 following in non-live tests:
 
 - Phase 2 planning prompt/context explicitly includes and explains
   `planning-coverage-signals.md` as planner context, not citeable evidence.
-- Enhancement mode has a deterministic gate that evaluates the normalized plan
-  against all thirteen mandatory coverage families before Phase 3 retrieval.
+- Enhancement mode has a deterministic planned-coverage gate that evaluates the normalized
+  plan against all thirteen mandatory coverage families before Phase 3 retrieval. It does not claim evidence or generated-content readiness.
 - A normalized plan missing mandatory families fails enhancement mode loudly with
   actionable diagnostics naming the missing families and remediation.
 - Baseline mode remains non-breaking and report-only for compact or legacy plans.

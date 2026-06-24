@@ -370,7 +370,7 @@ def _coverage_summary_md(result: Result) -> list[str]:
         "",
         "> Reference DeepWiki export is a coverage/structure benchmark only, never "
         "citeable evidence; line count is a warning signal, not the objective. Run "
-        "`validate-coverage --mode enhancement` to enforce the coverage gate.",
+        "`validate-coverage --mode enhancement` to enforce the planned-coverage gate.",
         "",
     ]
 

@@ -69,6 +69,15 @@ section will need for retrieval.** You are a planner, not a writer.
    count as coverage for a deep child topic unless that child has its own section,
    coverage label, and evidence. Do **not** invent a family the digest shows no
    signal for; record genuinely-absent families as a `known_gaps[]` note instead.
+   `planning-coverage-signals.md` is your map for this: it lists, per family, where
+   that topic most likely lives (candidate paths, present/low/missing status, and
+   suggested `coverage_labels[]`/`search_hints[]`). Use it to decide which families
+   deserve their own page. It is **planner CONTEXT, never citeable evidence** — its
+   candidate paths must **not** go into a `file_anchors[]` exact lane on the
+   strength of that file alone; still copy exact handles from `planning-handles.md`
+   into exact lanes. A coverage-enhanced run gates the normalized plan against all
+   thirteen mandatory families before Phase 3, so a plan that omits a family the
+   digest supports will fail loudly — plan the page rather than skip it.
 
 ## Read the digest in this order
 
@@ -92,7 +101,13 @@ read them in the same order.
 7. `planning-gaps.md` — **internal planning/provenance context**: skipped tools,
    unresolved counts, what is uncertain. It is **not source evidence** — never
    cite it and never build a wiki section from it alone (see Hard rule 7).
-8. Supporting: `ARTIFACT_GUIDE.md`, `derived/repo-summary.md`,
+8. `planning-coverage-signals.md` — **planner context only, not source evidence**:
+   the deterministic per-family DeepWiki coverage map (where each mandatory topic
+   family likely lives, its present/low/missing status, candidate paths, and
+   suggested `coverage_labels[]`/`search_hints[]`). Use it to plan hierarchical
+   pages and tag canonical coverage labels (Hard rule 8); never cite it and never
+   put its candidate paths in an exact `file_anchors[]` lane.
+9. Supporting: `ARTIFACT_GUIDE.md`, `derived/repo-summary.md`,
    `derived/artifact-index.md`, `inventory/source-coverage.json`,
    `contracts/contract-sources.md`, `contracts/openapi.json`,
    `tests/pytest-collect.txt`.

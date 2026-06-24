@@ -38,6 +38,13 @@ MODE_ENHANCEMENT = "enhancement"
 MODE_BASELINE = "baseline"
 _MODES = (MODE_ENHANCEMENT, MODE_BASELINE)
 
+# Exit codes for the deterministic planned coverage gate (shared by the standalone
+# ``validate-coverage`` command and the integrated ``normalize-plan
+# --coverage-mode enhancement`` boundary so both speak the same language).
+COVERAGE_GATE_PASS_EXIT = 0     # all mandatory families planned (or report-only)
+COVERAGE_GATE_INPUT_EXIT = 2    # no normalized plan to gate
+COVERAGE_GATE_FAIL_EXIT = 3     # enhancement gate: a mandatory family is missing
+
 
 # --- coverage result model ----------------------------------------------------
 @dataclass
@@ -231,6 +238,80 @@ def evaluate_plan_coverage(document_plan: dict | None, sections: list, *,
         missing_mandatory=missing, families=family_covs, diagnostics=diagnostics)
 
 
+# --- the enhancement-mode gate ------------------------------------------------
+@dataclass
+class CoverageGate:
+    """The verdict of the deterministic Phase 2 planned coverage gate.
+
+    This is the planned-coverage upstream-prevention boundary between Phase 2
+    planning and Phase 3 retrieval: it never edits, synthesizes, or heals a plan — it only reports the
+    coverage verdict and the exit code a caller should fail on. ``passed`` is the
+    decision; ``exit_code`` is the process code (``0`` pass, ``3`` enhancement-mode
+    fail); ``report`` is the full per-family matrix and actionable diagnostics.
+    """
+
+    report: CoverageReport
+    passed: bool
+    exit_code: int
+
+    def to_dict(self) -> dict:
+        return {
+            "passed": self.passed,
+            "exit_code": self.exit_code,
+            "report": self.report.to_dict(),
+        }
+
+    def summary_lines(self) -> list:
+        """Loud, actionable one-liners for a CLI/log surface.
+
+        Names every missing mandatory family and its remediation so the failure is
+        diagnosable from the console without opening the report. Deterministic and
+        side-effect-free."""
+        r = self.report
+        lines = [
+            f"planned coverage gate: mode={r.mode} "
+            f"({'enforced' if r.enforced else 'report-only'})",
+            f"planned coverage gate: {r.covered_count}/{r.family_count} mandatory topic "
+            f"families planned across {r.section_count} section(s)",
+        ]
+        if r.missing_mandatory:
+            lines.append(
+                "planned coverage gate: missing mandatory topic families: "
+                + ", ".join(r.missing_mandatory))
+            for d in r.diagnostics:
+                lines.append(f"  - {d['family']} ({d['label']}): {d['remediation']}")
+        verdict = "PASS" if self.passed else "FAIL"
+        if not self.passed:
+            lines.append(
+                f"planned coverage gate: {verdict} — {len(r.missing_mandatory)} mandatory "
+                "topic family(ies) not planned. This deterministic gate does NOT "
+                "add pages, labels, or evidence; fix the LLM-authored Phase 2 plan "
+                "(stronger prompt/context/schema, or a bounded audited re-prompt) "
+                "and re-run before Phase 3 retrieval.")
+        else:
+            lines.append(f"planned coverage gate: {verdict}")
+        return lines
+
+
+def gate_plan_coverage(document_plan: dict | None, sections: list, *,
+                       mode: str = MODE_ENHANCEMENT,
+                       families: tuple[TopicFamily, ...] = MANDATORY_TOPIC_FAMILIES
+                       ) -> CoverageGate:
+    """Evaluate ``sections`` and map the verdict to a :class:`CoverageGate`.
+
+    The single deterministic gate both the standalone ``validate-coverage`` command
+    and the integrated ``normalize-plan --coverage-mode enhancement`` planned-coverage boundary use,
+    so they enforce identically. In ``enhancement`` mode a missing mandatory family
+    yields ``passed == False`` and ``exit_code == COVERAGE_GATE_FAIL_EXIT``; in
+    ``baseline`` mode it always passes (report-only). It never mutates the plan."""
+    report = evaluate_plan_coverage(document_plan, sections, mode=mode,
+                                    families=families)
+    passed = report.status == "pass"
+    return CoverageGate(
+        report=report, passed=passed,
+        exit_code=COVERAGE_GATE_PASS_EXIT if passed else COVERAGE_GATE_FAIL_EXIT)
+
+
 def render_markdown(report: CoverageReport, *,
                     title: str = "Phase 2 Coverage Validation") -> str:
     """Render a human-readable coverage report (the on-disk ``*.md`` artifact)."""
@@ -271,17 +352,18 @@ def render_markdown(report: CoverageReport, *,
     return "\n".join(lines).rstrip() + "\n"
 
 
-# --- plan loading (for the CLI scaffold) --------------------------------------
-def load_plan_for_coverage(bundle_root: str):
-    """Load ``(document_plan, sections)`` from a bundle's Phase 2 plan artifacts.
+# --- plan loading -------------------------------------------------------------
+def load_plan_from_dir(plans_dir: str):
+    """Load ``(document_plan, sections)`` from a normalized-plan directory.
 
-    Reads ``plans/document-plan.json`` and ``plans/section-plans.jsonl``. Raises
-    ``FileNotFoundError`` if either is missing so the caller can fail closed."""
+    Reads ``document-plan.json`` and ``section-plans.jsonl`` directly from
+    ``plans_dir`` — the exact artifacts ``normalize-plan`` writes and Phase 3
+    consumes. Raises ``FileNotFoundError`` if either is missing so the caller can
+    fail closed (never gate a plan that was never produced)."""
     from .. import util
 
-    plans = os.path.join(bundle_root, "plans")
-    doc_path = os.path.join(plans, "document-plan.json")
-    sec_path = os.path.join(plans, "section-plans.jsonl")
+    doc_path = os.path.join(plans_dir, "document-plan.json")
+    sec_path = os.path.join(plans_dir, "section-plans.jsonl")
     if not os.path.isfile(doc_path):
         raise FileNotFoundError(f"missing normalized document plan: {doc_path}")
     if not os.path.isfile(sec_path):
@@ -289,3 +371,12 @@ def load_plan_for_coverage(bundle_root: str):
     document_plan = util.read_json(doc_path)
     sections = list(util.read_jsonl(sec_path))
     return document_plan, sections
+
+
+def load_plan_for_coverage(bundle_root: str):
+    """Load ``(document_plan, sections)`` from a bundle's ``plans/`` directory.
+
+    Thin wrapper over :func:`load_plan_from_dir` for the standalone
+    ``validate-coverage`` command, which is given a bundle root rather than the
+    plans directory."""
+    return load_plan_from_dir(os.path.join(bundle_root, "plans"))
