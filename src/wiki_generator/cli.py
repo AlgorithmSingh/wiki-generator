@@ -27,6 +27,7 @@ from .libs.commands import normalize_plan as normalize_plan_cmd
 from .libs.commands import plan as plan_cmd
 from .libs.commands import plan_repair as plan_repair_cmd
 from .libs.commands import retrieve_evidence as retrieve_evidence_cmd
+from .libs.commands import validate_coverage as validate_coverage_cmd
 from .libs.commands import write_wiki as write_wiki_cmd
 
 _TOGGLE = ("auto", "on", "off")
@@ -258,6 +259,22 @@ def build_parser() -> argparse.ArgumentParser:
                     default=True, help="audit raw prompt/response (default on)")
     ww.add_argument("--no-audit-raw", dest="no_audit_raw", action="store_true",
                     help="(reserved) disable raw audit; audit is on by default")
+
+    vc_help = ("Milestone 2: deterministic, LLM-free coverage validation. Check a "
+               "bundle's normalized Phase 2 plan against the mandatory DeepWiki "
+               "topic-family taxonomy and write a coverage report. In enhancement "
+               "mode a missing mandatory family fails the gate (exit 3). Never "
+               "runs a model or another phase; never edits plan/wiki artifacts.")
+    vc = sub.add_parser("validate-coverage", help=vc_help, description=vc_help)
+    vc.add_argument("--bundle", required=True,
+                    help="path to the Phase 1/2 bundle root (reads plans/)")
+    vc.add_argument("--out", dest="out_dir", default=None,
+                    help="output directory for the coverage report "
+                         "(default <bundle>/coverage)")
+    vc.add_argument("--mode", default="enhancement",
+                    choices=("enhancement", "baseline"),
+                    help="enhancement: missing mandatory family fails the gate "
+                         "(default); baseline: report coverage without enforcing")
     return p
 
 
@@ -283,6 +300,8 @@ def main(argv: list[str] | None = None) -> int:
         return retrieve_evidence_cmd.run(args)
     if args.command == "write-wiki":
         return write_wiki_cmd.run(args)
+    if args.command == "validate-coverage":
+        return validate_coverage_cmd.run(args)
     return 2  # pragma: no cover - argparse enforces a known command
 
 

@@ -2,7 +2,9 @@
 
 ## Status and source of truth
 
-Status: **Milestone 1 implemented locally; Milestone 2 pending**.
+Status: **Milestone 1 implemented locally; Milestone 2 in progress — coverage
+taxonomy + coverage-validation scaffolding slice implemented and tested; the
+hierarchical Phase 1/2/3/4 pipeline expansion remains pending**.
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
 enhancement track. It consolidates the immediate malformed-citation validator
@@ -293,6 +295,47 @@ Additional desirable expansions:
    - Validate all citations, including malformed evidence-like token detection.
    - Compare generated coverage against `ragflow-deepwiki.md` as benchmark-only.
    - Report remaining gaps with planned/evidenced/generated status.
+
+### Milestone 2 progress — coverage-validation slice (implemented, non-live)
+
+This slice implements the safest, testable, non-live foundation of Milestone 2:
+the planned-topic taxonomy and the deterministic coverage validator. It does NOT
+yet expand Phase 1 signals, Phase 2 hierarchical planning, Phase 3 page-level
+retrieval, or Phase 4 hierarchical writing — those remain pending.
+
+Implemented:
+
+- `src/wiki_generator/libs/coverage/taxonomy.py` — `TopicFamily` plus the thirteen
+  mandatory topic families (frontend, memory, queue-system, helm-k8s, ci-cd-build,
+  go-native, retrieval-internals, doc-processing, llm-internals,
+  user-tenant-admin-health, sandbox-executor, migrations-operations, glossary),
+  each with explicit coverage-label aliases and distinctive keyword signals.
+- `src/wiki_generator/libs/coverage/validate.py` — `evaluate_plan_coverage(...)`
+  returning a `CoverageReport` (per-family `FamilyCoverage` matrix, missing
+  mandatory families, actionable diagnostics), a markdown renderer, and a plan
+  loader. `enhancement` mode fails closed on a missing mandatory family;
+  `baseline` mode reports coverage without enforcing.
+- `src/wiki_generator/libs/commands/validate_coverage.py` + the `validate-coverage`
+  CLI subcommand — loads a bundle's normalized Phase 2 plan, writes
+  `coverage/coverage-validation.json` + `coverage-validation-report.md`, and exits
+  `0` (pass / baseline), `2` (no normalized plan), or `3` (enhancement gate fail).
+- `tests/test_coverage_validation.py` — proves a faithful compact 16-section
+  baseline fails enhancement-mode coverage (passes report-only baseline mode); an
+  expanded plan with all families passes; dropping frontend/memory/queue fails with
+  exactly those diagnostics; a broad parent page does not satisfy a deep child
+  family; substring false matches are avoided; the CLI gate works; and Milestone 1
+  malformed-token validation is intact.
+
+Detection discipline: a broad parent page (one "Core RAG Pipeline" section whose
+only topic is the word "retrieval") does NOT count as coverage for a deep child
+family; the child must declare the family's coverage label or carry the family's
+distinctive vocabulary. The "evidenced" and "generated" coverage dimensions
+(per-page EvidencePacket sufficiency, per-required-topic generated-heading checks)
+are explicit next steps and are not asserted by this slice. The validator is NOT
+wired into the default Phase 4 path (that would fail the small fixture bundles);
+it is exposed as the standalone `validate-coverage` command/library scaffold. The
+next integration step is to emit a non-enforcing coverage report from the
+planning/writing report path once Phase 2 produces hierarchical plans.
 
 ### Milestone 2 acceptance criteria
 

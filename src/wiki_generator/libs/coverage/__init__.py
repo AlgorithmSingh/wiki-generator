@@ -1,0 +1,39 @@
+"""DeepWiki-informed coverage taxonomy and coverage validation (Milestone 2).
+
+Deterministic, LLM-free, read-only scaffolding that checks a Phase 2 plan against
+the mandatory topic families a coverage-enhanced repository guide must plan for.
+See ``taxonomy.py`` for the family model and ``validate.py`` for the validator.
+"""
+from __future__ import annotations
+
+from .taxonomy import (
+    MANDATORY_TOPIC_FAMILIES,
+    TopicFamily,
+    family_by_key,
+    family_keys,
+)
+from .validate import (
+    COVERAGE_VALIDATION_SCHEMA_VERSION,
+    MODE_BASELINE,
+    MODE_ENHANCEMENT,
+    CoverageReport,
+    FamilyCoverage,
+    evaluate_plan_coverage,
+    load_plan_for_coverage,
+    render_markdown,
+)
+
+__all__ = [
+    "MANDATORY_TOPIC_FAMILIES",
+    "TopicFamily",
+    "family_by_key",
+    "family_keys",
+    "COVERAGE_VALIDATION_SCHEMA_VERSION",
+    "MODE_BASELINE",
+    "MODE_ENHANCEMENT",
+    "CoverageReport",
+    "FamilyCoverage",
+    "evaluate_plan_coverage",
+    "load_plan_for_coverage",
+    "render_markdown",
+]
