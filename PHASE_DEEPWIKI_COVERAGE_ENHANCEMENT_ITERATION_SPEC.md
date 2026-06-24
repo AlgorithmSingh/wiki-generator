@@ -1,0 +1,350 @@
+# DeepWiki-Informed Coverage Enhancement Iteration Spec
+
+## Status and source of truth
+
+Status: **Milestone 1 implemented locally; Milestone 2 pending**.
+
+This is the single canonical iteration spec for the DeepWiki-informed coverage
+enhancement track. It consolidates the immediate malformed-citation validator
+patch and the broader coverage enhancement into one plan so coding agents have
+one source of truth.
+
+The framing is **coverage enhancement**, not parody, not copying the reference,
+and not blind line-count parity. The reference DeepWiki export is a benchmark for
+coverage and structure gaps only; it is not citeable evidence for generated repo
+claims.
+
+Source artifacts:
+
+- Successful live Phase 4 run:
+  `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/phase4-live-vertex-runs/20260623-183730`
+- Generated wiki root:
+  `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/phase4-live-vertex-runs/20260623-183730/wiki`
+- Generated wiki index:
+  `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/phase4-live-vertex-runs/20260623-183730/wiki/index.md`
+- Comparison report:
+  `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/phase4-live-vertex-runs/20260623-183730/COMPARISON_WITH_RAGFLOW_DEEPWIKI.md`
+- Reference benchmark, not citeable evidence:
+  `/Users/ankitsingh/Documents/deep-wiki/ragflow-deepwiki.md`
+- Read-only for this iteration:
+  `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`
+
+## Plain-language root cause
+
+The live run proved that the current pipeline can produce a valid, grounded
+baseline wiki. It did **not** prove that the output is broad enough to be a
+DeepWiki-informed repository guide.
+
+The scale gap is this:
+
+- generated wiki sections: roughly **749 lines across 16 sections**;
+- reference DeepWiki export: roughly **14,717 lines**.
+
+That does not mean we generated 14,000 lines and still missed content. It means
+we generated a compact baseline while expecting a much richer guide.
+
+Blame allocation:
+
+- **Main cause: pipeline/spec/planning/evidence scope.** Phase 1 did not expose
+  enough planner-facing topic signals, Phase 2 planned 16 broad sections, Phase 3
+  retrieved evidence for those broad sections, and Phase 4 wrote within those
+  constraints.
+- **LLM local defects:** the model can over-compress and did emit a malformed
+  citation token, `[ev:data-models:010]`.
+- **Validator defect:** validation missed that malformed `ev:` token because it
+  recognized valid-looking citations but did not reject malformed evidence-like
+  tokens.
+
+The next iteration must fix both the immediate validation gap and the broader
+coverage target. It must not chase length with filler.
+
+## Target artifact
+
+The target artifact is a **DeepWiki-informed, citation-grounded repository guide**
+for RAGFlow.
+
+It should be broader and more useful than the current compact 16-section wiki by
+covering the repository's major product, architecture, subsystem, developer, and
+operator topics with a planned hierarchy and manifest-resolving evidence
+citations.
+
+Line count is a warning signal, not the objective. The objective is topic
+coverage, hierarchy, implementation usefulness, and grounding quality.
+
+## Quality bar
+
+A successful enhanced wiki must:
+
+- cover the major topic families surfaced by repository evidence and the
+  reference benchmark;
+- use a hierarchy of pages or child sections where topics need depth, instead of
+  hiding everything in 16 broad summaries;
+- explain implementation details, runtime flows, APIs, storage, operations, and
+  developer surfaces when evidence supports them;
+- include a planned-topic taxonomy and coverage matrix showing planned,
+  evidenced, and generated status;
+- attach repo-specific claims to exact EvidencePacket citations;
+- reject malformed evidence-like tokens such as `[ev:data-models:010]`;
+- fail closed on missing evidence, unsupported identifiers, context-artifact
+  citations, placeholders, truncation, malformed citations, or under-planned
+  mandatory topics;
+- treat `ragflow-deepwiki.md` only as a benchmark, not as source evidence.
+
+## Milestone 1 — immediate writing-validation enhancement
+
+This milestone is implemented locally and tested. It was the first implementation
+target because it is small, non-live, and required before any further strict
+sign-off claim.
+
+### Problem
+
+The generated live wiki contains this malformed evidence-like token:
+
+```text
+[ev:data-models:010]
+```
+
+Affected generated artifact:
+
+```text
+/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/phase4-live-vertex-runs/20260623-183730/wiki/sections/010-data-models.md
+```
+
+The canonical citation format uses four-digit ordinals:
+
+```text
+[ev:<section_id>:<NNNN>]
+```
+
+The malformed token escaped validation. That is unacceptable for strict sign-off.
+
+### Required behavior
+
+1. The only valid citation syntax remains `[ev:<section_id>:<NNNN>]`, with the
+   section-id grammar matching existing code and the ordinal exactly four digits.
+2. Valid-looking citations must still resolve through
+   `wiki/metadata/citation-manifest.json`.
+3. Any bracketed evidence-like token beginning with `[ev:` that does not match
+   canonical syntax must fail validation loudly.
+4. Dangling `[ev:` sequences must fail validation loudly.
+5. During bounded section drafting, malformed evidence-token failures are
+   **rewriteable**: the rewrite prompt may ask the model to replace the malformed
+   token with an exact manifest citation or remove the unsupported claim.
+6. In final validation, any remaining malformed evidence-token failure is
+   terminal: the artifact must not be silently edited or auto-corrected.
+7. Diagnostics must include token text, section id, section file/path when
+   available, line/column when available, failure category, and remediation.
+8. Suggested nearby IDs may be shown only when deterministic and safe. Example:
+   suggest `[ev:data-models:0010]` for `[ev:data-models:010]` only if that exact
+   manifest ID exists and the difference is simple zero-padding.
+9. Existing validators must not be weakened: unsupported identifiers, manifest
+   resolution, unused citations, context-artifact citations, placeholders, and
+   truncation checks remain strict.
+
+### Malformed examples that must fail
+
+- `[ev:data-models:010]` — three-digit ordinal.
+- `[ev:data-models:00010]` — five-digit ordinal.
+- `[ev:data-models:]` — missing ordinal.
+- `[ev:data-models]` — missing ordinal separator.
+- `[ev:data models:0010]` — invalid section-id characters if spaces are outside
+  the existing grammar.
+- `[ev:data-models:0010` — dangling opener / missing close.
+- `[ev:data-models:0010 extra]` — extra text.
+- `[ev:data-models:0010:extra]` — extra field.
+
+### Likely implementation targets
+
+- `src/wiki_generator/libs/writing/citations.py`
+- `src/wiki_generator/libs/writing/validate.py`
+- Phase 4 bounded rewrite feedback/prompt plumbing
+- `tests/test_phase4.py`
+
+### Tests required
+
+Unit tests:
+
+- `[ev:data-models:010]` fails as malformed.
+- `[ev:data-models:0010]` can pass when the manifest contains that exact ID.
+- Well-formed but unknown citations still fail manifest resolution.
+- Existing valid citations continue to pass.
+- The malformed examples above all fail with useful diagnostics.
+
+Fake-provider integration tests:
+
+1. First draft contains a malformed citation.
+2. Draft validation detects it.
+3. Bounded rewrite receives clear feedback.
+4. Fake provider returns a corrected section using a valid manifest citation.
+5. Final validation passes.
+
+Also test the failure path where rewrite leaves the malformed token and final
+validation fails.
+
+### Milestone 1 acceptance commands
+
+```bash
+git diff --check
+git diff --exit-code -- PHASE3_EVIDENCE_RETRIEVAL_SPEC.md
+python -m pytest -q tests/test_phase4.py
+python -m pytest -q
+```
+
+No Vertex/Gemini/API calls are allowed for Milestone 1.
+
+## Milestone 2 — DeepWiki-informed coverage enhancement
+
+This is the broader enhancement track. It should not start by increasing token
+limits. It starts by changing the artifact target, planning, evidence, and
+coverage validation.
+
+### Required topic families
+
+The enhanced guide must plan for and cover, when repository evidence supports it:
+
+1. Frontend/i18n/UI architecture — frontend structure, routing, state management,
+   internationalization, component architecture, theming, and build/runtime
+   integration.
+2. Memory system — memory APIs, internals, storage, use in agent workflows, and
+   raw/semantic/episodic/procedural concepts where supported.
+3. Task queues and Redis Streams — queue names, task lifecycle, workers,
+   cancellation, retries, parsing/indexing jobs, RAPTOR/GraphRAG/memory queues,
+   and operations.
+4. Kubernetes/Helm — charts, values, manifests, services/deployments, ingress,
+   config, secrets, and deployment workflow.
+5. CI/CD/build system — package managers, Docker build flow, dependency
+   pre-caching, GitHub workflows, release scripts, image build/publish behavior,
+   and developer commands.
+6. Go/native components — Go server/admin/native pieces, build modes,
+   parser/lexer/native services, and Python integration points.
+7. Retrieval/search internals — document store abstraction, index selection,
+   query transformation, hybrid search, reranking, filters, pruning, response
+   generation, and citation insertion.
+8. Document parsing/OCR/layout/chunking — parser factories, DeepDoc, MinerU,
+   OCR/layout operators, chunking strategies, content enhancement, embedding,
+   connectors, and upload-to-index pipeline stages.
+9. LLM provider internals/tool calling/retry/usage — LLMBundle, model
+   registration, providers, error classes, retry/backoff, usage tracking, tenant
+   configuration, tool/function schemas, and tool-call execution.
+10. User/tenant/admin/system health — user and tenant management, admin
+    routes/services, auth/authorization, status probes, health endpoints,
+    settings, and operational dashboards/commands.
+11. Sandbox/code executor — sandbox manager, provider registry, configuration,
+    security boundaries, code execution tool, and admin/operator controls.
+12. Migrations/operations — database migrations/schema sync, ES-to-OceanBase
+    migration, utility scripts, reset/admin commands, runbooks, and upgrade paths.
+13. Glossary — repo-specific terminology, acronyms, component names, service
+    names, queue names, data-store terms, and concepts used throughout the guide.
+
+Additional desirable expansions:
+
+- document engine selection and tradeoffs;
+- dynamic component loading;
+- API SDK architecture and request validation utilities;
+- endpoint coverage tables for public API groups;
+- diagrams or Mermaid summaries only when evidence supports the flow and
+  relationships.
+
+### Pipeline changes required
+
+1. **Phase 1 repo analysis expansion**
+   - Add deterministic inventories for apps/packages, docs, frontend, deployment,
+     CI/CD, queue/task signals, memory, Go/native, API routes/SDK/auth/admin/
+     health, LLM providers, migrations, sandbox, CLI/admin utilities, and tests.
+   - Rank candidate subsystems and report low-signal areas before planning.
+
+2. **Phase 2 hierarchical planning**
+   - Produce a planned topic taxonomy with parent pages, child pages, stable IDs,
+     required topics, optional topics, source-category obligations, cross-links,
+     and a coverage matrix.
+   - Fail or repair when mandatory topic families are absent in coverage-enhanced
+     mode.
+
+3. **PagePlan obligations**
+   - Each page/child section must state required topic bullets, expected source
+     handles/files/routes/docs/tests/contracts, evidence expectations, intended
+     depth, cross-link targets, and coverage labels such as `frontend`,
+     `queue-system`, `helm-k8s`, `memory`, `llm-provider`,
+     `retrieval-internals`, and `operations`.
+   - A broad parent page must not count as coverage for a child topic unless that
+     child topic has its own evidence and generated content.
+
+4. **Phase 3 page-level evidence retrieval**
+   - Retrieve evidence per planned page/child section while preserving existing
+     constraints: deterministic and LLM-free retrieval, one product run for all
+     planned pages, no product `--section` retry loop, no `--force` after
+     readiness failure, no context/generated/reference files as citeable evidence,
+     and fail-closed missing-evidence behavior.
+   - Evidence validation should report per-page and per-required-topic
+     sufficiency.
+
+5. **Phase 4 hierarchical writing**
+   - Generate per planned page/child section.
+   - Support longer page budgets only when evidence density justifies them.
+   - Preserve citation, unsupported-identifier, malformed-token,
+     no-context-citation, no-placeholder, no-truncation, and no-synthesis
+     validators.
+   - Emit metadata for planned-vs-generated coverage.
+
+6. **Coverage validation and benchmark comparison**
+   - Validate required topic taxonomy vs planned pages.
+   - Validate planned pages vs evidence packets.
+   - Validate planned required topics vs generated headings/prose markers.
+   - Validate all citations, including malformed evidence-like token detection.
+   - Compare generated coverage against `ragflow-deepwiki.md` as benchmark-only.
+   - Report remaining gaps with planned/evidenced/generated status.
+
+### Milestone 2 acceptance criteria
+
+A later implementation must demonstrate:
+
+- Milestone 1 malformed-token validation is complete and passing.
+- A deterministic expanded plan includes all mandatory topic families.
+- Coverage validation fails a compact 16-section-only plan when enhancement mode
+  is requested.
+- Expanded pages have matching EvidencePackets with per-topic sufficiency
+  reporting.
+- Fake-provider integration generates a hierarchical multi-page wiki with passing
+  citation, malformed-token, unsupported-identifier, and coverage validation.
+- Fixtures missing frontend/memory/queue topics fail coverage validation even if
+  citation validation passes.
+- A comparison report shows materially improved topic coverage over the
+  `20260623-183730` run without treating line count as the sole metric.
+
+## What not to do
+
+- Do not create additional competing iteration specs for this work.
+- Do not fix coverage by only increasing token limits.
+- Do not chase line count with filler or repeated summaries.
+- Do not copy the reference export.
+- Do not make `ragflow-deepwiki.md` citeable evidence.
+- Do not weaken validators.
+- Do not silently edit the successful live wiki artifacts in place.
+- Do not modify `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`.
+- Do not run live/billed models until deterministic planning, evidence,
+  validation, and fake-provider tests pass and the user explicitly approves a
+  live retry.
+
+## Recommended implementation sequence
+
+1. Implement Milestone 1 malformed evidence-token validation and tests.
+2. Update run reports/validation messaging so the old successful run is described
+   as historical under the older validator, not strict final sign-off.
+3. Add coverage taxonomy fixtures and validation for missing mandatory topic
+   families.
+4. Expand Phase 1 analysis signals and Phase 2 hierarchical planning.
+5. Extend Phase 3 to retrieve per planned page/child section.
+6. Extend Phase 4 to write hierarchical pages and emit planned-vs-generated
+   coverage metadata.
+7. Run non-live/fake-provider end-to-end validation.
+8. Only after that, request explicit user approval for a live/billed retry.
+
+## Coding-agent prompt summary
+
+Milestone 1 is implemented locally. Future coding-agent work should review/keep
+that validator behavior strict, then proceed to Milestone 2 only with a concrete
+non-live implementation plan. Do not call Vertex/Gemini or any live model. Do not
+edit the historical generated wiki in place. Do not modify
+`PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. Keep validators strict. If Milestone 2 is
+too large for one coding session, stop after coverage-validation scaffolding and
+report the remaining work clearly.

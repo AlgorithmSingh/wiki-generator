@@ -23,9 +23,22 @@ WRITING_PACKET_SCHEMA_VERSION = "phase4-writing-packet-v1"
 # section_id is a slug (lowercase letters/digits/hyphens); ordinal is 4 digits.
 CITATION_RE = re.compile(r"\[(ev:[a-z0-9][a-z0-9-]*:\d{4})\]")
 EVIDENCE_ID_RE = re.compile(r"^ev:[a-z0-9][a-z0-9-]*:\d{4}$")
+# The canonical section-id grammar, on its own (used to classify malformed tokens).
+SECTION_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 # A loosely-formed citation the model may have produced (for rewrite feedback):
 # tolerates spaces, missing brackets, or wrong digit width around an ev: token.
 LOOSE_CITATION_RE = re.compile(r"ev:[a-z0-9][a-z0-9-]*:\d{1,6}")
+# Any bracketed evidence-LIKE token. Two shapes, tried in order:
+#   1. a *closed* token ``[ev:...]`` running to the first ``]`` on the same line
+#      (this keeps the malformed "extra text" case ``[ev:x:0010 extra]`` intact);
+#   2. a *dangling* opener ``[ev:...`` with no closer, stopping at the first
+#      whitespace — a real citation has no internal whitespace, so this avoids
+#      swallowing the rest of the line.
+# Both inner classes exclude ``[``/``]`` so adjacent citations
+# (``[ev:a:0001][ev:b:0002]``) never merge into one match. Every match is then
+# checked against the canonical ``EVIDENCE_ID_RE``; anything that is not exactly
+# ``[ev:<section_id>:<NNNN>]`` is a malformed citation that must fail validation.
+EV_LIKE_TOKEN_RE = re.compile(r"\[ev:[^\[\]\n]*\]|\[ev:[^\[\]\s]*")
 
 # Provider finish reasons that indicate complete, trustworthy output.
 GOOD_FINISH_REASONS = frozenset({"STOP", "stop", "imported", "complete", "COMPLETE"})

@@ -14,7 +14,14 @@ from __future__ import annotations
 import re
 
 from ..context_docs import is_generated_context_path
-from .schema import CITATION_RE, EVIDENCE_ID_RE, LOOSE_CITATION_RE, PLACEHOLDER_PATTERNS
+from .schema import (
+    CITATION_RE,
+    EV_LIKE_TOKEN_RE,
+    EVIDENCE_ID_RE,
+    LOOSE_CITATION_RE,
+    PLACEHOLDER_PATTERNS,
+    SECTION_ID_RE,
+)
 
 # Repo-specific identifier shapes (high precision; see module docstring).
 _RE_PATH = re.compile(r"^/?[\w.+-]+(?:/[\w.+-]+)+$")          # has a slash
@@ -46,10 +53,147 @@ def distinct_citations(markdown: str) -> list[str]:
     return seen
 
 
-def loose_citation_tokens(markdown: str) -> list[str]:
-    """``ev:...`` tokens that look like citations but may be malformed (missing
-    brackets, wrong digit width). Used to give the rewrite useful feedback."""
-    return LOOSE_CITATION_RE.findall(markdown or "")
+# --- malformed evidence-token detection ---------------------------------------
+# The canonical citation is exactly ``[ev:<section_id>:<NNNN>]`` (four-digit
+# ordinal, manifest-resolving). Anything that *begins like* an evidence citation
+# but is not canonical — a wrong-width ordinal, a missing ordinal, a dangling
+# opener, extra text/fields, an invalid section id, or an unbracketed ``ev:`` near
+# token — is a malformed citation that must fail validation loudly (it must never
+# be silently dropped the way the live ``[ev:data-models:010]`` token was).
+_LEADING_DIGITS_RE = re.compile(r"\d+")
+
+
+def _line_col(text: str, offset: int) -> tuple[int, int]:
+    """1-based ``(line, column)`` for a character ``offset`` into ``text``."""
+    prefix = text[:offset]
+    line = prefix.count("\n") + 1
+    col = offset - prefix.rfind("\n")        # rfind == -1 (no newline) -> offset+1
+    return line, col
+
+
+def _normalized_candidate(core: str) -> str | None:
+    """A deterministically normalized evidence id (no brackets) for ``core`` (the
+    inside of a malformed token, starting ``ev:``) when a SAFE zero-padding /
+    extra-trim normalization applies, else ``None``.
+
+    Only simple, value-preserving fixes are offered: the section id must already be
+    valid, and the ordinal field's *leading* digit run must fit in four digits.
+    A section id is never guessed; an absent ordinal is never fabricated."""
+    parts = core.split(":")
+    if len(parts) < 3 or parts[0] != "ev":
+        return None
+    sid = parts[1]
+    if not SECTION_ID_RE.match(sid):
+        return None
+    m = _LEADING_DIGITS_RE.match(parts[2].strip())
+    if not m:
+        return None
+    val = int(m.group(0))
+    if val >= 10000:                         # no four-digit representation
+        return None
+    return f"ev:{sid}:{val:04d}"
+
+
+def classify_malformed_evidence_token(token: str) -> dict:
+    """Classify one non-canonical evidence-like ``token`` (starts ``[ev:``; may or
+    may not end ``]``). Returns ``{category, remediation, candidate}`` where
+    ``candidate`` is a safe normalized id (see :func:`_normalized_candidate`) or
+    ``None``. The caller must confirm the candidate exists in the manifest before
+    surfacing it as a suggestion."""
+    closed = token.endswith("]")
+    core = token[1:-1] if closed else token[1:]   # drop '[' and any trailing ']'
+    candidate = _normalized_candidate(core)
+    if not closed:
+        return {"category": "dangling_opener", "candidate": candidate,
+                "remediation": "missing closing ']'; a citation must be exactly "
+                               "one bracketed token [ev:<section_id>:<NNNN>]"}
+    parts = core.split(":")                  # parts[0] == 'ev'
+    if len(parts) == 2:
+        return {"category": "missing_ordinal_separator", "candidate": candidate,
+                "remediation": "no ':<NNNN>' ordinal; expected "
+                               "[ev:<section_id>:<NNNN>] with a four-digit ordinal"}
+    if len(parts) > 3:
+        return {"category": "extra_field", "candidate": candidate,
+                "remediation": "extra ':' field; expected exactly "
+                               "[ev:<section_id>:<NNNN>]"}
+    sid, ordinal = parts[1], parts[2]
+    if not SECTION_ID_RE.match(sid):
+        return {"category": "invalid_section_id", "candidate": candidate,
+                "remediation": "section id must match [a-z0-9][a-z0-9-]* "
+                               "(lowercase, no spaces)"}
+    if ordinal == "":
+        return {"category": "missing_ordinal", "candidate": candidate,
+                "remediation": "add a four-digit ordinal, e.g. :0001"}
+    if not ordinal.isdigit():
+        return {"category": "malformed_ordinal", "candidate": candidate,
+                "remediation": "ordinal must be exactly four digits with no extra "
+                               "text"}
+    return {"category": "wrong_ordinal_width", "candidate": candidate,
+            "remediation": f"ordinal '{ordinal}' must be exactly four digits "
+                           "(zero-padded), e.g. 0001"}
+
+
+def find_malformed_evidence_tokens(markdown: str, *, section_id: str | None = None,
+                                   section_file: str | None = None) -> list[dict]:
+    """Every evidence-like token in ``markdown`` that is NOT a canonical
+    ``[ev:<section_id>:<NNNN>]`` citation, as ordered diagnostics.
+
+    Detects three shapes: malformed bracketed tokens (wrong ordinal width, missing
+    ordinal, invalid section id, extra text/fields), dangling ``[ev:`` openers, and
+    bare unbracketed ``ev:`` near-citations. Each diagnostic carries the token
+    text, ``category``, ``remediation``, a normalized ``candidate`` id (or ``None``),
+    1-based ``line``/``column``, and any ``section_id``/``section_file`` context.
+    Canonical citations are not reported here (they resolve via the manifest)."""
+    md = markdown or ""
+    diags: list[dict] = []
+    consumed: list[tuple[int, int]] = []     # spans covered by a bracketed [ev:...]
+
+    def base(token, start) -> dict:
+        line, col = _line_col(md, start)
+        return {"token": token, "line": line, "column": col,
+                "section_id": section_id, "section_file": section_file}
+
+    for m in EV_LIKE_TOKEN_RE.finditer(md):
+        consumed.append((m.start(), m.end()))
+        token = m.group(0)
+        closed = token.endswith("]")
+        core = token[1:-1] if closed else token[1:]
+        if closed and EVIDENCE_ID_RE.match(core):
+            continue                         # canonical citation — not malformed
+        d = base(token, m.start())
+        d.update(classify_malformed_evidence_token(token))
+        diags.append(d)
+
+    # bare ``ev:...`` near-citations not already inside a bracketed [ev:...] token.
+    for m in LOOSE_CITATION_RE.finditer(md):
+        if any(cs <= m.start() < ce for cs, ce in consumed):
+            continue
+        token = m.group(0)
+        d = base(token, m.start())
+        d.update(category="unbracketed_token",
+                 candidate=_normalized_candidate(token),
+                 remediation="evidence citations must be bracketed: "
+                             "[ev:<section_id>:<NNNN>]")
+        diags.append(d)
+
+    diags.sort(key=lambda d: (d["line"], d["column"]))
+    return diags
+
+
+def format_malformed_token(d: dict) -> str:
+    """Render one malformed-token diagnostic as a single human/rewrite-friendly
+    line: token text, category, location, remediation, and any safe suggestion."""
+    where: list[str] = []
+    if d.get("section_id"):
+        where.append(f"section {d['section_id']}")
+    if d.get("section_file"):
+        where.append(str(d["section_file"]))
+    if d.get("line"):
+        where.append(f"line {d['line']} col {d['column']}")
+    loc = (" @ " + ", ".join(where)) if where else ""
+    suggestion = f"; suggestion: {d['suggestion']}" if d.get("suggestion") else ""
+    return (f"{d['token']!r} [{d.get('category', 'malformed')}]{loc}: "
+            f"{d.get('remediation', '')}{suggestion}")
 
 
 # --- context-artifact / non-source laundering ---------------------------------
@@ -365,7 +509,12 @@ def resolve_citations(markdown: str, *, section_id: str, evidence_index: dict,
     - ``resolved``: ordered distinct ids that resolve to a real evidence item;
     - ``unresolved``: tokens that do not resolve at all;
     - ``cross_section``: resolved ids owned by another section's packet;
-    - ``malformed_like``: loose ``ev:`` tokens that are not well-formed citations.
+    - ``malformed_tokens``: structured diagnostics for every evidence-like token
+      that is not a canonical ``[ev:<section_id>:<NNNN>]`` citation (wrong ordinal
+      width, dangling opener, extra text, unbracketed near token, ...). A safe
+      ``suggestion`` is attached only when the normalized candidate id exists in
+      this bundle's ``evidence_index`` (deterministic zero-padding fix);
+    - ``malformed_like``: the malformed token texts (back-compat convenience).
     """
     distinct = distinct_citations(markdown)
     resolved: list[str] = []
@@ -384,13 +533,17 @@ def resolve_citations(markdown: str, *, section_id: str, evidence_index: dict,
         if token not in own:
             cross_section.append(token)
 
-    # loose ev: tokens that never became a well-formed [ev:...] citation
-    well_formed = set(distinct)
-    malformed_like = [t for t in loose_citation_tokens(markdown)
-                      if t not in well_formed and f"[{t}]" not in markdown]
+    # every evidence-like token that is not a canonical citation, with a safe
+    # zero-padding suggestion only when the exact normalized id exists in evidence.
+    malformed_tokens = find_malformed_evidence_tokens(markdown, section_id=section_id)
+    for d in malformed_tokens:
+        cand = d.get("candidate")
+        if cand and cand in evidence_index:
+            d["suggestion"] = f"[{cand}]"
     return {
         "resolved": resolved,
         "unresolved": unresolved,
         "cross_section": cross_section,
-        "malformed_like": malformed_like,
+        "malformed_tokens": malformed_tokens,
+        "malformed_like": [d["token"] for d in malformed_tokens],
     }

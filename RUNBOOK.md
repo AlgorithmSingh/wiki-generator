@@ -14,7 +14,7 @@ are deterministic and LLM-free. Phase 2 Step 1 (`plan`), optional Step 1b
 writing/synthesis is **implemented** per `PHASE4_WRITING_SYNTHESIS_SPEC.md`
 (§6 below).
 
-> **Current readiness status (2026-06-23):** Phase 1-3 can pass with the Iteration 3 exact-coverage/public-route fixes. The Phase 4 shell-variable path-synthesis fix from `PHASE4_WRITING_SYNTHESIS_ITERATION_2_SPEC.md` is now **implemented and validated non-live**: the expanded literal `/ragflow/conf/service_conf.yaml` is classified as a rewriteable `synthesized_identifier` (not terminal `invented_identifier`), and a bounded rewrite to an exact evidence token (`CONF_FILE`, `${CONF_FILE}`, or `${CONF_DIR}/service_conf.yaml`) passes. `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` is unchanged. The only remaining gate before another live Phase 4 attempt is **explicit user approval for a billed retry**; do not retry live Phase 4 without it.
+> **Current readiness status (2026-06-23):** Phase 1-4 can produce a grounded baseline wiki with the Iteration 3 exact-coverage/public-route fixes and the Phase 4 shell-variable path-synthesis fix. The successful live run is `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/phase4-live-vertex-runs/20260623-183730`. Strict sign-off is not complete: follow-up review found a malformed evidence-like token (`[ev:data-models:010]`) in the historical artifact and a broader coverage-target gap versus the DeepWiki benchmark. The malformed-token validator enhancement from `PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md` Milestone 1 is implemented locally; Milestone 2 coverage enhancement is not implemented. `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` is unchanged. Do not run another live/billed retry until the non-live enhancement work passes and the user explicitly approves it.
 
 ```
 Phase 1  Step 1 decompose   -> raw artifact bundle
@@ -360,19 +360,19 @@ evidence and never runs for terminal failures (cited context artifact, invented
 identifier, placeholder, truncation). If the bundle carries no command manifest,
 pass `--accept-no-force` to assert Phase 3 was not force-run.
 
-The latest live Vertex Phase 4 attempt failed closed on an unsupported
+The earlier live Vertex Phase 4 attempt failed closed on an unsupported
 shell-expanded identifier, `/ragflow/conf/service_conf.yaml`, in the `deployment`
 section. The Iteration 2 fix (`PHASE4_WRITING_SYNTHESIS_ITERATION_2_SPEC.md`) is
-now implemented: the prompt explicitly forbids expanding shell/env variables, and
-the validator classifies a deterministic one-step shell-variable expansion that is
-absent from evidence as a rewriteable `synthesized_identifier` — distinct from a
-terminal `invented_identifier` — and feeds the rewrite the exact evidence tokens
-to use instead (e.g. `CONF_FILE`, `${CONF_FILE}`, `${CONF_DIR}/service_conf.yaml`).
-A `synthesized_identifier` is rewriteable, never passable: final validation still
-requires exact tokens, and true inventions, routes, directory+filename joins, and
-multi-step/ambiguous derivations stay terminal. This is proven non-live by unit
-tests and a fake-provider rewrite; treat live Phase 4 as blocked only on explicit
-user approval for another billed retry.
+implemented: the prompt explicitly forbids expanding shell/env variables, and the
+validator classifies a deterministic one-step shell-variable expansion absent
+from evidence as a rewriteable `synthesized_identifier`, distinct from a terminal
+`invented_identifier`. The successful live run at `20260623-183730` exercised
+that path and passed the then-current validation. Follow-up review found a
+separate malformed citation-token validator gap and broader coverage gap; the
+malformed-token validator enhancement is now implemented locally under
+`PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md` Milestone 1. Treat any
+future live Phase 4 retry as blocked until Milestone 2/non-live enhancement work
+passes and the user explicitly approves another billed run.
 
 ---
 

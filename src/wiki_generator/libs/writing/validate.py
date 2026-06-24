@@ -140,10 +140,12 @@ def validate_section_draft(*, section_id, draft, parse_note, finish_reason,
     if cres["unresolved"]:
         add("unresolved_citation",
             f"citation(s) resolve to no evidence item: {cres['unresolved']}")
-    if cres["malformed_like"]:
+    if cres["malformed_tokens"]:
         add("malformed_citation_syntax",
-            f"malformed ev: token(s) (not a valid [ev:...] citation): "
-            f"{cres['malformed_like']}")
+            "malformed evidence-like token(s) — only [ev:<section_id>:<NNNN>] "
+            "(four-digit ordinal) is valid: "
+            + " | ".join(cit.format_malformed_token(d)
+                         for d in cres["malformed_tokens"][:8]))
     if cres["cross_section"]:
         warnings.append(
             f"cross-section citation(s) (recorded in manifest): {cres['cross_section']}")
@@ -239,6 +241,7 @@ def validate_document(bundle, generated, citation_manifest, out_dir) -> dict:
     unresolved: list[str] = []
     placeholders: list[str] = []
     laundered: list[str] = []
+    malformed: list[str] = []
     for g in generated:
         p = os.path.join(bundle.root, g["markdown_path"])
         if not os.path.isfile(p):
@@ -252,6 +255,15 @@ def validate_document(bundle, generated, citation_manifest, out_dir) -> dict:
         placeholders += [f"{g['section_id']}:{h}" for h in cit.find_placeholders(text)]
         laundered += [f"{g['section_id']}:{r}"
                       for r in cit.find_context_artifact_references(text)]
+        # any remaining malformed evidence-like token is terminal: the assembled
+        # artifact is never silently edited/auto-corrected (a safe suggestion is
+        # surfaced only when the padded id resolves through the manifest).
+        for d in cit.find_malformed_evidence_tokens(
+                text, section_id=g["section_id"], section_file=g["markdown_path"]):
+            cand = d.get("candidate")
+            if cand and cand in bundle.evidence_index and cand in manifest_ids:
+                d["suggestion"] = f"[{cand}]"
+            malformed.append(cit.format_malformed_token(d))
 
     chk("all_citations_resolve_via_manifest", not unresolved,
         f"unresolved: {unresolved[:6]}" if unresolved else f"{len(all_cited)} distinct")
@@ -262,6 +274,8 @@ def validate_document(bundle, generated, citation_manifest, out_dir) -> dict:
         f"{placeholders[:6]}" if placeholders else "none")
     chk("no_context_artifact_citations", not laundered,
         f"{laundered[:6]}" if laundered else "none")
+    chk("no_malformed_citations", not malformed,
+        f"{malformed[:6]}" if malformed else "none")
 
     # 4. provider finish reasons indicate complete output
     truncated = [g["section_id"] for g in generated

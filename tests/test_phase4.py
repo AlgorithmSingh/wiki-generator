@@ -1239,6 +1239,187 @@ class SynthesizedIdentifierRewriteTests(TmpBundleMixin, unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+class MalformedEvidenceTokenUnitTests(unittest.TestCase):
+    """Milestone 1: only `[ev:<section_id>:<NNNN>]` is valid; every other
+    evidence-like token (the live `[ev:data-models:010]` shape, dangling openers,
+    extra fields, bad section ids, bare `ev:` tokens) must fail loudly."""
+
+    # the exact malformed examples the spec enumerates
+    SPEC_MALFORMED = (
+        ("[ev:data-models:010]", "wrong_ordinal_width"),       # three-digit ordinal
+        ("[ev:data-models:00010]", "wrong_ordinal_width"),     # five-digit ordinal
+        ("[ev:data-models:]", "missing_ordinal"),              # missing ordinal
+        ("[ev:data-models]", "missing_ordinal_separator"),     # missing separator
+        ("[ev:data models:0010]", "invalid_section_id"),       # space in section id
+        ("[ev:data-models:0010", "dangling_opener"),           # dangling opener
+        ("[ev:data-models:0010 extra]", "malformed_ordinal"),  # extra text
+        ("[ev:data-models:0010:extra]", "extra_field"),        # extra field
+    )
+
+    def _find(self, md, **kw):
+        from wiki_generator.libs.writing.citations import find_malformed_evidence_tokens
+        return find_malformed_evidence_tokens(md, **kw)
+
+    def test_every_spec_malformed_example_fails_with_category(self):
+        for token, category in self.SPEC_MALFORMED:
+            md = f"Prose before {token} prose after."
+            diags = self._find(md)
+            self.assertEqual(len(diags), 1, (token, diags))
+            self.assertEqual(diags[0]["token"], token, token)
+            self.assertEqual(diags[0]["category"], category, token)
+            self.assertTrue(diags[0]["remediation"], token)
+            self.assertGreaterEqual(diags[0]["line"], 1)
+            self.assertGreaterEqual(diags[0]["column"], 1)
+
+    def test_canonical_citation_is_not_flagged(self):
+        md = ("ok [ev:data-models:0010] adjacent [ev:a:0001][ev:b:0002] "
+              "and a known-but-unknown [ev:x:9999] is well-formed too")
+        self.assertEqual(self._find(md), [])
+
+    def test_dangling_opener_does_not_swallow_next_token(self):
+        # two [ev: openers on one line: the first is dangling, the second canonical
+        md = "first [ev:a:0001 second [ev:b:0002]"
+        diags = self._find(md)
+        self.assertEqual([d["token"] for d in diags], ["[ev:a:0001"])
+        self.assertEqual(diags[0]["category"], "dangling_opener")
+
+    def test_bare_unbracketed_token_is_flagged(self):
+        diags = self._find("see ev:service:01 written without brackets")
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["category"], "unbracketed_token")
+        self.assertEqual(diags[0]["candidate"], "ev:service:0001")
+
+    def test_malformed_inside_a_valid_run_is_isolated(self):
+        diags = self._find("[ev:a:0001][ev:b:01][ev:c:0003]")
+        self.assertEqual([d["token"] for d in diags], ["[ev:b:01]"])
+
+    def test_line_and_column_are_reported(self):
+        md = "line one\nline two [ev:x:1] tail"
+        d = self._find(md)[0]
+        self.assertEqual(d["line"], 2)
+        self.assertEqual(d["column"], md.split("\n")[1].index("[ev") + 1)
+
+    def test_section_context_is_attached(self):
+        d = self._find("[ev:x:1]", section_id="overview",
+                       section_file="wiki/sections/001-overview.md")[0]
+        self.assertEqual(d["section_id"], "overview")
+        self.assertEqual(d["section_file"], "wiki/sections/001-overview.md")
+
+
+# ---------------------------------------------------------------------------
+class MalformedCitationResolutionTests(unittest.TestCase):
+    """`resolve_citations` reports malformed tokens and only suggests a padded id
+    when that exact id resolves in the bundle (deterministic + safe — spec rule 8)."""
+
+    def _resolve(self, md, index, sec):
+        from wiki_generator.libs.writing.citations import resolve_citations
+        return resolve_citations(md, section_id="data-models", evidence_index=index,
+                                 section_evidence_ids=sec)
+
+    def test_padded_known_resolves_unknown_fails_malformed_flagged(self):
+        index = {"ev:data-models:0010": object()}
+        sec = {"data-models": {"ev:data-models:0010"}}
+        r = self._resolve(
+            "bad [ev:data-models:010] ok [ev:data-models:0010] gone "
+            "[ev:data-models:9999]", index, sec)
+        # the exact four-digit known id resolves ...
+        self.assertEqual(r["resolved"], ["ev:data-models:0010"])
+        # ... a well-formed but unknown id fails resolution (not silently dropped) ...
+        self.assertEqual(r["unresolved"], ["ev:data-models:9999"])
+        # ... and the three-digit token is malformed, not resolved/unresolved.
+        mt = {d["token"]: d for d in r["malformed_tokens"]}
+        self.assertEqual(set(mt), {"[ev:data-models:010]"})
+        self.assertEqual(mt["[ev:data-models:010]"]["suggestion"],
+                         "[ev:data-models:0010]")
+        self.assertEqual(r["malformed_like"], ["[ev:data-models:010]"])
+
+    def test_no_suggestion_when_padded_id_absent_from_manifest(self):
+        # zero-padding `010` -> `0010` is only suggested when `ev:...:0010` exists
+        r = self._resolve("bad [ev:data-models:010]", {}, {})
+        self.assertEqual(len(r["malformed_tokens"]), 1)
+        self.assertIsNone(r["malformed_tokens"][0].get("suggestion"))
+
+
+# ---------------------------------------------------------------------------
+class MalformedCitationRewriteTests(TmpBundleMixin, unittest.TestCase):
+    """Fake-provider integration: a first draft carries the malformed
+    `[ev:service:001]` token, the bounded rewrite is fed clear feedback, the
+    corrected draft uses an exact manifest citation, and final validation passes —
+    plus the fail-closed path when the rewrite leaves the malformed token."""
+
+    def _overview(self):
+        return draft_json("overview", "Overview",
+                          valid_markdown("overview", "Overview", ["ev:overview:0001"]))
+
+    BAD = ("## Service Layer\n\nThe service subsystem handles requests. "
+           "[ev:service:001]\n")
+
+    def test_malformed_citation_rewritten_then_passes(self):
+        root = self.fresh()
+        good = draft_json("service", "Service Layer",
+                          valid_markdown("service", "Service Layer", ["ev:service:0001"]))
+        prov = FakeProvider({"overview": self._overview(),
+                             "service": [draft_json("service", "Service Layer",
+                                                    self.BAD), good]})
+        res = writing.run(opts_for(root, max_rewrite_attempts=1), provider=prov)
+        self.assertEqual(res.status, "pass", res.message)
+        self.assertEqual(prov.calls.count("service"), 2)         # exactly one rewrite
+
+        # the rewrite prompt + audit carried the malformed-token feedback ...
+        adir = os.path.join(root, "wiki", "audit", "rewrites", "service-attempt-1")
+        for name in ("prompt.md", "response.raw.txt", "problems.json"):
+            self.assertTrue(os.path.isfile(os.path.join(adir, name)), name)
+        probs = json.dumps(json.load(open(os.path.join(adir, "problems.json"))))
+        self.assertIn("malformed_citation_syntax", probs)
+        self.assertIn("[ev:service:001]", probs)
+        self.assertIn("[ev:service:0001]", probs)               # safe suggestion
+
+        # ... and the final section file uses the exact token, never the malformed one
+        with open(os.path.join(root, "wiki", "sections", "002-service.md"),
+                  encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn("[ev:service:0001]", text)
+        self.assertNotIn("[ev:service:001]", text)
+
+    def test_malformed_citation_rewrite_exhausted_fails_closed(self):
+        root = self.fresh()
+        prov = FakeProvider({"overview": self._overview(),
+                             "service": [draft_json("service", "Service Layer", self.BAD),
+                                         draft_json("service", "Service Layer", self.BAD)]})
+        with self.assertRaises(writing.WritingValidationFailure):
+            writing.run(opts_for(root, max_rewrite_attempts=1), provider=prov)
+        self.assertEqual(prov.calls.count("service"), 2)         # capped at one rewrite
+
+    def test_malformed_citation_with_zero_rewrites_fails_closed(self):
+        root = self.fresh()
+        prov = FakeProvider({"overview": self._overview(),
+                             "service": draft_json("service", "Service Layer", self.BAD)})
+        with self.assertRaises(writing.WritingValidationFailure):
+            writing.run(opts_for(root, max_rewrite_attempts=0), provider=prov)
+
+    def test_final_validation_rejects_malformed_token_in_section_file(self):
+        # a malformed token that reaches an assembled section file is terminal in
+        # final whole-document validation — never silently edited/auto-corrected.
+        root = self.fresh()
+        b = gated(root)
+        writing.run(opts_for(root), provider=default_provider(b))
+        from wiki_generator.libs.writing.validate import validate_document
+        out_dir = os.path.join(root, "wiki")
+        svc = os.path.join(out_dir, "sections", "002-service.md")
+        with open(svc, "a", encoding="utf-8") as f:
+            f.write("\nStray token [ev:service:001].\n")
+        generated = [json.loads(l) for l in open(os.path.join(
+            out_dir, "metadata", "generated-sections.jsonl")) if l.strip()]
+        manifest = json.load(open(os.path.join(out_dir, "metadata",
+                                               "citation-manifest.json")))
+        vd = validate_document(gated(root), generated, manifest, out_dir)
+        self.assertEqual(vd["status"], "fail")
+        self.assertTrue(any("no_malformed_citations" in f for f in vd["failures"]))
+        # the safe suggestion (the padded id resolves via the manifest) is surfaced
+        self.assertTrue(any("suggestion" in f for f in vd["failures"]))
+
+
+# ---------------------------------------------------------------------------
 class IsolationTests(unittest.TestCase):
     """Phase 4 must never invoke Phase 3 retrieval, Phase 2 repair, or a planner.
 
