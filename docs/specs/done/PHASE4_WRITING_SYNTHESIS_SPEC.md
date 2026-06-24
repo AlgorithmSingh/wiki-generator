@@ -10,10 +10,10 @@ clean Phase 1-3 artifact bundle.
 
 Authoritative upstream constraints:
 
-- Current readiness handoff: `HANDOFF_READINESS_ITERATION_2.md`.
+- Current readiness handoff: `docs/handoffs/done/HANDOFF_READINESS_ITERATION_2.md`.
 - Current Phase 1/2/3 readiness spec: `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md`.
 - Baseline readiness amendment: `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_SPEC.md`.
-- Phase 3 evidence contract: `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` must remain
+- Phase 3 evidence contract: `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` must remain
   unchanged.
 - Fresh accepted Phase 1-3 bundle for this design:
   `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/runs/20260622-234038`.

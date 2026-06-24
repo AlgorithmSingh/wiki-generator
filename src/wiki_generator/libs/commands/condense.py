@@ -9,13 +9,17 @@ from __future__ import annotations
 import argparse
 import os
 
+from ..coverage import derive_coverage_signals
 from ..digest import loader
-from ..digest import planning_gaps, planning_graph, planning_handles
-from ..digest import planning_runtime_surfaces, planning_symbols, planning_tests
-from ..util import log, token_estimate, write_text
+from ..digest import planning_coverage_signals, planning_gaps, planning_graph
+from ..digest import planning_handles, planning_runtime_surfaces
+from ..digest import planning_symbols, planning_tests
+from ..util import log, token_estimate, write_json, write_text
 
 # condensate filename -> builder module. planning-handles.md leads so the exact
 # retrieval handles sit at the front of the planner bundle (right after README).
+# planning-coverage-signals.md trails: it is a coverage map over the families the
+# earlier condensates already surfaced.
 CONDENSATES = [
     ("planning-handles.md", planning_handles),
     ("planning-symbols.md", planning_symbols),
@@ -23,11 +27,16 @@ CONDENSATES = [
     ("planning-runtime-surfaces.md", planning_runtime_surfaces),
     ("planning-tests.md", planning_tests),
     ("planning-gaps.md", planning_gaps),
+    ("planning-coverage-signals.md", planning_coverage_signals),
 ]
 
 
 def write_condensates(bundle, derived_dir: str) -> list[tuple[str, int]]:
-    """Build and write each condensate. Returns [(filename, tokens), ...]."""
+    """Build and write each condensate. Returns [(filename, tokens), ...].
+
+    Also writes the machine-readable ``coverage-signals.json`` sidecar (planner
+    CONTEXT, not citeable evidence) so tooling can consume the structured signals
+    that back ``planning-coverage-signals.md``."""
     os.makedirs(derived_dir, exist_ok=True)
     written: list[tuple[str, int]] = []
     for name, mod in CONDENSATES:
@@ -41,6 +50,17 @@ def write_condensates(bundle, derived_dir: str) -> list[tuple[str, int]]:
         toks = token_estimate(text)
         written.append((name, toks))
         log(f"  wrote derived/{name}  (~{toks:,} tokens)")
+
+    # Machine-readable coverage-signals sidecar (isolated like the condensates).
+    try:
+        signals = derive_coverage_signals(bundle)
+        write_json(os.path.join(derived_dir, "coverage-signals.json"),
+                   signals.to_dict())
+        log(f"  wrote derived/coverage-signals.json  "
+            f"({signals.present_count} present, {signals.missing_count} missing "
+            f"of {signals.family_count} families)")
+    except Exception as e:  # noqa: BLE001 - sidecar failure must not abort condense
+        log(f"coverage-signals.json FAILED: {e.__class__.__name__}: {e}")
     return written
 
 

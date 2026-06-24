@@ -8,9 +8,9 @@ This document is an incremental amendment on top of:
 
 - `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_SPEC.md`
 - `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md`
-- `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`
+- `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`
 
-`PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` remains the baseline readiness spec. `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` remains unchanged and must not be edited for this amendment.
+`PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md` remains the baseline readiness spec. `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` remains unchanged and must not be edited for this amendment.
 
 Scope for Iteration 3: fix Phase 3 aggregation, capping, coverage reporting, and validation so exact requested evidence cannot be lost after lane retrieval succeeds and exact-lane caps are allocated fairly across requests.
 

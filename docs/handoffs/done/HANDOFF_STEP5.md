@@ -1,13 +1,13 @@
 # Handoff — Phase 1 Step 5: `build-retrieval` (historical — earlier phase)
 
-> **Not the current handoff.** This documents an earlier, completed phase (Phase 1 Step 5). The current handoff is **`HANDOFF_READINESS_ITERATION_2.md`** (Phase 1/2/3 readiness state + Phase-4 status). Kept for historical reference.
+> **Not the current handoff.** This documents an earlier, completed phase (Phase 1 Step 5). The current handoff is **`docs/handoffs/done/HANDOFF_READINESS_ITERATION_2.md`** (Phase 1/2/3 readiness state + Phase-4 status). Kept for historical reference.
 
 Branch: `feat/phase1-step5-build-retrieval` · Commit: `f4db835` · Pushed to `origin`.
 
 ## 1. Problem and context
 
 Implement **Phase 1 Step 5** of the wiki-generator pipeline per
-`PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md`: a `build-retrieval` command that
+`docs/specs/done/PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md`: a `build-retrieval` command that
 builds the **retrieval substrate** Phase 3 will query section-by-section.
 
 It verifies/rebuilds the BM25 index over the Step 1 corpus, optionally builds
@@ -69,7 +69,7 @@ built) `vectors.faiss` + `vector-metadata.json[l]`, and (with `--smoke-query`)
 
 ## 3. Suggested review
 
-Read in this order: `PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md` →
+Read in this order: `docs/specs/done/PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md` →
 `libs/retrieval/__init__.py` (the facade shows the whole flow) → `bm25.py` and
 `vectors.py` (the two seams) → the `lanes/rag.py` diff (delegation).
 

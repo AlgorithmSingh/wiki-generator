@@ -4,7 +4,7 @@
 
 This document is **Iteration 2** of the Phase 1/2/3 readiness follow-up work. It is an **incremental amendment** on top of `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_SPEC.md` and does **not** replace that first readiness iteration spec.
 
-It also does **not** replace or modify `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. Phase 3 remains deterministic and LLM-free.
+It also does **not** replace or modify `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. Phase 3 remains deterministic and LLM-free.
 
 Current scope for this document: **Patch 1, Patch 2, and Patch 3**.
 

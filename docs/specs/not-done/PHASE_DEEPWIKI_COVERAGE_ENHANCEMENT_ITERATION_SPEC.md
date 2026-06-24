@@ -2,9 +2,13 @@
 
 ## Status and source of truth
 
-Status: **Milestone 1 implemented locally; Milestone 2 in progress — coverage
-taxonomy + coverage-validation scaffolding slice implemented and tested; the
-hierarchical Phase 1/2/3/4 pipeline expansion remains pending**.
+Status: **Milestone 1 implemented. Milestone 2 is in progress: coverage
+taxonomy/validation, Phase 2 planning/PagePlan obligation preservation, and Phase
+1 deterministic coverage-signal expansion are implemented and tested. Pending
+next: Phase 2 enhancement-mode fail/repair using coverage signals, Phase 3
+page-level evidence and evidenced coverage, Phase 4 hierarchical writing and
+generated coverage, and non-live hierarchical E2E before any approved live
+retry**.
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
 enhancement track. It consolidates the immediate malformed-citation validator
@@ -29,7 +33,7 @@ Source artifacts:
 - Reference benchmark, not citeable evidence:
   `/Users/ankitsingh/Documents/deep-wiki/ragflow-deepwiki.md`
 - Read-only for this iteration:
-  `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`
+  `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`
 
 ## Plain-language root cause
 
@@ -187,7 +191,7 @@ validation fails.
 
 ```bash
 git diff --check
-git diff --exit-code -- PHASE3_EVIDENCE_RETRIEVAL_SPEC.md
+git diff --exit-code -- docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md
 python -m pytest -q tests/test_phase4.py
 python -m pytest -q
 ```
@@ -333,9 +337,74 @@ distinctive vocabulary. The "evidenced" and "generated" coverage dimensions
 (per-page EvidencePacket sufficiency, per-required-topic generated-heading checks)
 are explicit next steps and are not asserted by this slice. The validator is NOT
 wired into the default Phase 4 path (that would fail the small fixture bundles);
-it is exposed as the standalone `validate-coverage` command/library scaffold. The
-next integration step is to emit a non-enforcing coverage report from the
-planning/writing report path once Phase 2 produces hierarchical plans.
+it is exposed as the standalone `validate-coverage` command/library scaffold.
+
+### Milestone 2 progress — Phase 2 planning/PagePlan obligations (implemented, non-live)
+
+This slice made the normalized Phase 2 plan capable of carrying coverage-enhanced
+planning obligations end-to-end, without making coverage enforcement part of the
+default Phase 4 path.
+
+Implemented:
+
+- `coverage_labels[]` are preserved in normalized `section-plans.jsonl` and
+  normalized to canonical kebab labels.
+- `parent_section_id` is preserved/resolved so parent/child page hierarchy can be
+  represented in the canonical plan artifact.
+- `required_topics` merges planner `coverage_requirements[]` and
+  `required_topics[]` so PagePlan obligations survive normalization.
+- `expected_sources[]` is preserved as planner expectation metadata.
+- `document-plan.md` shows coverage labels and parent/child hierarchy.
+- `normalization-report.md` includes a baseline/report-only DeepWiki coverage
+  matrix; it does not gate readiness unless `validate-coverage --mode
+  enhancement` is explicitly run.
+- Planner prompt surfaces ask for canonical `coverage_labels[]`,
+  `parent_section_id`, and the rule that a broad parent page does not satisfy a
+  deep child topic.
+- `tests/test_phase2_coverage_planning.py` proves field preservation,
+  hierarchy, normalized-plan coverage validation, non-enforcing reports, prompt
+  guidance, and Milestone 1 behavior remain intact.
+
+### Milestone 2 progress — Phase 1 coverage-signal expansion (implemented, non-live)
+
+This slice gives Phase 2 deterministic planner-facing coverage signals for all
+thirteen mandatory topic families. These signals are planner context, not citeable
+Phase 3 evidence.
+
+Implemented:
+
+- `src/wiki_generator/libs/coverage/signals.py` derives per-family coverage
+  signals from deterministic source artifacts such as file inventory, query-pack
+  hits, and symbols.
+- `src/wiki_generator/libs/digest/planning_coverage_signals.py` renders the
+  planner-facing condensate.
+- Phase 1 condense/digest emits `derived/planning-coverage-signals.md` and the
+  machine-readable `derived/coverage-signals.json` sidecar.
+- The planner upload bundle includes `planning-coverage-signals.md` with an
+  explicit warning that it is context-only and not citeable evidence.
+- Missing or low-signal families are reported rather than hidden. Glossary is
+  synthesized as a planner obligation, not as a source-backed citation target.
+- `tests/test_coverage_signals.py` proves deterministic family detection,
+  missing/low-signal reporting, non-citeable markdown/JSON metadata, and upload
+  integration.
+
+### Remaining Milestone 2 work — active pending backlog
+
+1. **Phase 2 enhancement-mode fail/repair using coverage signals.** The next
+   implementation slice should consume `planning-coverage-signals.md`, require
+   stable parent/child pages with `coverage_labels[]`, and fail or repair when
+   mandatory families are absent in enhancement mode.
+2. **Phase 3 page-level evidence and evidenced coverage.** Retrieve evidence per
+   planned page/child section and report per-required-topic sufficiency while
+   preserving deterministic, all-sections, no-force, no-retry-loop constraints.
+3. **Phase 4 hierarchical writing and generated coverage.** Generate hierarchical
+   pages from page-level evidence, emit planned-vs-generated coverage metadata,
+   and keep all citation/identifier/malformed-token validators strict.
+4. **Non-live hierarchical E2E.** Prove the expanded path with fake-provider or
+   non-live fixtures before requesting explicit user approval for any billed
+   Vertex/Gemini retry.
+5. **Benchmark-only comparison.** Compare against `ragflow-deepwiki.md` only as a
+   structure/coverage benchmark, never as citeable evidence.
 
 ### Milestone 2 acceptance criteria
 
@@ -363,31 +432,43 @@ A later implementation must demonstrate:
 - Do not make `ragflow-deepwiki.md` citeable evidence.
 - Do not weaken validators.
 - Do not silently edit the successful live wiki artifacts in place.
-- Do not modify `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`.
+- Do not modify `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`.
 - Do not run live/billed models until deterministic planning, evidence,
   validation, and fake-provider tests pass and the user explicitly approves a
   live retry.
 
 ## Recommended implementation sequence
 
+Completed foundation:
+
 1. Implement Milestone 1 malformed evidence-token validation and tests.
 2. Update run reports/validation messaging so the old successful run is described
    as historical under the older validator, not strict final sign-off.
 3. Add coverage taxonomy fixtures and validation for missing mandatory topic
    families.
-4. Expand Phase 1 analysis signals and Phase 2 hierarchical planning.
-5. Extend Phase 3 to retrieve per planned page/child section.
-6. Extend Phase 4 to write hierarchical pages and emit planned-vs-generated
+4. Preserve Phase 2 coverage labels, PagePlan obligations, and parent/child
+   hierarchy in normalized planning artifacts.
+5. Expand Phase 1 deterministic coverage signals and include them in planner
+   context as non-citeable condensates.
+
+Pending active sequence:
+
+6. Implement Phase 2 enhancement-mode fail/repair that consumes the coverage
+   signals and fails loudly when mandatory families are absent.
+7. Extend Phase 3 to retrieve per planned page/child section and report evidenced
+   per-topic sufficiency.
+8. Extend Phase 4 to write hierarchical pages and emit planned-vs-generated
    coverage metadata.
-7. Run non-live/fake-provider end-to-end validation.
-8. Only after that, request explicit user approval for a live/billed retry.
+9. Run non-live/fake-provider hierarchical end-to-end validation.
+10. Only after that, request explicit user approval for a live/billed retry.
 
 ## Coding-agent prompt summary
 
-Milestone 1 is implemented locally. Future coding-agent work should review/keep
-that validator behavior strict, then proceed to Milestone 2 only with a concrete
-non-live implementation plan. Do not call Vertex/Gemini or any live model. Do not
-edit the historical generated wiki in place. Do not modify
-`PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. Keep validators strict. If Milestone 2 is
-too large for one coding session, stop after coverage-validation scaffolding and
-report the remaining work clearly.
+Milestone 1 and the first Milestone 2 foundation slices are implemented. Future
+coding-agent work should keep validator behavior strict and proceed with the next
+concrete non-live slice: **Phase 2 enhancement-mode fail/repair using the Phase 1
+coverage signals**. Do not call Vertex/Gemini or any live model. Do not edit the
+historical generated wiki in place. Do not modify
+`docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. Keep validators strict.
+If a Milestone 2 slice is too large for one coding session, stop after a coherent
+non-live increment and report the remaining work clearly.

@@ -13,7 +13,7 @@ classification for shell-variable path-synthesis near-misses.
 Source-of-truth boundaries:
 
 - `PHASE4_WRITING_SYNTHESIS_SPEC.md` remains the baseline Phase 4 spec.
-- `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` is unchanged and must not be modified for
+- `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` is unchanged and must not be modified for
   this issue.
 - Phase 3 remains deterministic, all-sections only, LLM-free, with no retry loop
   and no `--section` product mode.
@@ -140,7 +140,7 @@ This amendment explicitly does **not** authorize:
 - broadly exposing shell-expanded paths as evidence;
 - live retries before a non-live patch and tests;
 - Phase 3 LLM use, retry/debug loops, or section mode;
-- changing `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`;
+- changing `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`;
 - treating public-route synthesis, directory+filename synthesis, or arbitrary
   path joining as grounded evidence.
 
@@ -368,10 +368,10 @@ Likely files for a future non-live patch:
   strict.
 - `tests/test_phase4.py` — add validator and fake-provider rewrite regression
   tests.
-- `RUNBOOK.md` and/or `HANDOFF_READINESS_ITERATION_2.md` — minimal status notes
+- `RUNBOOK.md` and/or `docs/handoffs/done/HANDOFF_READINESS_ITERATION_2.md` — minimal status notes
   only, if needed.
 
-Do not modify `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` for this work.
+Do not modify `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` for this work.
 
 ## Acceptance criteria before another billed live retry
 
@@ -379,7 +379,7 @@ Before any further live/billed Phase 4 retry:
 
 - The non-live patch implementing this amendment exists.
 - Relevant tests pass.
-- `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` remains unchanged.
+- `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` remains unchanged.
 - Deterministic no-live validation or fake-provider rewrite proves the deployment
   case is handled: the expanded path is rejected as `synthesized_identifier`, the
   rewrite uses exact evidence tokens, and final validation passes.

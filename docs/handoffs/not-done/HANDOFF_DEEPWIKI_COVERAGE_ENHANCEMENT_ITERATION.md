@@ -1,21 +1,25 @@
 # Handoff: DeepWiki-Informed Coverage Enhancement Iteration
 
+> **Status:** Active / not done. This is the current handoff for the DeepWiki-informed coverage enhancement iteration.
+
 ## Canonical spec
 
 Use exactly one iteration spec for the next coding-agent work:
 
 ```text
-PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md
+docs/specs/not-done/PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md
 ```
 
 Older split drafts for writing-validation-only, broader coverage-only, or
 "parity" framing are intentionally removed/superseded. Do not create competing
 spec files for this iteration.
 
-Current implementation status: **Milestone 1 is implemented locally and tested.
-Milestone 2 is in progress: the coverage taxonomy + coverage-validation
-scaffolding slice is implemented and tested (non-live); the hierarchical
-Phase 1/2/3/4 pipeline expansion is not yet implemented.**
+Current implementation status: **Milestone 1 is implemented and tested.
+Milestone 2 is in progress: coverage taxonomy/validation, Phase 2
+planning/PagePlan obligation preservation, and Phase 1 deterministic
+coverage-signal expansion are implemented and tested (non-live). Pending next:
+Phase 2 enhancement-mode fail/repair using those signals, then Phase 3
+page-level evidence, Phase 4 hierarchical writing, and non-live hierarchical E2E.**
 
 ## Why this exists
 
@@ -80,26 +84,53 @@ A first, safe, non-live Milestone 2 slice is implemented and tested:
   flagged with diagnostics; broad parents do not satisfy deep children; the CLI
   gate works; Milestone 1 malformed-token validation stays intact.
 
-### Remaining Milestone 2 work
+### Milestone 2 — Phase 2 planning/PagePlan obligation slice (implemented, non-live)
 
-- Expand Phase 1 deterministic inventories (frontend, queue, memory, Go/native,
-  CI/CD, sandbox, migrations, admin/health signals).
-- Phase 2 hierarchical planning: parent/child pages, stable IDs, coverage labels,
-  and a coverage matrix; fail/repair when mandatory families are absent in
-  coverage-enhanced mode.
-- Phase 3 per-page/child evidence retrieval with per-required-topic sufficiency
-  reporting (preserving all existing Phase 3 constraints).
-- Phase 4 hierarchical writing emitting planned-vs-generated coverage metadata.
-- Wire the coverage validator into the planning/writing report path as a
-  non-enforcing report once hierarchical plans exist; add the "evidenced" and
-  "generated" coverage dimensions; add a benchmark-comparison report.
+Implemented after the coverage-validation scaffold:
 
-Do not begin the pipeline-expansion work without a concrete plan, and do not run a
-live/billed retry without explicit user approval.
+- normalized Phase 2 plans preserve canonical `coverage_labels[]`,
+  `parent_section_id`, merged `required_topics[]`, and `expected_sources[]`;
+- parent/child hierarchy is shown in `document-plan.md`;
+- `normalization-report.md` includes a baseline/report-only DeepWiki coverage
+  matrix without gating readiness;
+- planner prompt surfaces request canonical coverage labels, child-page hierarchy,
+  and the broad-parent-does-not-satisfy-deep-child rule;
+- `tests/test_phase2_coverage_planning.py` proves the behavior.
+
+### Milestone 2 — Phase 1 coverage-signal slice (implemented, non-live)
+
+Implemented after the planning-obligation slice:
+
+- `src/wiki_generator/libs/coverage/signals.py` derives deterministic
+  planner-facing signals for all thirteen mandatory families;
+- `src/wiki_generator/libs/digest/planning_coverage_signals.py` renders the
+  planner condensate;
+- Phase 1 condense/digest emits `derived/planning-coverage-signals.md` plus
+  `derived/coverage-signals.json`;
+- planner upload includes the coverage-signals condensate with a loud
+  context-only / not-citeable warning;
+- missing or low-signal families are reported rather than hidden;
+- `tests/test_coverage_signals.py` proves deterministic detection and upload
+  integration.
+
+### Remaining Milestone 2 work — active pending backlog
+
+- **Next slice:** Phase 2 enhancement-mode fail/repair using the coverage signals:
+  consume `planning-coverage-signals.md`, require stable parent/child pages with
+  `coverage_labels[]`, and fail or repair when mandatory families are absent.
+- **Then:** Phase 3 per-page/child evidence retrieval with per-required-topic
+  sufficiency reporting, preserving all existing Phase 3 constraints.
+- **Then:** Phase 4 hierarchical writing emitting planned-vs-generated coverage
+  metadata and keeping all validators strict.
+- **Then:** non-live/fake-provider hierarchical E2E plus benchmark-only
+  comparison against `ragflow-deepwiki.md`.
+
+Do not begin the next pipeline-expansion slice without a concrete prompt, and do
+not run a live/billed retry without explicit user approval.
 
 ## Required guardrails
 
-- Do not modify `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`.
+- Do not modify `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`.
 - Do not weaken validators.
 - Do not use `ragflow-deepwiki.md` as citeable evidence.
 - Do not chase line count with filler.
@@ -110,7 +141,7 @@ live/billed retry without explicit user approval.
 
 ```bash
 git diff --check
-git diff --exit-code -- PHASE3_EVIDENCE_RETRIEVAL_SPEC.md
+git diff --exit-code -- docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md
 python -m pytest -q tests/test_phase4.py
 python -m pytest -q
 ```

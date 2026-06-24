@@ -1,5 +1,7 @@
 # Phase 1 Decomposition Plan — Artifact Bundle
 
+> **Status:** Done / archived design plan. Kept for provenance; current behavior is governed by the code, `README.md`, `RUNBOOK.md`, and the active docs journal in `docs/README.md`.
+
 ## Goal
 
 Phase 1 takes a Python repo directory and creates a deterministic **repo-analysis artifact bundle**.

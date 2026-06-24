@@ -1,6 +1,6 @@
 # Handoff — Phase 1/2/3 Readiness Iteration (SUPERSEDED — historical)
 
-> **⛔ NOT THE CURRENT HANDOFF.** Iteration 2 is now **implemented and validated** — see **`HANDOFF_READINESS_ITERATION_2.md`** (the current readiness handoff and Phase-4 status). This file describes the first (Iteration 1) pass and the diagnostic NO-GO run that motivated Iteration 2; keep it only as historical context. Where it conflicts with Iteration 2, Iteration 2 wins.
+> **⛔ NOT THE CURRENT HANDOFF.** Iteration 2 is now **implemented and validated** — see **`docs/handoffs/done/HANDOFF_READINESS_ITERATION_2.md`** (the current readiness handoff and Phase-4 status). This file describes the first (Iteration 1) pass and the diagnostic NO-GO run that motivated Iteration 2; keep it only as historical context. Where it conflicts with Iteration 2, Iteration 2 wins.
 >
 > **Original supersession note (2026-06-22):** This handoff must not be used as the current Phase 4 decision or readiness source of truth. Current readiness work starts from `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_2_SPEC.md`. The forced Phase 3 run described below was a **NO-GO for Phase 4** (a forced run after readiness `FAIL` is diagnostic only). Iteration 2 implemented the patches, achieved readiness `PASS`, and reran Phase 3 without `--force` (see the current handoff).
 
@@ -9,12 +9,12 @@ Status: implemented, tested (136 tests, both interpreters), and validated end-to
 
 ## 1. Problem and context
 
-Implement `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_SPEC.md` — an **amendment** (not a replacement) to `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. Goal: make Phase 3 receive a genuinely *Phase-3-ready* normalized plan instead of a syntactically valid plan full of unresolved work orders.
+Implement `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_SPEC.md` — an **amendment** (not a replacement) to `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. Goal: make Phase 3 receive a genuinely *Phase-3-ready* normalized plan instead of a syntactically valid plan full of unresolved work orders.
 
 Driving evidence: a prior RAGFlow run failed Phase 3 as `bad_underspecified_normalized_plan` because the Gemini plan put vague/unresolvable items in exact lanes (e.g. `retrieve: api.apps.*` in `symbols[]`, `contracts/openapi.json` as a contract, `pytest [Dependency]` as a graph node, `derived/planning-digest.md` as a source file) and `expected_evidence_types` was derived from those non-resolvable items.
 
 Constraints / decisions:
-- `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` stays unchanged; everything is deterministic, LLM-free, byte-stable (no timestamps) except Phase 2 Step 1 (the one Vertex call).
+- `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` stays unchanged; everything is deterministic, LLM-free, byte-stable (no timestamps) except Phase 2 Step 1 (the one Vertex call).
 - The readiness gate is **strict**: any non-resolvable exact-lane ref → readiness FAIL. Items that don't resolve are routed to `search_hints[]` (recall) or `context_artifacts[]` (non-citeable context); exact lanes keep only resolvable handles.
 - Test framework is stdlib `unittest` (no pytest); two interpreters (`python3` 3.14 without faiss, `.venv` 3.12 with faiss). New tests pass under both.
 - Global rule honored: no `Co-Authored-By` / no Claude attribution in commits.
@@ -73,7 +73,7 @@ Result: Phase 3 PASS — 504 evidence items across all 16 sections; 0 plan/conte
 
 ## 4. Open question for the requester — Phase 4
 
-The E2E prompt (`/Users/ankitsingh/Documents/deep-wiki/11-testing-pipeline/E2E_PIPELINE_AGENT_PROMPT.md`) requires a **Phase 4 writing/synthesis** stage: a new `PHASE4_WRITING_SYNTHESIS_SPEC.md`, an implemented writer (`scripts/phase4_write_wiki.sh` + code + tests) that consumes `plans/document-plan.json` + `plans/section-plans.jsonl` + `evidence/evidence-packets.jsonl`, and a final generated RAGFlow Wiki under `/Users/ankitsingh/Documents/deep-wiki/12-testing-pipeline-e2e`, with strict citation/anti-hallucination gates. Phases 1–3 are clean, so the prompt's "Phase 4 only after clean Phase 3" gate is met.
+The E2E prompt (`/Users/ankitsingh/Documents/deep-wiki/11-testing-pipeline/E2E_PIPELINE_AGENT_PROMPT.md`) requires a **Phase 4 writing/synthesis** stage: a new `docs/specs/done/PHASE4_WRITING_SYNTHESIS_SPEC.md`, an implemented writer (`scripts/phase4_write_wiki.sh` + code + tests) that consumes `plans/document-plan.json` + `plans/section-plans.jsonl` + `evidence/evidence-packets.jsonl`, and a final generated RAGFlow Wiki under `/Users/ankitsingh/Documents/deep-wiki/12-testing-pipeline-e2e`, with strict citation/anti-hallucination gates. Phases 1–3 are clean, so the prompt's "Phase 4 only after clean Phase 3" gate is met.
 
 **The decision I need before building it — how should Phase 4 generate the wiki?**
 
@@ -82,7 +82,7 @@ The E2E prompt (`/Users/ankitsingh/Documents/deep-wiki/11-testing-pipeline/E2E_P
 
 2. **Deterministic assembler (no LLM).** Fully reproducible/byte-stable, zero extra cost, keeps the "only the planner uses an LLM" architecture. Emits a structured, cited markdown wiki (section purpose + grouped evidence excerpts + citations + honest gaps) — grounded but reads like an evidence digest, not flowing prose.
 
-3. **Spec only, then pause.** I write `PHASE4_WRITING_SYNTHESIS_SPEC.md` (inputs/outputs/algorithm/citation rules/validation/tests/CLI) for your review and stop before implementing.
+3. **Spec only, then pause.** I write `docs/specs/done/PHASE4_WRITING_SYNTHESIS_SPEC.md` (inputs/outputs/algorithm/citation rules/validation/tests/CLI) for your review and stop before implementing.
 
 4. **Stop here.** Treat the readiness iteration as the deliverable; defer Phase 4 entirely.
 

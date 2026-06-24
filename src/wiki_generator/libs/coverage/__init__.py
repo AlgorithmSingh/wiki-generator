@@ -22,6 +22,16 @@ from .validate import (
     load_plan_for_coverage,
     render_markdown,
 )
+from .signals import (
+    COVERAGE_SIGNALS_SCHEMA_VERSION,
+    DETECTORS,
+    CoverageSignals,
+    FamilyDetector,
+    FamilySignal,
+    canonical_label_line,
+    derive_coverage_signals,
+    render_signals_markdown,
+)
 
 __all__ = [
     "MANDATORY_TOPIC_FAMILIES",
@@ -36,4 +46,12 @@ __all__ = [
     "evaluate_plan_coverage",
     "load_plan_for_coverage",
     "render_markdown",
+    "COVERAGE_SIGNALS_SCHEMA_VERSION",
+    "DETECTORS",
+    "CoverageSignals",
+    "FamilyDetector",
+    "FamilySignal",
+    "canonical_label_line",
+    "derive_coverage_signals",
+    "render_signals_markdown",
 ]

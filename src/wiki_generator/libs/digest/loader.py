@@ -54,6 +54,7 @@ class Bundle:
     """An in-memory view of a decomposition bundle."""
 
     root: str
+    files: list[dict] = field(default_factory=list)
     symbols: list[dict] = field(default_factory=list)
     imports: list[dict] = field(default_factory=list)
     occurrences: list[dict] = field(default_factory=list)
@@ -114,6 +115,7 @@ def load_bundle(in_dir: str) -> Bundle:
 
     return Bundle(
         root=root,
+        files=_read_jsonl(p("inventory", "files.jsonl")),
         symbols=_read_jsonl(p("symbols", "symbols.jsonl")),
         imports=_read_jsonl(p("symbols", "imports.jsonl")),
         occurrences=_read_jsonl(p("symbols", "occurrences.jsonl")),

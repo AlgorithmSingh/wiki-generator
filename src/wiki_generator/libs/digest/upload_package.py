@@ -41,6 +41,7 @@ CONDENSATES = [
     "planning-runtime-surfaces.md",
     "planning-tests.md",
     "planning-gaps.md",
+    "planning-coverage-signals.md",
 ]
 
 # Trimmable supporting artifacts (always offered when present), in bundle order.
@@ -213,6 +214,14 @@ def _readme(repo_root: str, source_bundle: str, generated_at: str,
           "child topic unless that child has its own page, label, and evidence. Do "
           "not invent a family the digest shows no signal for — note its absence in "
           "`known_gaps[]`.",
+          "",
+          "`planning-coverage-signals.md` gives the deterministic per-family signal: "
+          "where each topic family likely lives, its present/low/missing status, "
+          "candidate source paths, and suggested `coverage_labels[]` / "
+          "`search_hints[]`. Use it to decide which families deserve their own page. "
+          "Those candidate paths are planner **context only** — never citeable "
+          "evidence; still place exact handles from `planning-handles.md` in the "
+          "exact lanes.",
           "",
           "Produce:",
           "",

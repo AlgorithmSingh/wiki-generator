@@ -11,10 +11,10 @@ export OUT=/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/runs/$(date +%
 End-to-end commands for the implemented Phase 1-4 pipeline. Phase 1 and Phase 3
 are deterministic and LLM-free. Phase 2 Step 1 (`plan`), optional Step 1b
 (`plan-repair`), and Phase 4 (`write-wiki`) are the LLM-backed steps. Phase 4
-writing/synthesis is **implemented** per `PHASE4_WRITING_SYNTHESIS_SPEC.md`
+writing/synthesis is **implemented** per `docs/specs/done/PHASE4_WRITING_SYNTHESIS_SPEC.md`
 (§6 below).
 
-> **Current readiness status (2026-06-23):** Phase 1-4 can produce a grounded baseline wiki with the Iteration 3 exact-coverage/public-route fixes and the Phase 4 shell-variable path-synthesis fix. The successful live run is `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/phase4-live-vertex-runs/20260623-183730`. Strict sign-off is not complete: follow-up review found a malformed evidence-like token (`[ev:data-models:010]`) in the historical artifact and a broader coverage-target gap versus the DeepWiki benchmark. The malformed-token validator enhancement from `PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md` Milestone 1 is implemented locally; Milestone 2 coverage enhancement is not implemented. `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` is unchanged. Do not run another live/billed retry until the non-live enhancement work passes and the user explicitly approves it.
+> **Current readiness status (2026-06-24):** Phase 1-4 can produce a grounded baseline wiki with the Iteration 3 exact-coverage/public-route fixes and the Phase 4 shell-variable path-synthesis fix. The successful live run is `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/phase4-live-vertex-runs/20260623-183730`, but strict sign-off is not complete: follow-up review found a malformed evidence-like token (`[ev:data-models:010]`) in the historical artifact and a broader coverage-target gap versus the DeepWiki benchmark. The active enhancement spec is `docs/specs/not-done/PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md`: Milestone 1 plus the Milestone 2 coverage taxonomy/validation, Phase 2 planning-obligation preservation, and Phase 1 deterministic coverage-signal slices are implemented and tested. Phase 2 enhancement-mode fail/repair, Phase 3 page-level evidence, Phase 4 hierarchical writing, and non-live hierarchical E2E remain pending. Do not run another live/billed retry until the non-live enhancement work passes and the user explicitly approves it.
 
 ```
 Phase 1  Step 1 decompose   -> raw artifact bundle
@@ -149,7 +149,7 @@ row-count mismatch), `2` missing/unreadable corpus. Review the report's
 recommended mode before starting Phase 3.
 
 If FAISS won't install, verify the environment first (Python/arch/wheel) — see
-the preflight in `PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md`.
+the preflight in `docs/specs/done/PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md`.
 
 Quick handoff verification on an existing clean bundle, with vectors required:
 
@@ -307,7 +307,7 @@ in `lexical-symbolic` mode it is skipped (not a failure).
 
 ## 6. Phase 4 — writing/synthesis (`write-wiki`)
 
-Phase 4 is **implemented** (`PHASE4_WRITING_SYNTHESIS_SPEC.md`). It consumes a
+Phase 4 is **implemented** (`docs/specs/done/PHASE4_WRITING_SYNTHESIS_SPEC.md`). It consumes a
 clean accepted Phase 1-3 bundle such as:
 
 ```text
@@ -362,7 +362,7 @@ pass `--accept-no-force` to assert Phase 3 was not force-run.
 
 The earlier live Vertex Phase 4 attempt failed closed on an unsupported
 shell-expanded identifier, `/ragflow/conf/service_conf.yaml`, in the `deployment`
-section. The Iteration 2 fix (`PHASE4_WRITING_SYNTHESIS_ITERATION_2_SPEC.md`) is
+section. The Iteration 2 fix (`docs/specs/done/PHASE4_WRITING_SYNTHESIS_ITERATION_2_SPEC.md`) is
 implemented: the prompt explicitly forbids expanding shell/env variables, and the
 validator classifies a deterministic one-step shell-variable expansion absent
 from evidence as a rewriteable `synthesized_identifier`, distinct from a terminal
@@ -370,7 +370,7 @@ from evidence as a rewriteable `synthesized_identifier`, distinct from a termina
 that path and passed the then-current validation. Follow-up review found a
 separate malformed citation-token validator gap and broader coverage gap; the
 malformed-token validator enhancement is now implemented locally under
-`PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md` Milestone 1. Treat any
+`docs/specs/not-done/PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md` Milestone 1. Treat any
 future live Phase 4 retry as blocked until Milestone 2/non-live enhancement work
 passes and the user explicitly approves another billed run.
 

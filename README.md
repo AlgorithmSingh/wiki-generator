@@ -37,18 +37,18 @@ Step 5 is numbered after Step 4 because it is **not** needed for the planner
 upload; its only hard dependency is Step 1's corpus, so it can run any time after
 `decompose` (in practice, before Phase 3).
 
-This implements `PHASE1_DECOMPOSITION_PLAN.md` (Step 1),
-`PHASE1_STEP2_STEP3_PLANNING_CONDENSATES.md` (Steps 2/3),
-`PHASE1_STEP4_PLANNER_UPLOAD_BUNDLE_SPEC.md` (Step 4),
-`PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md` (Step 5),
-`PHASE2_PLAN_NORMALIZATION_SPEC.md` (Phase 2 Step 2), and
-`PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` (Phase 3), and
-`PHASE4_WRITING_SYNTHESIS_SPEC.md` (Phase 4 writing/synthesis). Phase 4 is
+This implements `docs/specs/done/PHASE1_DECOMPOSITION_PLAN.md` (Step 1),
+`docs/specs/done/PHASE1_STEP2_STEP3_PLANNING_CONDENSATES.md` (Steps 2/3),
+`docs/specs/done/PHASE1_STEP4_PLANNER_UPLOAD_BUNDLE_SPEC.md` (Step 4),
+`docs/specs/done/PHASE1_STEP5_RETRIEVAL_SUBSTRATE_SPEC.md` (Step 5),
+`docs/specs/done/PHASE2_PLAN_NORMALIZATION_SPEC.md` (Phase 2 Step 2), and
+`docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` (Phase 3), and
+`docs/specs/done/PHASE4_WRITING_SYNTHESIS_SPEC.md` (Phase 4 writing/synthesis). Phase 4 is
 **implemented** as the `write-wiki` command with all three provider modes from
 the spec — Gemini Gem handoff, direct Gemini API (`GEMINI_API_KEY`), and Vertex AI
 `gemini-2.5-pro` — and a fake-provider test suite that needs no live model.
 
-> **Current readiness note (2026-06-23):** The Iteration 2 patches remain the accepted Phase 1-3 baseline, and `PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` is unchanged. However, a live Phase 4 run exposed a Phase 3 aggregation/coverage bug: exact file-anchor candidates can be starved by lane caps while `lane_summary` still reports pass. Live Phase 4 is therefore blocked pending the SPEC ONLY Iteration 3 fix in `PHASE1_PHASE2_PHASE3_READINESS_ITERATION_3_SPEC.md`; after implementation, rerun Phase 3 on the accepted bundle (or a fresh Phase 1-3) and require citeable evidence for `rag/llm/embedding_model.py` before retrying live Phase 4.
+> **Current readiness note (2026-06-24):** Phase 1-4 can produce a grounded baseline wiki with the Iteration 3 exact-coverage/public-route fixes and Phase 4 shell-variable path-synthesis fix. Strict sign-off is still blocked: the historical live wiki has a malformed evidence-like token and the output is too compact for the DeepWiki-informed coverage target. The active source of truth is `docs/specs/not-done/PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md`: Milestone 1 plus the Milestone 2 coverage taxonomy/validation, Phase 2 planning-obligation preservation, and Phase 1 deterministic coverage-signal slices are implemented and tested. Phase 2 enhancement-mode fail/repair, Phase 3 page-level evidence, Phase 4 hierarchical writing, and non-live hierarchical E2E remain pending. Do not run another live/billed retry until non-live gates pass and the user explicitly approves it.
 
 ## Architecture
 

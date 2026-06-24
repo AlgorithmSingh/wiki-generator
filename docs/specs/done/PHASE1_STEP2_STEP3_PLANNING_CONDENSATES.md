@@ -1,5 +1,7 @@
 # Phase 1 Step 2/3 — Planning Condensates and Planner Digest
 
+> **Status:** Done / archived design plan. Kept for provenance; current behavior is governed by the code, `README.md`, `RUNBOOK.md`, and the active docs journal in `docs/README.md`.
+
 ## Goal
 
 After the Phase 1 decomposition tool creates the full repo-analysis artifact bundle, create a smaller set of **planner-facing files** that can be uploaded to an LLM planning Gem, such as Gemini, without sending multi-million-token raw indexes.
