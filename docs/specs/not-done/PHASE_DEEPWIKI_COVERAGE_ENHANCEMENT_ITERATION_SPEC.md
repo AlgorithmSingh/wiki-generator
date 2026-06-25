@@ -10,14 +10,15 @@ the Phase 4 enhancement-mode hierarchical writing + generated-coverage gate, the
 non-live hierarchical E2E + benchmark-only comparison, and the Phase 2
 required-topic evidence-obligation alignment gate are implemented and tested
 non-live. A live/billed RAGFlow retry was explicitly approved and attempted at
-`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-081444`.
-That run correctly failed closed before Phase 4 with
-`bad_underspecified_normalized_plan` (112 required topics: 11 sufficient, 12 weak,
-89 missing). The follow-up non-live fix now makes `normalize-plan --coverage-mode
-enhancement` fail before Phase 3 when normalized required topics lack matching
-exact citeable `topic_evidence_requirements[]` obligations or are broad-only.
-Pending next: no further live/billed retry unless the user explicitly approves a
-new RAGFlow run against this stricter Phase 2 gate.**
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-141745`
+against `35bdc18`. It failed closed before Phase 3: planned coverage passed
+13/13, but the Phase 2 topic-obligation gate failed after bounded Step 1b repair
+(`0/46` complete required-topic obligations; 21 missing TER rows and 25
+invalid/broad-only source-field mappings, commonly raw `evidence_needs.*` source
+field names where canonical `retrieval_needs.*` fields are expected). Phase 3 and
+Phase 4 did not run. Pending next: fix Phase 2 producer/normalizer/repair handling
+of raw source-field aliases and missing TER diagnostics non-live; no further
+live/billed retry unless the user explicitly approves it.**
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
 enhancement track. It consolidates the immediate malformed-citation validator
@@ -136,7 +137,7 @@ LLM synthesis under strict validation. The benchmark comparison against
 `ragflow-deepwiki.md` is a warning system for coverage/structure gaps, never
 citeable evidence and never the sole quality bar.
 
-## Phase 2 Required-Topic Evidence-Obligation Alignment Contract — implemented non-live slice
+## Phase 2 Required-Topic Evidence-Obligation Alignment Contract — implemented non-live slice; live retry exposed next upstream refinement
 
 The live RAGFlow enhancement run exposed a producer-contract mismatch between
 Phase 2 planning/normalization and Phase 3 evidenced coverage.
@@ -274,6 +275,40 @@ This slice is accepted because non-live artifacts/tests prove:
 - protected Phase 3 spec content is unchanged;
 - focused tests and the full suite pass with `uv run python -m pytest -q`;
 - docs/handoff/status record whether another live RAGFlow retry is justified.
+
+### Live retry result after this slice
+
+The approved retry at
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-141745`
+proved the new gate is enforcing the intended boundary on real RAGFlow planning.
+Phase 2 planned-family coverage passed (`13/13`), but strict enhancement
+normalization failed before Phase 3 after bounded Step 1b repair:
+
+- `plans/topic-obligations-gate.json`: `passed=false`, `exit_code=3`,
+  `failure_category=bad_underspecified_normalized_plan`.
+- Counts: `46` required topics, `0` complete, `46` incomplete, `21` blocking
+  sections.
+- Diagnostics: `21` missing `topic_evidence_requirements[]` rows; `25` invalid or
+  broad-only source-field mappings.
+- Common invalid mapping: the planner/repair output used raw-plan source-field
+  names such as `evidence_needs.file_anchors[0]`, `evidence_needs.symbol_ids[0]`,
+  and `evidence_needs.query_packs[0]`, while the normalized gate consumes
+  canonical `retrieval_needs.files[0]`, `retrieval_needs.symbols[0]`, and
+  `retrieval_needs.query_packs[0]`.
+
+Next upstream refinement, non-live first:
+
+- Decide and implement deterministic canonicalization for documented raw-plan
+  aliases in TER `source_fields[]` when the referenced exact lane exists, or make
+  the prompt/schema reject raw aliases before model output is accepted. This is a
+  normalizer/schema contract fix, not source-field guessing.
+- Update bounded `plan-repair` so it consumes the new topic-obligations diagnostics
+  and repairs missing TER rows / invalid source-field names before declaring repair
+  success; then rerun strict enhancement normalization.
+- Add tests for raw `evidence_needs.file_anchors[]` and `evidence_needs.symbol_ids[]`
+  alias handling, missing TER repair diagnostics, and the real failure pattern.
+- Do not weaken the topic-obligation gate, synthesize evidence, silently downgrade
+  required topics, or add a generic retry/healing loop.
 
 ## Phase 3 Evidence Sufficiency Contract — implemented non-live slice
 
@@ -1371,25 +1406,32 @@ Completed foundation (continued):
 
 Pending active sequence:
 
-10. Only remaining step: request explicit user approval for a live/billed retry.
+10. Fix the Phase 2 producer/normalizer/repair contract non-live so real RAGFlow
+    planning can satisfy the topic-obligation gate before Phase 3. The latest live
+    retry already consumed explicit approval and failed closed at
+    `plans/topic-obligations-gate.json`; do not perform another billed retry until
+    this upstream refinement passes non-live and the user explicitly approves.
 
 ## Coding-agent prompt summary
 
 Milestone 1, the Milestone 2 foundation slices, the Phase 3 evidenced-coverage gate,
-and the Phase 4 enhancement-mode hierarchical writing + generated-coverage gate are
-implemented and tested non-live. Future coding-agent work should keep validator
-behavior strict and proceed with the next concrete non-live slice: **a non-live
-hierarchical end-to-end run over an expanded multi-family plan, plus the
-benchmark-only comparison against `ragflow-deepwiki.md`**. Keep
-all citation/identifier/malformed-token/no-context/no-placeholder/no-truncation
-validators strict, keep the Phase 3 evidenced-coverage gate intact (weak/missing
-required evidence remains a pipeline failure before Phase 4 in enhancement mode), and
-keep the Phase 4 generated-coverage gate intact (an omitted/placeholder/out-of-scope/
-uncited evidenced sufficient required topic is a post-provider writing-validation
-failure; a missing/failed upstream gate is a pre-provider gate failure). Do
-not use fuzzy prose matching, synthetic evidence, silent downgrades, or
-retry-until-green loops. Do not call Vertex/Gemini or any live model. Do not edit the
-historical generated wiki in place. Do not modify
+the Phase 4 enhancement-mode hierarchical writing + generated-coverage gate, the
+non-live hierarchical E2E, and the Phase 2 topic-obligation gate are implemented and
+tested non-live. Future coding-agent work should keep validator behavior strict and
+proceed with the next concrete non-live slice: **make Phase 2 planning/normalization
+and bounded plan repair satisfy the topic-obligation gate for real RAGFlow-style
+plans**. Focus on deterministic canonicalization/rejection of raw
+`evidence_needs.*` TER source-field aliases and feeding `topic-obligations` diagnostics
+into bounded LLM repair; do not weaken the gate. Keep all
+citation/identifier/malformed-token/no-context/no-placeholder/no-truncation validators
+strict, keep the Phase 3 evidenced-coverage gate intact (weak/missing required
+evidence remains a pipeline failure before Phase 4 in enhancement mode), and keep the
+Phase 4 generated-coverage gate intact (an omitted/placeholder/out-of-scope/uncited
+evidenced sufficient required topic is a post-provider writing-validation failure; a
+missing/failed upstream gate is a pre-provider gate failure). Do not use fuzzy prose
+matching, synthetic evidence, silent downgrades, or retry-until-green loops. Do not
+call Vertex/Gemini or any live model for this next slice. Do not edit the historical
+generated wiki in place. Do not modify
 `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. If a Milestone 2 slice is
 too large for one coding session, stop after a coherent non-live increment and report
 the remaining work clearly.

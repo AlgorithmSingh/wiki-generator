@@ -24,14 +24,15 @@ enhancement-mode hierarchical writing + generated-coverage gate
 (`write-wiki --coverage-mode enhancement`), the non-live hierarchical E2E +
 benchmark-only comparison, and the Phase 2 required-topic evidence-obligation
 alignment gate are implemented and tested non-live. A live/billed RAGFlow retry at
-`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-081444`
-correctly failed closed before Phase 4 with `bad_underspecified_normalized_plan`
-(112 required topics: 11 sufficient, 12 weak, 89 missing). The follow-up non-live
-fix now makes `normalize-plan --coverage-mode enhancement` fail before Phase 3
-when normalized required topics lack matching exact citeable
-`topic_evidence_requirements[]` obligations or are broad-only. Pending next: no
-further live/billed retry unless the user explicitly approves a new RAGFlow run
-against this stricter Phase 2 gate.**
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-141745`
+against `35bdc18` failed closed before Phase 3: planned coverage passed 13/13, but
+the Phase 2 topic-obligation gate failed after bounded Step 1b repair (`0/46`
+complete required-topic obligations; 21 missing TER rows and 25 invalid/broad-only
+source-field mappings, commonly raw `evidence_needs.*` names where canonical
+`retrieval_needs.*` fields are expected). Phase 3 and Phase 4 did not run. Pending
+next: fix Phase 2 producer/normalizer/repair handling of raw source-field aliases
+and missing TER diagnostics non-live; no further live/billed retry unless the user
+explicitly approves it.**
 
 ## Why this exists
 
@@ -399,13 +400,43 @@ protected spec untouched. Risks: the fixture repo is synthetic (proves gate inte
 strictness, not that real RAGFlow has sufficient evidence per family); enhancement
 mode stays opt-in and is NOT wired into the default Phase 4 path.
 
+### Live retry after Phase 2 obligation gate — failed closed at Phase 2
+
+Run:
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-141745`
+
+- Commit: `35bdc18`.
+- Phase 1 completed.
+- Phase 2 live planning completed.
+- Initial `normalize-plan --coverage-mode enhancement --strict` failed at the new
+  topic-obligation gate.
+- Bounded Step 1b plan repair ran once and reported old Phase-3 readiness PASS.
+- Re-running strict enhancement normalization on the accepted repair still failed
+  at `plans/topic-obligations-gate.json`.
+- Planned coverage passed: `13/13` mandatory families.
+- Topic obligations failed: `0/46` required topics complete, `46/46` incomplete,
+  `21` blocking sections; `21` missing TER rows and `25` invalid/broad-only
+  source-field mappings.
+- Common invalid pattern: planner/repair output used raw-plan field names such as
+  `evidence_needs.file_anchors[0]`, `evidence_needs.symbol_ids[0]`, and
+  `evidence_needs.query_packs[0]` inside TER `source_fields[]`, while the gate
+  currently expects canonical normalized `retrieval_needs.files[0]`,
+  `retrieval_needs.symbols[0]`, and `retrieval_needs.query_packs[0]`.
+- Phase 3 and Phase 4 did not run.
+
 ### Remaining Milestone 2 work — active pending backlog
 
-- **Only remaining step:** if the user wants to continue, request explicit approval
-  before any live/billed Vertex/Gemini retry over the real RAGFlow repo against the
-  stricter Phase 2 obligation gate. Default remains **no live retry**.
+- Fix Phase 2 producer/normalizer/repair handling of raw `evidence_needs.*`
+  source-field aliases and missing TER diagnostics non-live first.
+- Specifically, decide whether to deterministically canonicalize documented raw
+  aliases to normalized `retrieval_needs.*` fields when the referenced exact lane
+  exists, and update bounded `plan-repair` so it consumes
+  `topic-obligations-gate.json` diagnostics before declaring repair success.
+- Add focused tests for raw alias canonicalization/rejection, missing TER repair
+  diagnostics, and the real failure pattern.
+- Default remains **no live retry**.
 
-Do not run a live/billed retry without explicit user approval.
+Do not run another live/billed retry without explicit user approval.
 
 ### Completed-slice acceptance summary — Phase 3 evidenced coverage
 
