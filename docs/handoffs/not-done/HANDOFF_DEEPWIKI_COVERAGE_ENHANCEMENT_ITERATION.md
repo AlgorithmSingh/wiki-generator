@@ -65,23 +65,23 @@ The coverage question is answered in layers, not by one phase:
 1. **Planned coverage (Phase 2):** the normalized plan names the required topic
    families/pages/topics. This is now implemented through the planned-coverage
    gate, but it does not prove evidence exists.
-2. **Evidenced coverage (Phase 3):** retrieval must validate that each planned
+2. **Evidenced coverage (Phase 3):** retrieval now validates that each planned
    page and required topic has enough citeable repo evidence. In enhancement
    mode, `weak` or `missing` required-topic evidence is a **pipeline failure
    before Phase 4**, not something to heal, synthesize, retry-until-green, or pass
-   to the writer as supported. This is the next work.
+   to the writer as supported.
 3. **Generated coverage (Phase 4):** the final wiki must actually explain the
    planned/evidenced topics with valid citations and strict validators.
 
 The benchmark export `ragflow-deepwiki.md` is only a coverage/structure warning
 signal. It must not be counted as evidence.
 
-### Concrete Phase 3 contract for the next agent
+### Implemented Phase 3 contract
 
-The next agent should implement a deterministic evidenced-coverage gate, not a
-healing loop.
+The implementation provides a deterministic evidenced-coverage gate, not a healing
+loop.
 
-Required contract:
+Implemented contract:
 
 - Preserve/consume additive normalized SectionPlan field
   `topic_evidence_requirements[]` in baseline-compatible fashion.
@@ -255,9 +255,9 @@ and verified byte-identical on rerun.
 Do not begin the next pipeline-expansion slice without a concrete prompt, and do
 not run a live/billed retry without explicit user approval.
 
-### Next-slice acceptance summary — Phase 3 evidenced coverage
+### Completed-slice acceptance summary — Phase 3 evidenced coverage
 
-The next slice should be accepted only if non-live tests show:
+This slice is accepted because non-live tests show:
 
 - Phase 2 normalization preserves `topic_evidence_requirements[]` without making
   it mandatory in baseline mode.
@@ -280,6 +280,27 @@ The next slice should be accepted only if non-live tests show:
   `--force` after readiness failure, no fallback rescue for no-signal sections,
   no synthetic evidence, no silent downgrade to optional, and no validator
   weakening.
+
+### Next-slice acceptance summary — Phase 4 hierarchical writing and generated coverage
+
+The next slice should be accepted only if non-live tests show:
+
+- Phase 4 consumes hierarchical plans and page-level EvidencePackets without
+  flattening child pages back into the compact 16-section baseline.
+- Phase 4 refuses enhancement-mode writing unless planned coverage and evidenced
+  coverage have both passed.
+- The wiki index, manifests, audit prompts/responses, and validation reports
+  preserve parent/child structure.
+- Generated coverage metadata maps output pages back to planned `section_id`,
+  `coverage_labels[]`, `required_topics[]`, and evidenced topic statuses.
+- Generated coverage validation fails when a planned/evidenced required topic is
+  omitted, only a placeholder, malformed-cited, or supported by invalid/context
+  artifacts.
+- Baseline/default behavior remains non-breaking unless enhancement mode is
+  explicitly requested.
+- Existing writing validators remain strict; no generic healing loop, filler,
+  synthetic evidence, validator weakening, live/billed calls, or use of
+  `ragflow-deepwiki.md` as evidence.
 
 ## Required guardrails
 

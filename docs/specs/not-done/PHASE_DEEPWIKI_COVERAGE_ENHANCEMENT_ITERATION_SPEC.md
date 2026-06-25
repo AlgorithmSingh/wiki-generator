@@ -130,7 +130,7 @@ LLM synthesis under strict validation. The benchmark comparison against
 `ragflow-deepwiki.md` is a warning system for coverage/structure gaps, never
 citeable evidence and never the sole quality bar.
 
-## Phase 3 Evidence Sufficiency Contract — next implementation slice
+## Phase 3 Evidence Sufficiency Contract — implemented non-live slice
 
 This slice must make Phase 3 answer a narrow, deterministic question:
 
@@ -644,18 +644,13 @@ Implemented:
 
 ### Remaining Milestone 2 work — active pending backlog
 
-1. **Define and implement Phase 3 page-level evidence and evidenced coverage.**
-   Before coding broad retrieval changes, define what “enough evidence” means for
-   a planned page/topic. Then retrieve evidence per planned page/child section and
-   report per-required-topic sufficiency while preserving deterministic,
-   all-sections, no-force, no-retry-loop constraints.
-2. **Phase 4 hierarchical writing and generated coverage.** Generate hierarchical
+1. **Phase 4 hierarchical writing and generated coverage.** Generate hierarchical
    pages from page-level evidence, emit planned-vs-generated coverage metadata,
    and keep all citation/identifier/malformed-token validators strict.
-3. **Non-live hierarchical E2E.** Prove the expanded path with fake-provider or
+2. **Non-live hierarchical E2E.** Prove the expanded path with fake-provider or
    non-live fixtures before requesting explicit user approval for any billed
    Vertex/Gemini retry.
-4. **Benchmark-only comparison.** Compare against `ragflow-deepwiki.md` only as a
+3. **Benchmark-only comparison.** Compare against `ragflow-deepwiki.md` only as a
    structure/coverage benchmark, never as citeable evidence.
 
 ### Completed-slice acceptance — Phase 2 enhancement-mode planned-coverage upstream prevention
@@ -687,9 +682,9 @@ non-live tests:
   historical wiki artifact edits, no validator weakening, and no changes to
   `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`.
 
-### Next-slice acceptance — Phase 3 evidenced coverage
+### Completed-slice acceptance — Phase 3 evidenced coverage
 
-The next implementation slice is accepted only when non-live tests prove:
+This implementation slice is accepted because non-live tests prove:
 
 - Phase 2 normalization preserves `topic_evidence_requirements[]` without making
   it mandatory in baseline mode.
@@ -721,6 +716,31 @@ The next implementation slice is accepted only when non-live tests prove:
   a fixture where a required topic lacks mapped evidence and fails before Phase 4,
   a fixture where only broad recall exists and is `weak`/blocking, and a fixture
   proving baseline mode remains non-breaking.
+
+### Next-slice acceptance — Phase 4 hierarchical writing and generated coverage
+
+The next implementation slice should be accepted only when non-live tests prove:
+
+- Phase 4 can consume hierarchical plans and page-level EvidencePackets without
+  flattening child pages back into the compact 16-section baseline.
+- Phase 4 refuses to run in enhancement mode unless Phase 2 planned coverage and
+  Phase 3 evidenced coverage have passed.
+- Generated artifacts preserve parent/child structure in the wiki index,
+  manifests, audit prompts/responses, and validation reports.
+- Phase 4 emits planned-vs-generated coverage metadata that maps generated pages
+  back to planned `section_id`, `coverage_labels[]`, `required_topics[]`, and
+  evidenced topic statuses.
+- Generated coverage validation fails when a planned/evidenced required topic is
+  omitted, only mentioned as a heading placeholder, cited with malformed evidence
+  tokens, or supported by invalid/context/generated/reference artifacts.
+- Baseline/default behavior remains non-breaking for compact fixtures unless
+  enhancement mode is explicitly requested.
+- Existing citation, unsupported-identifier, malformed-token, no-context,
+  placeholder, truncation, and no-`--force` validators remain strict.
+- No live Vertex/Gemini/API calls; use fake-provider or deterministic non-live
+  fixtures only.
+- No generic healing/retry-until-green loop, no synthetic filler, no validator
+  weakening, and no use of `ragflow-deepwiki.md` as evidence.
 
 ### Milestone 2 acceptance criteria
 
