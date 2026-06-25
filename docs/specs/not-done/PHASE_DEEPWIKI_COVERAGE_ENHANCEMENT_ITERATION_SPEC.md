@@ -257,6 +257,145 @@ Expected behavior:
 - the command remains all-sections only; do not add product `--section` or retry
   loops.
 
+## Phase 4 Generated Coverage Contract — next implementation slice
+
+This slice must make Phase 4 answer the final coverage question:
+
+```text
+For each planned and evidenced required topic, did the generated wiki actually
+cover it with valid citations, while preserving the planned hierarchy?
+```
+
+The target artifact is a **hierarchical, citation-grounded generated wiki** plus
+machine-readable generated-coverage metadata. The quality bar is not line count;
+it is that every planned/evidenced required topic is represented in generated
+output, backed by valid EvidencePacket citations, and independently validated.
+
+### Artifact being designed
+
+Phase 4 should extend the existing wiki output set with generated-coverage
+artifacts:
+
+- hierarchical `wiki/index.md` navigation derived from `parent_section_id`, while
+  still generating one page for every planned `section_id`;
+- `wiki/metadata/generated-sections.jsonl` rows augmented with `parent_section_id`,
+  `coverage_labels[]`, `required_topics[]`, evidenced topic status, and generated
+  topic status;
+- `wiki/metadata/generated-document.json` including generated-coverage artifact
+  paths and enhancement-mode status;
+- `wiki/metadata/generated-coverage.json` — machine-readable planned/evidenced
+  vs generated topic matrix;
+- `wiki/validation/generated-coverage-report.md` — human-readable coverage report;
+- `wiki/validation/writing-validation.json` with a named check such as
+  `generated_required_topics_covered`.
+
+These artifacts must be deterministic and timestamp-free. They must not modify
+historical generated wiki runs in place.
+
+### Enhancement-mode upstream gates before provider calls
+
+Phase 4 should gain an opt-in mode, for example:
+
+```text
+wiki-generator write-wiki --bundle <bundle> --provider fake-or-gem --coverage-mode enhancement
+```
+
+Expected behavior:
+
+- default `baseline` mode remains backward-compatible and non-breaking for compact
+  fixtures;
+- enhancement mode fails before any provider/model call unless Phase 2 planned
+  coverage passed and Phase 3 evidenced coverage passed;
+- Phase 2 planned coverage should be established from `plans/coverage-gate.json`
+  written by `normalize-plan --coverage-mode enhancement` (or an equivalent
+  existing deterministic gate artifact if the implementation already provides one);
+- Phase 3 evidenced coverage should be established from
+  `evidence/evidenced-coverage.json` and/or the
+  `required_topic_evidence_sufficient` retrieval-validation contract check;
+- if either upstream gate is absent, baseline/report-only, stale, or failed,
+  enhancement-mode Phase 4 exits as an upstream gate failure (`3`) with remediation
+  to rerun/fix the owning upstream phase. It must not rerun Phase 2 or Phase 3,
+  repair plans, retrieve evidence, or synthesize evidence.
+
+### Deterministic generated-topic coverage validation
+
+Do not validate generated topic coverage with vague line-count, section-count, or
+fuzzy prose similarity.
+
+The preferred deterministic contract is:
+
+1. The WritingPacket includes each section's hierarchy fields and the Phase 3
+   evidenced topic rows for that section. For each `sufficient` required topic,
+   the packet tells the writer which exact `evidence_id`s support that topic.
+2. The section response schema is extended in a backward-compatible way to include
+   a structured topic coverage declaration, for example:
+
+   ```json
+   "covered_topics": [
+     {
+       "topic": "Redis Streams lifecycle",
+       "status": "covered",
+       "evidence_ids": ["ev:task-queues:0002"],
+       "markdown_anchor": "redis-streams-lifecycle"
+     }
+   ]
+   ```
+
+3. Final validation checks this declaration deterministically:
+   - every planned/evidenced `sufficient` required topic has a generated coverage
+     row with status `covered`;
+   - every listed `evidence_id` is in the Phase 3 evidenced topic's mapped IDs or
+     the section's allowed evidence IDs, resolves through the citation manifest,
+     and is actually cited in the generated markdown;
+   - the generated markdown contains the topic text or declared markdown anchor in
+     a non-empty paragraph/list item/heading with valid citations;
+   - no generated coverage row may rely on context artifacts, `derived/`, `plans/`,
+     generated wiki files, or `ragflow-deepwiki.md`;
+   - omitted topics, empty placeholders, malformed citations, unsupported
+     identifiers, and context-artifact citations fail final validation.
+
+This validation can check the writer's structured declaration and citation usage;
+it should not attempt semantic fuzzy matching against the benchmark DeepWiki.
+
+### Hierarchical writing behavior
+
+Phase 4 must treat parent/child section metadata as first-class:
+
+- prompts should include `parent_section_id`, sibling/child context, coverage
+  labels, required topics, and evidenced topic rows;
+- `index.md` should render nested contents rather than a flat-only numbered list;
+- metadata should preserve parent/child relationships for every generated page;
+- broad parent pages alone must not be counted as generated coverage for child
+  families or child required topics;
+- baseline fixtures may keep existing flat behavior unless enhancement mode is
+  explicitly requested.
+
+Filesystem layout may remain backward-compatible (`sections/NNN-section-id.md`) if
+metadata and navigation preserve hierarchy. Do not force a path migration unless it
+is necessary and covered by tests.
+
+### Failure policy: no healing
+
+Generated coverage failures are not repair targets for deterministic code:
+
+- no generic retry-until-green loop;
+- no synthetic filler or topic stubs to satisfy coverage;
+- no automatic mutation of `covered_topics[]` after the model returns;
+- no downgrading required topics to optional;
+- no weakening citation, malformed-token, unsupported-identifier, placeholder,
+  truncation, no-context, or no-`--force` validators.
+
+A bounded LLM rewrite may remain only for the existing narrow format/citation
+failure categories already covered by strict validation. It must not add evidence,
+change topic obligations, or paper over missing generated coverage.
+
+### Non-live implementation boundary
+
+This slice must be proven with fake-provider or deterministic non-live fixtures.
+Do not call Vertex, Gemini API, Gemini Gem live/manual production flows, or any
+billed model. Do not run a live retry after this slice; the next step is non-live
+hierarchical E2E.
+
 ## Milestone 1 — immediate writing-validation enhancement
 
 This milestone is implemented locally and tested. It was the first implementation
@@ -721,20 +860,32 @@ This implementation slice is accepted because non-live tests prove:
 
 The next implementation slice should be accepted only when non-live tests prove:
 
-- Phase 4 can consume hierarchical plans and page-level EvidencePackets without
+- `write-wiki` supports an opt-in enhancement coverage mode while default baseline
+  remains backward-compatible.
+- Enhancement-mode Phase 4 refuses to call any provider unless Phase 2 planned
+  coverage and Phase 3 evidenced coverage artifacts show enforced/pass status.
+- Phase 4 consumes hierarchical plans and page-level EvidencePackets without
   flattening child pages back into the compact 16-section baseline.
-- Phase 4 refuses to run in enhancement mode unless Phase 2 planned coverage and
-  Phase 3 evidenced coverage have passed.
+- WritingPackets and prompts include hierarchy fields plus evidenced topic rows;
+  fake-provider tests prove the writer receives the topic evidence obligations.
 - Generated artifacts preserve parent/child structure in the wiki index,
-  manifests, audit prompts/responses, and validation reports.
-- Phase 4 emits planned-vs-generated coverage metadata that maps generated pages
-  back to planned `section_id`, `coverage_labels[]`, `required_topics[]`, and
-  evidenced topic statuses.
+  manifests, audit prompts/responses, generated-section metadata, and validation
+  reports.
+- Phase 4 emits deterministic `wiki/metadata/generated-coverage.json` and
+  `wiki/validation/generated-coverage-report.md` mapping generated pages back to
+  planned `section_id`, `coverage_labels[]`, `required_topics[]`, and evidenced
+  topic statuses.
+- Section responses include or otherwise produce a deterministic generated-topic
+  coverage declaration, and validators require every planned/evidenced sufficient
+  required topic to be generated with valid citations.
 - Generated coverage validation fails when a planned/evidenced required topic is
-  omitted, only mentioned as a heading placeholder, cited with malformed evidence
-  tokens, or supported by invalid/context/generated/reference artifacts.
-- Baseline/default behavior remains non-breaking for compact fixtures unless
-  enhancement mode is explicitly requested.
+  omitted, only mentioned as a placeholder/empty heading, declared without actual
+  markdown coverage, cited with malformed evidence tokens, cited with IDs outside
+  the evidenced topic/allowed evidence, or supported by invalid/context/generated/
+  reference artifacts.
+- Generated coverage failures are writing-validation failures after provider
+  output (`5`), while missing/failed upstream enhancement gates are pre-provider
+  gate failures (`3`).
 - Existing citation, unsupported-identifier, malformed-token, no-context,
   placeholder, truncation, and no-`--force` validators remain strict.
 - No live Vertex/Gemini/API calls; use fake-provider or deterministic non-live

@@ -103,6 +103,40 @@ Implemented contract:
   rescue, no product `--section`, no `--force`, no retry-until-green, and no
   validator weakening.
 
+### Concrete Phase 4 contract for the next agent
+
+The next agent should implement generated coverage and hierarchical writing in
+Phase 4, using fake-provider/non-live tests only.
+
+Required contract:
+
+- Add an opt-in Phase 4 enhancement mode, e.g. `write-wiki --coverage-mode
+  enhancement`, while baseline/default remains non-breaking.
+- In enhancement mode, fail before any provider call unless Phase 2 planned
+  coverage (`plans/coverage-gate.json`) and Phase 3 evidenced coverage
+  (`evidence/evidenced-coverage.json` plus retrieval-validation contract check)
+  are enforced/pass. Do not rerun Phase 2/3 or synthesize missing evidence.
+- Preserve hierarchy from `parent_section_id` in prompts, index navigation,
+  generated-section metadata, generated-document metadata, and validation reports.
+  Existing flat `sections/NNN-section-id.md` file paths may remain if metadata and
+  index preserve hierarchy.
+- Include evidenced topic rows in WritingPackets so each sufficient required topic
+  carries the exact supporting `evidence_id`s.
+- Require generated topic coverage metadata, preferably via a response field such
+  as `covered_topics[]`, and validate it deterministically against markdown
+  citations and Phase 3 evidenced topic mapped IDs.
+- Write deterministic `wiki/metadata/generated-coverage.json` and
+  `wiki/validation/generated-coverage-report.md`.
+- Fail generated coverage when a required/evidenced topic is omitted, only a
+  placeholder/empty heading, declared without markdown coverage, cited with IDs
+  outside allowed/evidenced IDs, malformed-cited, or backed by context/generated/
+  benchmark artifacts.
+- Generated coverage failures after provider output are writing-validation
+  failures; missing upstream enhancement gates are pre-provider gate failures.
+- No generic healing loop, synthetic filler, required-to-optional downgrade,
+  validator weakening, live/billed calls, or use of `ragflow-deepwiki.md` as
+  evidence.
+
 ## Next coding-agent work
 
 Milestone 1 from the canonical spec is complete locally:
@@ -285,19 +319,27 @@ This slice is accepted because non-live tests show:
 
 The next slice should be accepted only if non-live tests show:
 
+- `write-wiki` supports opt-in `--coverage-mode enhancement`; baseline/default
+  remains non-breaking.
+- Enhancement-mode Phase 4 refuses to call any provider unless planned coverage
+  and evidenced coverage artifacts are present, enforced, and passing.
 - Phase 4 consumes hierarchical plans and page-level EvidencePackets without
   flattening child pages back into the compact 16-section baseline.
-- Phase 4 refuses enhancement-mode writing unless planned coverage and evidenced
-  coverage have both passed.
-- The wiki index, manifests, audit prompts/responses, and validation reports
-  preserve parent/child structure.
+- WritingPackets and prompts include hierarchy fields plus evidenced topic rows.
+- The wiki index, manifests, audit prompts/responses, generated-section metadata,
+  generated-document metadata, and validation reports preserve parent/child
+  structure.
+- Phase 4 writes deterministic `wiki/metadata/generated-coverage.json` and
+  `wiki/validation/generated-coverage-report.md`.
 - Generated coverage metadata maps output pages back to planned `section_id`,
   `coverage_labels[]`, `required_topics[]`, and evidenced topic statuses.
 - Generated coverage validation fails when a planned/evidenced required topic is
-  omitted, only a placeholder, malformed-cited, or supported by invalid/context
-  artifacts.
-- Baseline/default behavior remains non-breaking unless enhancement mode is
-  explicitly requested.
+  omitted, only a placeholder/empty heading, declared without actual markdown
+  coverage, malformed-cited, cited with IDs outside allowed/evidenced IDs, or
+  supported by invalid/context/generated/reference artifacts.
+- Generated coverage failures after provider output are writing-validation
+  failures (`5`); missing/failed upstream enhancement gates are pre-provider gate
+  failures (`3`).
 - Existing writing validators remain strict; no generic healing loop, filler,
   synthetic evidence, validator weakening, live/billed calls, or use of
   `ragflow-deepwiki.md` as evidence.
