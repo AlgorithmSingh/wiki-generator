@@ -6,20 +6,18 @@ Status: **Milestone 1 implemented. Milestone 2 is in progress: coverage
 taxonomy/validation, Phase 2 planning/PagePlan obligation preservation, Phase 1
 deterministic coverage-signal expansion, the Phase 2 enhancement-mode
 planned-coverage upstream-prevention gate, the Phase 3 evidenced-coverage gate,
-and the Phase 4 enhancement-mode hierarchical writing + generated-coverage gate
-are implemented and tested non-live. The non-live hierarchical E2E +
-benchmark-only comparison slice is complete: all three enhancement gates were
-proven to interoperate over an expanded 13-family hierarchical plan via the real
-CLI, and the three phase shell wrappers pass `--coverage-mode`. A live/billed
-RAGFlow retry was explicitly approved and attempted at
+the Phase 4 enhancement-mode hierarchical writing + generated-coverage gate, the
+non-live hierarchical E2E + benchmark-only comparison, and the Phase 2
+required-topic evidence-obligation alignment gate are implemented and tested
+non-live. A live/billed RAGFlow retry was explicitly approved and attempted at
 `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-081444`.
-The run correctly failed closed: Phase 2 Step 1b bounded plan repair fixed the one
-unresolved file reference, strict repaired normalization passed with 13/13 planned
-families, but Phase 3 evidenced coverage failed before Phase 4 with
+That run correctly failed closed before Phase 4 with
 `bad_underspecified_normalized_plan` (112 required topics: 11 sufficient, 12 weak,
-89 missing). Pending next: fix Phase 2 required-topic evidence-obligation alignment
-upstream so enhancement-mode plans cannot reach Phase 3 with unmapped or
-broad-only required topics.**
+89 missing). The follow-up non-live fix now makes `normalize-plan --coverage-mode
+enhancement` fail before Phase 3 when normalized required topics lack matching
+exact citeable `topic_evidence_requirements[]` obligations or are broad-only.
+Pending next: no further live/billed retry unless the user explicitly approves a
+new RAGFlow run against this stricter Phase 2 gate.**
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
 enhancement track. It consolidates the immediate malformed-citation validator
@@ -138,14 +136,14 @@ LLM synthesis under strict validation. The benchmark comparison against
 `ragflow-deepwiki.md` is a warning system for coverage/structure gaps, never
 citeable evidence and never the sole quality bar.
 
-## Phase 2 Required-Topic Evidence-Obligation Alignment Contract — next implementation slice
+## Phase 2 Required-Topic Evidence-Obligation Alignment Contract — implemented non-live slice
 
 The live RAGFlow enhancement run exposed a producer-contract mismatch between
 Phase 2 planning/normalization and Phase 3 evidenced coverage.
 
-Artifact being designed: a **normalized enhancement-mode SectionPlan** in which
-every Phase-3-blocking required topic has a deterministic, exact, citeable evidence
-obligation before retrieval runs.
+Implemented artifact: a **normalized enhancement-mode SectionPlan** gate in which
+every Phase-3-blocking required topic must have a deterministic, exact, citeable
+evidence obligation before retrieval runs.
 
 ### Failure evidence from the live run
 
@@ -207,53 +205,45 @@ normalized required topic is either:
 2. explicitly not a source-evidence obligation because the section is a controlled
    non-source/meta/provenance section already exempted by existing rules.
 
-`coverage_requirements[]` and `required_topics[]` must be aligned. The next agent
-may choose the least-risky upstream design, but it must preserve the quality bar:
+`coverage_requirements[]` and `required_topics[]` must be aligned. The implemented
+design keeps `coverage_requirements[]` merged into normalized `required_topics[]`,
+updates planner prompt/schema text so matching topic-evidence rows are required for
+entries in both fields, and adds a deterministic Phase 2 gate so enhancement-mode
+normalization fails before Phase 3 when required-topic obligations are incomplete,
+invalid, or broad-only.
 
-- If `coverage_requirements[]` remain merged into normalized `required_topics[]`,
-  then the planner prompt/schema and bounded repair must require matching topic
-  evidence rows for those items too.
-- If `coverage_requirements[]` are reclassified as prose goals rather than
-  Phase-3-blocking obligations, the implementation must introduce an explicit
-  replacement field/contract for enforceable required topics and prove no mandatory
-  coverage obligation is silently downgraded.
-- In either design, enhancement-mode normalization must fail before Phase 3 when
-  required-topic obligations are incomplete or broad-only. Do not defer obvious
-  missing `topic_evidence_requirements[]` to Phase 3 retrieval.
+### Implemented behavior
 
-### Required implementation behavior
+The implementation:
 
-The next implementation slice should:
-
-- update planner instructions and kickoff prompt so the planner understands that
+- updated planner instructions and kickoff prompt so the planner understands that
   every Phase-3-required topic, including any normalized coverage requirement, must
   have exact source-field evidence requirements;
-- add a deterministic enhancement-mode Phase 2 obligation-completeness check at
-  `normalize-plan --coverage-mode enhancement` (or the shared coverage gate it
-  invokes), with machine-readable and human-readable diagnostics under `plans/`;
-- make the check fail closed before Phase 3 on missing topic evidence rows,
+- added a deterministic enhancement-mode Phase 2 obligation-completeness check at
+  `normalize-plan --coverage-mode enhancement`, with machine-readable and
+  human-readable diagnostics under `plans/`;
+- makes the check fail closed before Phase 3 on missing topic evidence rows,
   broad-only source fields, invalid source-field references, or acceptable lanes
   that cannot be sufficient;
-- keep baseline/default behavior non-breaking;
-- extend bounded audited Phase 2 plan repair only if needed and only for
-  LLM-authored plan artifacts, using exact diagnostics, a hard attempt cap, audit
-  files, and strict final validation;
-- add focused tests using small fixtures that reproduce the live failure pattern:
+- keeps baseline/default behavior non-breaking;
+- does not extend bounded audited Phase 2 plan repair; any future repair remains
+  limited to LLM-authored plan artifacts, exact diagnostics, a hard attempt cap,
+  audit files, and strict final validation;
+- added focused tests using small fixtures that reproduce the live failure pattern:
   `coverage_requirements[]` merged into required topics but missing matching
   `topic_evidence_requirements[]`;
-- add tests for broad-only/search-hint-only required-topic evidence being rejected
+- added tests for broad-only/search-hint-only required-topic evidence being rejected
   before Phase 3 in enhancement mode;
-- add at least one passing fixture where all normalized required topics have exact
-  citeable source-field obligations;
-- preserve Phase 3 and Phase 4 validators unchanged or stricter.
+- added passing fixtures where all normalized required topics have exact citeable
+  source-field obligations;
+- preserves Phase 3 and Phase 4 validators unchanged or stricter.
 
-### Non-live boundary for the next slice
+### Completed non-live boundary
 
-Do not call Vertex, Gemini API, Gemini Gem live/manual production flows, or any
-billed provider for implementation or verification of this slice. The failed live
-run artifacts above are diagnostic inputs only. Prove the fix with deterministic
-unit/CLI fixtures, fake clients for any plan-repair path, and `uv run python -m
-pytest -q`.
+No Vertex, Gemini API, Gemini Gem live/manual production flow, or billed provider
+was called for implementation or verification of this slice. The failed live run
+artifacts above were diagnostic inputs only. The fix was proven with deterministic
+unit/CLI fixtures and `uv run python -m pytest -q`.
 
 ### Failure policy
 
@@ -266,9 +256,9 @@ pytest -q`.
 - Do not use `ragflow-deepwiki.md`, `derived/`, `plans/`, generated wiki files, or
   historical generated artifacts as citeable evidence.
 
-### Next-slice acceptance — Phase 2 obligation alignment
+### Completed-slice acceptance — Phase 2 obligation alignment
 
-Accept the next slice only when non-live artifacts/tests prove:
+This slice is accepted because non-live artifacts/tests prove:
 
 - `normalize-plan --coverage-mode enhancement` fails before Phase 3 for the live
   failure pattern: normalized required topics with missing matching

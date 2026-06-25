@@ -30,6 +30,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..context_docs import is_provenance_section
+# The lane taxonomy, source-field grammar, and required-topic enumeration are the
+# single source of truth shared with the producer-side Phase 2 obligation gate
+# (libs.coverage.obligations), so this Phase 3 consumer cannot drift from the
+# Phase 2 checker on what an exact citeable lane is or which topics are blocking.
+from ..coverage.obligations import (
+    BROAD_FIELD_LANES as _BROAD_FIELD_LANES,
+    EXACT_FIELD_LANES as _EXACT_FIELD_LANES,
+    enumerate_section_topics as _section_topics,
+    field_index_valid as _field_index_valid,
+    parse_source_field as _parse_source_field,
+)
 from .options import COVERAGE_MODE_ENHANCEMENT
 
 EVIDENCED_COVERAGE_SCHEMA_VERSION = "phase3-evidenced-coverage-v1"
@@ -49,17 +60,10 @@ STATUS_NOT_APPLICABLE = "not_applicable"
 CODE_WEAK = "required_topic_evidence_weak"
 CODE_MISSING = "required_topic_evidence_missing"
 
-# ``retrieval_needs.*`` field name -> the exact (citeable) lane it feeds. These
-# are the only lanes that can make a required topic ``sufficient``.
-_EXACT_FIELD_LANES = {
-    "files": "file_anchor", "symbols": "symbol_anchor", "contracts": "contract",
-    "tests": "test", "query_packs": "query_pack",
-}
-# Broad-recall fields -> the broad lane(s) they feed. Reported as supporting
-# context (``weak``) but never ``sufficient`` on their own.
-_BROAD_FIELD_LANES = {
-    "graph_nodes": ("graph_neighbors",), "search_hints": ("bm25", "vector"),
-}
+# ``_EXACT_FIELD_LANES`` (field -> exact citeable lane) and ``_BROAD_FIELD_LANES``
+# (field -> broad recall lane) are imported above from libs.coverage.obligations:
+# the only lanes that can make a required topic ``sufficient`` are the exact ones,
+# and that taxonomy is shared with the Phase 2 obligation gate.
 
 
 @dataclass
@@ -78,28 +82,8 @@ class EvidencedCoverage:
 
 
 # --- source-field parsing -----------------------------------------------------
-def _parse_source_field(source_field: str):
-    """``'retrieval_needs.files[2]'`` -> ``('files', 2)``; index -1 when absent."""
-    name = source_field or ""
-    idx = -1
-    if name.endswith("]") and "[" in name:
-        head, _, tail = name.partition("[")
-        name = head
-        num = tail[:-1]
-        idx = int(num) if num.isdigit() else -1
-    if name.startswith("retrieval_needs."):
-        name = name[len("retrieval_needs."):]
-    return name, idx
-
-
-def _field_index_valid(section: dict, field_name: str, idx: int) -> bool:
-    """True when ``retrieval_needs.<field_name>[idx]`` references a real entry."""
-    if idx < 0:
-        return False
-    items = (section.get("retrieval_needs") or {}).get(field_name)
-    return isinstance(items, list) and 0 <= idx < len(items)
-
-
+# ``_parse_source_field`` and ``_field_index_valid`` are imported above from
+# libs.coverage.obligations (shared verbatim with the Phase 2 obligation gate).
 def _exact_requests_by_field(packet: dict) -> dict:
     """``source_field`` -> the packet's exact-request coverage record (1:1)."""
     out: dict = {}
@@ -246,40 +230,9 @@ def _eval_topic(section, packet, exact_by_field, topic, ter, *, required,
     }
 
 
-def _section_topics(section: dict):
-    """The (topic, ter, required) triples to evaluate for one section.
-
-    Driven by the canonical ``required_topics[]`` (the same list the planned
-    coverage gate uses), unioned with any ``topic_evidence_requirements[]`` entry
-    explicitly marked ``required``. Non-required TER entries are reported but
-    never block."""
-    ters = section.get("topic_evidence_requirements") or []
-    ter_by_topic: dict = {}
-    ter_by_topic_cf: dict = {}
-    for t in ters:
-        topic = t.get("topic")
-        if isinstance(topic, str):
-            ter_by_topic.setdefault(topic, t)
-            ter_by_topic_cf.setdefault(topic.casefold(), t)
-
-    def match(topic: str):
-        return ter_by_topic.get(topic) or ter_by_topic_cf.get(topic.casefold())
-
-    triples: list = []
-    seen: set = set()
-    for topic in section.get("required_topics") or []:
-        if not isinstance(topic, str) or topic in seen:
-            continue
-        seen.add(topic)
-        triples.append((topic, match(topic), True))
-    for t in ters:
-        topic = t.get("topic")
-        if isinstance(topic, str) and topic not in seen:
-            seen.add(topic)
-            triples.append((topic, t, bool(t.get("required", True))))
-    return triples
-
-
+# ``_section_topics`` (the required-topic enumeration) is imported above from
+# libs.coverage.obligations: the set of Phase-3-blocking topics this consumer
+# evaluates is exactly the set the Phase 2 obligation gate validates.
 def evaluate_evidenced_coverage(bundle, packets, options) -> EvidencedCoverage:
     """Build the evidenced-coverage matrix + the enhancement-mode blocking verdict.
 

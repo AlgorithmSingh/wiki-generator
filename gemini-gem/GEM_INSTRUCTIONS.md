@@ -212,17 +212,26 @@ Rules for `section-plans.jsonl`:
   (optional): the specific sub-topics this page must cover (merged with
   `coverage_requirements`).
 - `topic_evidence_requirements[]` (optional; required for a clean enhancement-mode
-  run): one object per required topic — `{topic, required, source_fields[],
-  min_items, acceptable_lanes[]}`. `source_fields[]` point at the **exact**
-  `retrieval_needs.*` lanes you filled, by index (e.g. `retrieval_needs.files[0]`,
-  `retrieval_needs.symbols[1]`, `retrieval_needs.contracts[0]`,
-  `retrieval_needs.tests[0]`, `retrieval_needs.query_packs[0]`) — plain JSON, not a
-  query. Phase 3 enhancement mode maps each required topic through these to citeable
-  evidence IDs; broad recall (`bm25`/`vector`/`graph_neighbors`/`search_hints`) is
-  supporting context only and can never make a required topic sufficient. A required
-  topic with weak/missing exact evidence fails the pipeline **before Phase 4**, so
-  only require a topic you can ground with exact handles; record an unavoidable gap
-  in `known_gaps[]` instead of over-requiring.
+  run): the normalizer **merges `coverage_requirements[]` and `required_topics[]`**
+  into one normalized required-topics list, so add **one object per entry in BOTH
+  fields** (one per `coverage_requirements[]` entry and one per `required_topics[]`
+  entry, using the exact same topic string) — `{topic, required:true,
+  source_fields[], min_items, acceptable_lanes[]}`. A merged required topic with no
+  matching object is the #1 cause of a failed run. `source_fields[]` point at the
+  **exact** `retrieval_needs.*` lanes you filled, by index (e.g.
+  `retrieval_needs.files[0]`, `retrieval_needs.symbols[1]`,
+  `retrieval_needs.contracts[0]`, `retrieval_needs.tests[0]`,
+  `retrieval_needs.query_packs[0]`) — plain JSON, not a query — and
+  `acceptable_lanes[]` must include at least one exact lane
+  (`file_anchor`/`symbol_anchor`/`contract`/`test`/`query_pack`). A coverage-enhanced
+  run runs a deterministic **Phase 2 gate** that fails loudly **before Phase 3** if
+  any merged required topic lacks a matching object, points at a `retrieval_needs`
+  lane that does not exist, or is grounded only on broad recall
+  (`bm25`/`vector`/`graph_neighbors`/`search_hints`); Phase 3 then maps each topic to
+  citeable evidence IDs and broad recall can never make a topic sufficient. A topic
+  with weak/missing exact evidence fails **before Phase 4**, so only require a topic
+  you can ground with exact handles; record an unavoidable gap in `known_gaps[]`
+  instead of over-requiring.
 - Exact lanes (`symbol_ids`, `file_anchors`, `contracts`, `tests`, `graph_nodes`)
   hold **only exact handles**. If you cannot name one, move the request to
   `search_hints[]` — do not put `retrieve: <query>`, globs, display labels, or

@@ -19,18 +19,19 @@ Milestone 2 is in progress: coverage taxonomy/validation, Phase 2
 planning/PagePlan obligation preservation, Phase 1 deterministic coverage-signal
 expansion, the Phase 2 enhancement-mode planned-coverage upstream-prevention gate
 (`normalize-plan --coverage-mode enhancement`), the Phase 3 evidenced-coverage
-gate (`retrieve-evidence --coverage-mode enhancement`), and the Phase 4
+gate (`retrieve-evidence --coverage-mode enhancement`), the Phase 4
 enhancement-mode hierarchical writing + generated-coverage gate
-(`write-wiki --coverage-mode enhancement`) are implemented and tested
-(non-live). The non-live hierarchical E2E + benchmark-only comparison slice is
-complete. A live/billed RAGFlow retry was approved and attempted at
-`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-081444`.
-Phase 2 Step 1b repaired the initial unresolved file-reference defect, and strict
-repaired normalization passed 13/13 planned families. Phase 3 then correctly
-failed closed before Phase 4: 112 required topics, 11 sufficient, 12 weak, 89
-missing (`bad_underspecified_normalized_plan`). Pending next: fix Phase 2
-required-topic evidence-obligation alignment upstream so enhancement-mode plans
-cannot reach Phase 3 with unmapped or broad-only required topics.**
+(`write-wiki --coverage-mode enhancement`), the non-live hierarchical E2E +
+benchmark-only comparison, and the Phase 2 required-topic evidence-obligation
+alignment gate are implemented and tested non-live. A live/billed RAGFlow retry at
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-081444`
+correctly failed closed before Phase 4 with `bad_underspecified_normalized_plan`
+(112 required topics: 11 sufficient, 12 weak, 89 missing). The follow-up non-live
+fix now makes `normalize-plan --coverage-mode enhancement` fail before Phase 3
+when normalized required topics lack matching exact citeable
+`topic_evidence_requirements[]` obligations or are broad-only. Pending next: no
+further live/billed retry unless the user explicitly approves a new RAGFlow run
+against this stricter Phase 2 gate.**
 
 ## Why this exists
 
@@ -112,46 +113,46 @@ Implemented contract:
   rescue, no product `--section`, no `--force`, no retry-until-green, and no
   validator weakening.
 
-### Concrete Phase 2 obligation-alignment contract for the next agent
+### Milestone 2 — Phase 2 required-topic evidence-obligation alignment gate (implemented, non-live)
 
-The next agent should fix the upstream Phase 2 planning/normalization contract that
-let required topics reach Phase 3 without exact citeable evidence obligations.
-This is a non-live implementation slice; use the failed live run only as diagnostic
-input.
+Implemented after the failed live RAGFlow diagnostic run. This upstream Phase 2
+gate prevents required topics from reaching Phase 3 without exact citeable evidence
+obligations. The failed live run remains diagnostic input only.
 
-Required contract:
+Implemented contract:
 
-- Diagnose the mismatch shown by live run
+- Diagnosed the mismatch shown by live run
   `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-081444`:
   `coverage_requirements[]` are merged into normalized `required_topics[]`, but
   the planner prompt required `topic_evidence_requirements[]` only for authored
   `required_topics[]`.
-- Update planner prompt/schema wording so every Phase-3-required topic, including
-  any normalized coverage requirement, must have a matching exact source-field
-  `topic_evidence_requirements[]` row.
-- Add a deterministic enhancement-mode Phase 2 obligation-completeness gate at
-  `normalize-plan --coverage-mode enhancement` or the shared planned-coverage
-  gate. It must fail before Phase 3 for missing topic evidence rows, broad-only
-  source fields, invalid source-field references, or acceptable lanes that cannot
-  produce citeable sufficient evidence.
-- Keep baseline/default behavior non-breaking.
-- If bounded `plan-repair` is extended, keep it only for LLM-authored plan
-  artifacts, narrow, audited, capped, diagnostic-fed, and followed by the same
-  deterministic strict validation.
-- Add focused tests for the live failure pattern: merged `coverage_requirements[]`
-  becoming required topics without matching `topic_evidence_requirements[]`.
-- Add tests proving broad-only/search-hint-only required-topic support fails before
-  Phase 3 in enhancement mode.
-- Add a passing fixture proving an expanded hierarchical plan with exact
+- Updated planner prompt/schema wording so every Phase-3-required topic,
+  including any normalized coverage requirement, must have a matching exact
+  source-field `topic_evidence_requirements[]` row.
+- Added deterministic enhancement-mode Phase 2 obligation-completeness gating to
+  `normalize-plan --coverage-mode enhancement`. It writes
+  `plans/topic-obligations-gate.json` and `plans/topic-obligations-report.md`, and
+  exits `3` before Phase 3 for missing topic evidence rows, broad-only source
+  fields, invalid source-field references, or acceptable lanes that cannot produce
+  citeable sufficient evidence.
+- Kept baseline/default behavior non-breaking; baseline writes no obligation gate.
+- Did not extend bounded `plan-repair`.
+- Added focused tests for the live failure pattern: merged
+  `coverage_requirements[]` becoming required topics without matching
+  `topic_evidence_requirements[]`.
+- Added tests proving broad-only/search-hint-only required-topic support fails
+  before Phase 3 in enhancement mode.
+- Added passing fixtures proving an expanded hierarchical plan with exact
   source-field obligations still passes.
-- Do not run Vertex, Gemini API, Gemini Gem live/manual production flows, or any
-  billed model. No live retry is part of this task.
-- Do not weaken Phase 3/4 validators, synthesize evidence, use benchmark-derived
-  evidence, silently downgrade required topics, or hand-edit downstream artifacts.
+- No Vertex, Gemini API, Gemini Gem live/manual production flow, or billed model
+  was run.
+- Phase 3/4 validators remain strict; no synthetic evidence, benchmark-derived
+  evidence, silent downgrade, downstream artifact edit, or generic healing path was
+  introduced.
 
-## Next coding-agent work
+## Implementation log / completed work
 
-Milestone 1 from the canonical spec is complete locally:
+Milestone 1 from the canonical spec is complete:
 
 - malformed `[ev:...]` and dangling `[ev:` tokens are detected;
 - malformed-token failures are rewriteable during bounded drafting;
@@ -400,8 +401,9 @@ mode stays opt-in and is NOT wired into the default Phase 4 path.
 
 ### Remaining Milestone 2 work — active pending backlog
 
-- **Only remaining step:** request explicit user approval before any live/billed
-  Vertex/Gemini retry over the real RAGFlow repo. Default remains **no live retry**.
+- **Only remaining step:** if the user wants to continue, request explicit approval
+  before any live/billed Vertex/Gemini retry over the real RAGFlow repo against the
+  stricter Phase 2 obligation gate. Default remains **no live retry**.
 
 Do not run a live/billed retry without explicit user approval.
 
@@ -431,9 +433,9 @@ This slice is accepted because non-live tests show:
   no synthetic evidence, no silent downgrade to optional, and no validator
   weakening.
 
-### Next-slice acceptance summary — Phase 2 obligation alignment
+### Completed-slice acceptance summary — Phase 2 obligation alignment
 
-The next slice should be accepted only if non-live artifacts/tests show:
+This slice is accepted because non-live artifacts/tests show:
 
 - `normalize-plan --coverage-mode enhancement` fails before Phase 3 for normalized
   required topics that lack matching `topic_evidence_requirements[]` rows;
@@ -457,9 +459,9 @@ The next slice should be accepted only if non-live artifacts/tests show:
 - Do not weaken validators.
 - Do not use `ragflow-deepwiki.md` as citeable evidence.
 - Do not chase line count with filler.
-- Do not run Vertex/Gemini/API/live models for the next implementation slice.
-- Do not perform another live/billed retry until the Phase 2 obligation-alignment
-  slice passes non-live tests and the user explicitly approves a new retry.
+- Do not run Vertex/Gemini/API/live models without explicit approval.
+- Do not perform another live/billed retry until the user explicitly approves a new
+  retry against the stricter Phase 2 obligation gate.
 
 ## Acceptance commands
 

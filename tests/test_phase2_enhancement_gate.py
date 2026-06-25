@@ -47,24 +47,38 @@ from wiki_generator.libs.plan_normalization.lookups import Lookups  # noqa: E402
 
 DROP_THREE = {"frontend-app", "memory-system", "task-queues"}
 
+# A real source file every topic-bearing section anchors its required topics on, so
+# each section is obligation-complete (a normalized exact `files[]` lane that the
+# topic_evidence_requirements[] point at) and passes BOTH the family-coverage gate
+# and the new topic-obligation gate. Registered in the lookups / bundle inventory.
+_TOPIC_FILE = "src/app.py"
+
 
 def _lookups() -> Lookups:
     lk = Lookups("/tmp/wiki-enh-gate-test")
-    lk.files = set()
+    lk.files = {_TOPIC_FILE}
     return lk
 
 
 def _sec(sid, title, *, labels=(), topics=(), parent=None, sources=()):
-    """Build one ``(document-meta, section-plan)`` pair. Retrieval signal is a
-    benign ``search_hints`` so every section is independently Phase-3 ready and the
-    coverage verdict is judged purely from the plan's stated intent."""
+    """Build one ``(document-meta, section-plan)`` pair. The benign ``search_hints``
+    keeps every section independently Phase-3 ready; a topic-bearing section also
+    declares the exact ``file_anchors`` lane and one ``topic_evidence_requirements[]``
+    row per required topic pointing at it, so the section carries a complete exact
+    citeable obligation (coverage is still judged purely from the plan's intent)."""
     meta = {"id": sid, "title": title, "parent": None}
-    plan = {"section_id": sid, "title": title,
-            "evidence_needs": {"search_hints": [f"retrieve: {sid}"]}}
+    ev = {"search_hints": [f"retrieve: {sid}"]}
+    plan = {"section_id": sid, "title": title, "evidence_needs": ev}
     if labels:
         plan["coverage_labels"] = list(labels)
     if topics:
         plan["required_topics"] = list(topics)
+        ev["file_anchors"] = [_TOPIC_FILE]
+        plan["topic_evidence_requirements"] = [
+            {"topic": t, "required": True,
+             "source_fields": ["retrieval_needs.files[0]"],
+             "min_items": 1, "acceptable_lanes": ["file_anchor"]}
+            for t in topics]
     if parent:
         plan["parent_id"] = parent
     if sources:
@@ -225,6 +239,13 @@ class IntegratedNormalizePlanGateTests(unittest.TestCase):
         self.bundle = os.path.join(self.tmp, "bundle")
         os.makedirs(self.bundle)
         self.plans = os.path.join(self.bundle, "plans")
+        # The command builds a real Lookups from the bundle's Phase 1 inventory, so
+        # the exact source file every topic anchors on must be in files.jsonl for the
+        # topic_evidence_requirements[] to resolve to a real normalized files[] lane.
+        inv = os.path.join(self.bundle, "inventory")
+        os.makedirs(inv)
+        with open(os.path.join(inv, "files.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({"path": _TOPIC_FILE, "line_count": 200}) + "\n")
 
     def _write_raw(self, rows) -> str:
         p = os.path.join(self.bundle, "phase2-gemini-response.md")
@@ -241,6 +262,9 @@ class IntegratedNormalizePlanGateTests(unittest.TestCase):
     def _gate_json(self):
         return util.read_json(os.path.join(self.plans, "coverage-gate.json"))
 
+    def _obligations_json(self):
+        return util.read_json(os.path.join(self.plans, "topic-obligations-gate.json"))
+
     def _sections(self):
         rows = list(util.read_jsonl(os.path.join(self.plans, "section-plans.jsonl")))
         return {r["section_id"]: r for r in rows}
@@ -252,6 +276,14 @@ class IntegratedNormalizePlanGateTests(unittest.TestCase):
         self.assertTrue(gate["passed"])
         self.assertEqual(gate["report"]["missing_mandatory"], [])
         with open(os.path.join(self.plans, "coverage-gate-report.md")) as f:
+            self.assertIn("**PASS**", f.read())
+        # the obligation gate also ran and passed: every required topic carries a
+        # complete exact citeable obligation, so the command reaches exit 0.
+        ob = self._obligations_json()
+        self.assertTrue(ob["passed"])
+        self.assertEqual(ob["report"]["status"], "pass")
+        self.assertEqual(ob["report"]["blocking_sections"], [])
+        with open(os.path.join(self.plans, "topic-obligations-report.md")) as f:
             self.assertIn("**PASS**", f.read())
 
     def test_enhancement_fails_loudly_on_missing_families(self):
@@ -277,6 +309,8 @@ class IntegratedNormalizePlanGateTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertFalse(os.path.exists(
             os.path.join(self.plans, "coverage-gate.json")))
+        self.assertFalse(os.path.exists(
+            os.path.join(self.plans, "topic-obligations-gate.json")))
         # ...but the non-enforcing baseline matrix still rides in the report
         with open(os.path.join(self.plans, "normalization-report.md")) as f:
             self.assertIn("DeepWiki coverage (benchmark, non-enforcing)", f.read())

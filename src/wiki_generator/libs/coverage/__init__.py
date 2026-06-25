@@ -28,6 +28,17 @@ from .validate import (
     load_plan_from_dir,
     render_markdown,
 )
+from .obligations import (
+    FAILURE_CATEGORY as OBLIGATION_FAILURE_CATEGORY,
+    TOPIC_OBLIGATIONS_SCHEMA_VERSION,
+    ObligationGate,
+    ObligationReport,
+    SectionObligations,
+    TopicObligation,
+    evaluate_topic_obligations,
+    gate_topic_obligations,
+    render_obligations_markdown,
+)
 from .signals import (
     COVERAGE_SIGNALS_SCHEMA_VERSION,
     DETECTORS,
@@ -58,6 +69,15 @@ __all__ = [
     "load_plan_for_coverage",
     "load_plan_from_dir",
     "render_markdown",
+    "OBLIGATION_FAILURE_CATEGORY",
+    "TOPIC_OBLIGATIONS_SCHEMA_VERSION",
+    "ObligationGate",
+    "ObligationReport",
+    "SectionObligations",
+    "TopicObligation",
+    "evaluate_topic_obligations",
+    "gate_topic_obligations",
+    "render_obligations_markdown",
     "COVERAGE_SIGNALS_SCHEMA_VERSION",
     "DETECTORS",
     "CoverageSignals",

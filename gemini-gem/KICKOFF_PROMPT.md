@@ -73,17 +73,21 @@ Constraints (repeat of the Gem rules, in case they aren't loaded):
   `planning-handles.md` instead. A coverage-enhanced run gates the normalized plan
   against all thirteen mandatory families before Phase 3, so omitting a supported
   family fails loudly — plan the page.
-- **Required-topic evidence.** For each `required_topics[]` entry add a
-  `topic_evidence_requirements[]` object `{topic, required, source_fields[],
-  min_items, acceptable_lanes[]}` whose `source_fields[]` name the exact
-  `retrieval_needs.*` lanes (by index, e.g. `retrieval_needs.symbols[0]`,
-  `retrieval_needs.files[1]`, `retrieval_needs.contracts[0]`,
-  `retrieval_needs.tests[0]`, `retrieval_needs.query_packs[0]`) that ground the
-  topic — plain JSON, not a query. Phase 3 enhancement mode maps required topics
-  through these to citeable evidence; broad recall is supporting context only and is
-  never sufficient. A required topic with weak/missing exact evidence fails the
-  pipeline **before Phase 4**, so only require what you can ground with exact
-  handles, and record unavoidable gaps in `known_gaps[]`.
+- **Required-topic evidence.** The normalizer merges `coverage_requirements[]` and
+  `required_topics[]` into one normalized required-topics list, so for **every entry
+  in BOTH fields** add a matching `topic_evidence_requirements[]` object `{topic,
+  required:true, source_fields[], min_items, acceptable_lanes[]}` whose
+  `source_fields[]` name the exact `retrieval_needs.*` lanes (by index, e.g.
+  `retrieval_needs.symbols[0]`, `retrieval_needs.files[1]`,
+  `retrieval_needs.contracts[0]`, `retrieval_needs.tests[0]`,
+  `retrieval_needs.query_packs[0]`) that ground the topic, with `acceptable_lanes[]`
+  including at least one exact lane — plain JSON, not a query. A deterministic
+  **Phase 2 gate fails before Phase 3** if any merged required topic lacks a matching
+  object, references a `retrieval_needs` lane that does not exist, or is grounded
+  only on broad recall; Phase 3 then maps required topics to citeable evidence and
+  broad recall is never sufficient. A topic with weak/missing exact evidence fails
+  **before Phase 4**, so only require what you can ground with exact handles, and
+  record unavoidable gaps in `known_gaps[]`.
 - Treat `CALLS_APPROX` edges, lexical query hits, the derived OpenAPI contract, and
   the static-only test scan as approximate — any section relying on them must list a
   `verification_needs` entry.
