@@ -12,6 +12,7 @@ MAX_PER_LANE="${MAX_PER_LANE:-}"
 MAX_TOTAL_PER_SECTION="${MAX_TOTAL_PER_SECTION:-}"
 WITH_VECTORS="${WITH_VECTORS:-0}"
 FORCE="${FORCE:-0}"
+COVERAGE_MODE="${COVERAGE_MODE:-}"
 
 usage() {
   cat <<'EOF'
@@ -37,6 +38,13 @@ Options:
                                 the vector lane is skipped if unavailable)
   --force                       run even if plans/phase3-readiness-report.md is
                                 not PASS (intentional failure testing)
+  --coverage-mode MODE          baseline (default) | enhancement. enhancement runs
+                                the deterministic evidenced-coverage gate: a
+                                required topic with weak/missing exact evidence
+                                fails the run (exit 3,
+                                bad_underspecified_normalized_plan) BEFORE Phase 4,
+                                via the required_topic_evidence_sufficient contract
+                                check. Still all-sections; no --section, no retry.
 
 Readiness gate: if plans/phase3-readiness-report.md exists and its status is not
 PASS, this script fails early (before installing anything) unless --force is set.
@@ -61,6 +69,8 @@ while [[ $# -gt 0 ]]; do
       WITH_VECTORS=1; shift ;;
     --force)
       FORCE=1; shift ;;
+    --coverage-mode)
+      COVERAGE_MODE="${2:-}"; shift 2 ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -107,6 +117,10 @@ if [[ -n "$MAX_PER_LANE" ]]; then
 fi
 if [[ -n "$MAX_TOTAL_PER_SECTION" ]]; then
   cmd+=(--max-total-per-section "$MAX_TOTAL_PER_SECTION")
+fi
+# Omitted when unset so the CLI default (baseline) stays the single source of truth.
+if [[ -n "$COVERAGE_MODE" ]]; then
+  cmd+=(--coverage-mode "$COVERAGE_MODE")
 fi
 
 log "Phase 3: retrieve-evidence"

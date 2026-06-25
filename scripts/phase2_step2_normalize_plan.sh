@@ -11,6 +11,7 @@ PROVIDER="${PROVIDER:-gemini}"
 RAW_RESPONSE="${RAW_RESPONSE:-}"
 PLAN_OUT="${PLAN_OUT:-}"
 STRICT=0
+COVERAGE_MODE="${COVERAGE_MODE:-}"
 
 usage() {
   cat <<'EOF'
@@ -27,6 +28,13 @@ Options:
   --provider NAME          provider label (default: gemini)
   --plan-out PATH          normalized output directory (default: <bundle>/plans)
   --strict                 fail if any reference is unresolved
+  --coverage-mode MODE     baseline (default) | enhancement. enhancement runs the
+                           deterministic Phase 2 -> Phase 3 planned-coverage gate
+                           over the normalized plan against all 13 mandatory
+                           DeepWiki topic families, writes plans/coverage-gate.json
+                           + coverage-gate-report.md, and exits 3 on a missing
+                           mandatory family before Phase 3. baseline is the
+                           historical non-enforcing matrix only.
 EOF
   common_options_help
 }
@@ -43,6 +51,8 @@ while [[ $# -gt 0 ]]; do
       PLAN_OUT="${2:-}"; shift 2 ;;
     --strict)
       STRICT=1; shift ;;
+    --coverage-mode)
+      COVERAGE_MODE="${2:-}"; shift 2 ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -72,6 +82,10 @@ if [[ -n "$PLAN_OUT" ]]; then
 fi
 if [[ "$STRICT" == "1" ]]; then
   cmd+=(--strict)
+fi
+# Omitted when unset so the CLI default (baseline) stays the single source of truth.
+if [[ -n "$COVERAGE_MODE" ]]; then
+  cmd+=(--coverage-mode "$COVERAGE_MODE")
 fi
 
 log "Phase 2 Step 2: normalize-plan"

@@ -22,6 +22,7 @@ LOCATION="${LOCATION:-${GOOGLE_CLOUD_LOCATION:-us-central1}}"
 PROMPT_OUT="${PROMPT_OUT:-}"
 RESPONSES_IN="${RESPONSES_IN:-}"
 MAX_REWRITE_ATTEMPTS="${MAX_REWRITE_ATTEMPTS:-}"
+COVERAGE_MODE="${COVERAGE_MODE:-}"
 PREPARE_ONLY=0
 ACCEPT_NO_FORCE=0
 
@@ -48,6 +49,15 @@ Options:
   --max-output-tokens N      max output tokens (default 32768; 8192 can truncate
                              gemini-2.5-pro full-section synthesis)
   --max-rewrite-attempts N   bounded format/citation rewrites (0..2; default 1)
+  --coverage-mode MODE       baseline (default) | enhancement. enhancement refuses
+                             to call any provider unless the Phase 2 planned-coverage
+                             gate (plans/coverage-gate.json) and the Phase 3
+                             evidenced-coverage gate (evidence/evidenced-coverage.json
+                             + the required_topic_evidence_sufficient contract check)
+                             are enforced/passing (else exit 3, pre-provider);
+                             preserves parent/child hierarchy; and deterministically
+                             validates every evidenced sufficient required topic is
+                             generated with valid mapped citations (else exit 5).
   --project ID               GCP project for vertex (default $GOOGLE_CLOUD_PROJECT)
   --location REGION          Vertex location (default $GOOGLE_CLOUD_LOCATION)
   --prepare-prompts-only     (gemini-gem) write per-section prompts and stop
@@ -78,6 +88,7 @@ while [[ $# -gt 0 ]]; do
     --temperature) TEMPERATURE="${2:-}"; shift 2 ;;
     --max-output-tokens) MAX_OUTPUT_TOKENS="${2:-}"; shift 2 ;;
     --max-rewrite-attempts) MAX_REWRITE_ATTEMPTS="${2:-}"; shift 2 ;;
+    --coverage-mode) COVERAGE_MODE="${2:-}"; shift 2 ;;
     --project) PROJECT="${2:-}"; shift 2 ;;
     --location) LOCATION="${2:-}"; shift 2 ;;
     --prompt-out) PROMPT_OUT="${2:-}"; shift 2 ;;
@@ -121,6 +132,8 @@ cmd=(python -m wiki_generator write-wiki --bundle "$OUT" --provider "$PROVIDER")
 [[ -n "$WIKI_OUT" ]] && cmd+=(--out "$WIKI_OUT")
 [[ -n "$PROMPT_OUT" ]] && cmd+=(--prompt-out "$PROMPT_OUT")
 [[ "$ACCEPT_NO_FORCE" == "1" ]] && cmd+=(--accept-no-force)
+# Omitted when unset so the CLI default (baseline) stays the single source of truth.
+[[ -n "$COVERAGE_MODE" ]] && cmd+=(--coverage-mode "$COVERAGE_MODE")
 
 if [[ "$PREPARE_ONLY" == "1" ]]; then
   cmd+=(--prepare-prompts-only)

@@ -14,8 +14,11 @@ generated-coverage gate (`write-wiki --coverage-mode enhancement`: pre-provider
 planned/evidenced upstream gates, hierarchy-preserving prompts/index/metadata,
 WritingPackets carrying Phase 3 mapped evidence IDs, and deterministic
 `generated_required_topics_covered` validation) are implemented and tested non-live.
-Pending next: non-live hierarchical E2E and benchmark-only comparison before any
-approved live retry**.
+The non-live hierarchical E2E + benchmark-only comparison slice is now also complete:
+all three enhancement gates were proven to interoperate over an expanded 13-family
+hierarchical plan via the real CLI (and the three phase shell wrappers were fixed to
+pass `--coverage-mode`). Pending next: explicit user approval before any live/billed
+retry**.
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
 enhancement track. It consolidates the immediate malformed-citation validator
@@ -996,14 +999,47 @@ Implemented:
   generated-coverage artifact/check); rerun byte-identical; plus pure-evaluator
   units and CLI-surface checks (`--coverage-mode` present, no `--section`/`--force`).
 
+### Milestone 2 progress — non-live hierarchical E2E + benchmark comparison (implemented, non-live)
+
+This final non-live validation slice proves the three enhancement gates interoperate
+over one fresh expanded multi-family hierarchical plan using the real production CLI.
+
+Implemented:
+
+- The three phase shell wrappers (`scripts/phase2_step2_normalize_plan.sh`,
+  `scripts/phase3_retrieve_evidence.sh`, `scripts/phase4_write_wiki.sh`) now expose
+  and pass `--coverage-mode {baseline,enhancement}` (a deterministic upstream wrapper
+  defect: the CLI already supported the flag but the wrappers did not forward it).
+  `tests/test_phase_wrappers.py` proves the surface (the `--help` path exits before any
+  venv install, so it is fast/deterministic/offline).
+- `scripts/nonlive_hierarchical_e2e.py` is a small, plain-Python, **no-model** harness
+  that: builds a synthetic 13-family `ragdemo` repo (one real class symbol per
+  mandatory family); runs `decompose`/`build-retrieval` (embeddings/vectors off);
+  authors a raw Phase 2 planner response and runs the real `normalize-plan
+  --coverage-mode enhancement` (producing `plans/coverage-gate.json`); runs the real
+  `retrieve-evidence --coverage-mode enhancement` (producing
+  `evidence/evidenced-coverage.json` with real mapped `evidence_id`s); then drives the
+  real `write-wiki --provider gemini-gem --coverage-mode enhancement` via the genuine
+  Gem import path, with per-section response fixtures synthesized **deterministically
+  from the real Phase 3 evidenced-coverage matrix** (the exact mapped IDs — never
+  synthetic evidence, never a model call). It adds a non-destructive negative probe
+  (Phase 4 refuses pre-provider with exit 3 when the planned gate is absent) and a
+  same-inputs rerun determinism check, and emits `command-manifest.tsv`,
+  `command-transcript.log`, `NON_LIVE_HIERARCHICAL_E2E_RESULT.md`, and a benchmark-only
+  `COMPARISON_WITH_RAGFLOW_DEEPWIKI.md`.
+
+Validated run (non-live): planned 13/13 families, evidenced 13/13 sufficient,
+generated 13/13 covered, whole-document writing-validation pass, nested hierarchical
+`index.md`, byte-identical on rerun, negative probe exit 3. Benchmark
+(`ragflow-deepwiki.md`, 909 headings / 14,717 lines) compared structurally only; no
+prose copied; never citeable evidence. Run path (outside the repo, not committed):
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/non-live-hierarchical-runs/20260624-nonlive/`.
+
 ### Remaining Milestone 2 work — active pending backlog
 
-1. **Non-live hierarchical E2E.** Prove the expanded planning → evidence → writing
-   path end-to-end with fake-provider or non-live fixtures (an expanded
-   multi-family hierarchical plan) before requesting explicit user approval for any
-   billed Vertex/Gemini retry.
-2. **Benchmark-only comparison.** Compare against `ragflow-deepwiki.md` only as a
-   structure/coverage benchmark, never as citeable evidence.
+1. **Explicit live-retry approval (only remaining step).** Request explicit user
+   approval before any billed Vertex/Gemini retry over the real RAGFlow repo. Default
+   remains **no live retry**.
 
 ### Completed-slice acceptance — Phase 2 enhancement-mode planned-coverage upstream prevention
 
@@ -1189,11 +1225,16 @@ Completed foundation (continued):
    `generated_required_topics_covered` validation (omitted/placeholder/out-of-scope/
    uncited topic → exit 5; missing/failed upstream gate → exit 3).
 
+Completed foundation (continued):
+
+9. Ran the non-live hierarchical end-to-end validation over an expanded 13-family
+   plan via the real CLI (with the shell wrappers fixed to pass `--coverage-mode`),
+   plus the benchmark-only comparison. All three enhancement gates pass together;
+   determinism + strictness (negative probe) verified.
+
 Pending active sequence:
 
-9. Run non-live/fake-provider hierarchical end-to-end validation over an expanded
-   multi-family plan, plus the benchmark-only comparison.
-10. Only after that, request explicit user approval for a live/billed retry.
+10. Only remaining step: request explicit user approval for a live/billed retry.
 
 ## Coding-agent prompt summary
 
