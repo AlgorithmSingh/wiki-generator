@@ -4,12 +4,14 @@
 
 Status: **Milestone 1 implemented. Milestone 2 is in progress: coverage
 taxonomy/validation, Phase 2 planning/PagePlan obligation preservation, Phase 1
-deterministic coverage-signal expansion, and the Phase 2 enhancement-mode
+deterministic coverage-signal expansion, the Phase 2 enhancement-mode
 planned-coverage upstream-prevention gate (deterministic `normalize-plan --coverage-mode
-enhancement` boundary plus coverage-signal-aware planner prompts) are implemented
-and tested non-live. Pending next: Phase 3 page-level evidence and evidenced
-coverage, Phase 4 hierarchical writing and generated coverage, and non-live
-hierarchical E2E before any approved live retry**.
+enhancement` boundary plus coverage-signal-aware planner prompts), and the Phase 3
+evidenced-coverage gate (deterministic `retrieve-evidence --coverage-mode enhancement`
+boundary mapping required topics through `topic_evidence_requirements[]` to exact
+source-field evidence IDs) are implemented and tested non-live. Pending next: Phase 4
+hierarchical writing and generated coverage, and non-live hierarchical E2E before any
+approved live retry**.
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
 enhancement track. It consolidates the immediate malformed-citation validator
@@ -592,6 +594,54 @@ The gate is **not** wired into the default Phase 4 path (that would fail the com
 fixture bundles); it is the explicit Phase 2 enhancement boundary. Evidenced and
 generated coverage dimensions remain the next pending slices.
 
+### Milestone 2 progress — Phase 3 evidenced coverage (implemented, non-live)
+
+This slice implements the Phase 3 Evidence Sufficiency Contract above as a
+deterministic per-required-topic evidence gate (not a healing loop). It validates
+and reports evidence sufficiency; it never makes evidence exist.
+
+Implemented:
+
+- Phase 2 normalization preserves the additive, baseline-compatible
+  `topic_evidence_requirements[]` SectionPlan field. Each item normalizes to
+  `{topic, required (default true), source_fields[], min_items (default 1),
+  acceptable_lanes[] (default exact lanes)}`; a baseline/legacy plan that omits it
+  normalizes to `[]` and is unaffected. Planner prompt surfaces
+  (`GEM_INSTRUCTIONS.md`, `KICKOFF_PROMPT.md`, `plan._DEFAULT_SYSTEM`/`_DEFAULT_KICKOFF`)
+  now ask for it, pointing at real `retrieval_needs.*` source fields, and warn that
+  broad recall is never sufficient and over-requiring fails before Phase 4.
+- `src/wiki_generator/libs/evidence/evidenced_coverage.py` —
+  `evaluate_evidenced_coverage(bundle, packets, options)` reads the normalized
+  hierarchical plan (`coverage_labels[]`, `parent_section_id`, `required_topics[]`,
+  `topic_evidence_requirements[]`) and maps each planned required topic through its
+  `source_fields[]` to the packet's `coverage.exact_requests[]` records and their
+  final citeable `evidence_id`s. Statuses: `sufficient`, `weak`, `missing`,
+  `not_applicable`, each with counts, evidence IDs, source categories, and
+  remediation. Broad recall (`bm25`/`vector`/`graph_neighbors`/`search_hints`) is
+  reported as supporting context (can yield `weak`) but never makes a required topic
+  `sufficient`.
+- `retrieve-evidence` gains `--coverage-mode {baseline,enhancement}` (default
+  `baseline`). Enhancement mode makes a `weak`/`missing` required topic in a normal
+  source-evidence section a blocking pipeline failure BEFORE Phase 4: exit `3`,
+  `bad_underspecified_normalized_plan`, surfaced as the
+  `required_topic_evidence_sufficient` contract check in `retrieval-validation.json`
+  and diagnostic codes `required_topic_evidence_weak`/`required_topic_evidence_missing`.
+  Baseline mode is non-breaking (reports the matrix; adds no gate/contract check).
+- Deterministic, timestamp-free artifacts `evidence/evidenced-coverage.json` and
+  `evidence/evidenced-coverage-report.md`, referenced from `evidence-manifest.json`.
+- No retrieval healing loop, no product `--section`/`--force`, no fallback rescue,
+  no synthetic evidence, no silent required→optional downgrade, and no validator
+  weakening. The gate is read-only and fails upstream. Context artifacts, `derived/`,
+  `plans/`, generated wiki files, and `ragflow-deepwiki.md` remain non-citeable (a
+  topic can only claim a real packet `evidence_id` from a covered exact request).
+- `tests/test_phase3_evidenced_coverage.py` proves: an expanded fixture with
+  explicit `topic_evidence_requirements[]` passes enhancement; a required topic with
+  no mapped exact evidence fails before Phase 4 (exit 3,
+  `bad_underspecified_normalized_plan`); a required topic supported only by broad
+  recall is `weak` and blocking; baseline/default remains non-breaking; mapped IDs
+  are real citeable packet IDs; normalization preservation; reruns are byte-identical;
+  and the CLI exposes no `--section`/`--force`.
+
 ### Remaining Milestone 2 work — active pending backlog
 
 1. **Define and implement Phase 3 page-level evidence and evidenced coverage.**
@@ -720,12 +770,16 @@ Completed foundation:
    and fails loudly when mandatory planned families are absent, without adding a
    generic healing loop.
 
-Pending active sequence:
+Completed foundation (continued):
 
-7. Implement the Phase 3 Evidence Sufficiency Contract above: preserve/consume
+7. Implemented the Phase 3 Evidence Sufficiency Contract above: preserve/consume
    explicit topic evidence requirements, map them to exact covered evidence IDs,
    write evidenced-coverage artifacts, and fail enhancement mode before Phase 4 on
-   weak/missing required-topic evidence.
+   weak/missing required-topic evidence (`retrieve-evidence --coverage-mode
+   enhancement`).
+
+Pending active sequence:
+
 8. Extend Phase 4 to write hierarchical pages and emit planned-vs-generated
    coverage metadata.
 9. Run non-live/fake-provider hierarchical end-to-end validation.
@@ -733,16 +787,17 @@ Pending active sequence:
 
 ## Coding-agent prompt summary
 
-Milestone 1 and the first Milestone 2 foundation slices are implemented. Future
-coding-agent work should keep validator behavior strict and proceed with the next
-concrete non-live slice: **implement Phase 3 evidenced coverage from the Evidence
-Sufficiency Contract above**. The agent should preserve/consume explicit
-`topic_evidence_requirements[]`, map required topics to exact covered evidence IDs,
-write deterministic evidenced-coverage artifacts, and make weak/missing required
-evidence a pipeline failure before Phase 4 in enhancement mode. Do not use fuzzy
-prose matching, synthetic evidence, silent downgrades, or retry-until-green loops.
-Do not call Vertex/Gemini or any live model. Do not edit the historical generated
-wiki in place. Do not modify
-`docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. Keep validators strict.
-If a Milestone 2 slice is too large for one coding session, stop after a coherent
-non-live increment and report the remaining work clearly.
+Milestone 1, the Milestone 2 foundation slices, and the Phase 3 evidenced-coverage
+gate are implemented and tested non-live. Future coding-agent work should keep
+validator behavior strict and proceed with the next concrete non-live slice:
+**extend Phase 4 to write hierarchical pages and emit planned-vs-generated coverage
+metadata**, then run non-live/fake-provider hierarchical end-to-end validation. Keep
+all citation/identifier/malformed-token/no-context/no-placeholder/no-truncation
+validators strict, and keep the Phase 3 evidenced-coverage gate intact (weak/missing
+required evidence remains a pipeline failure before Phase 4 in enhancement mode). Do
+not use fuzzy prose matching, synthetic evidence, silent downgrades, or
+retry-until-green loops. Do not call Vertex/Gemini or any live model. Do not edit the
+historical generated wiki in place. Do not modify
+`docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. If a Milestone 2 slice is
+too large for one coding session, stop after a coherent non-live increment and report
+the remaining work clearly.

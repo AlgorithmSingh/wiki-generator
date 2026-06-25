@@ -153,6 +153,54 @@ def _str_list(*sources) -> list[str]:
     return out
 
 
+# Lane field names a topic_evidence_requirements[] source_field may point at, and
+# the acceptable retrieval lanes a topic may declare. These are the exact
+# (citeable-evidence) lanes; broad-recall fields (graph_nodes / search_hints) are
+# preserved verbatim but never count as exact evidence in Phase 3 enhancement mode.
+_TER_ACCEPTABLE_LANES = ("file_anchor", "symbol_anchor", "contract", "test",
+                         "query_pack")
+
+
+def _topic_evidence_requirements(plan: dict) -> list[dict]:
+    """Preserve the additive ``topic_evidence_requirements[]`` SectionPlan field.
+
+    This is the deterministic bridge a coverage-enhanced plan provides from a
+    required topic to the exact ``retrieval_needs.*`` source fields that must
+    yield citeable evidence (spec "Deterministic topic-to-evidence mapping"). It
+    is **optional and additive**: a baseline/legacy plan that omits it normalizes
+    to ``[]`` and is unaffected. No inference and no synthesis — only structural
+    normalization of what the planner authored:
+
+    - keep items that are objects with a non-empty ``topic`` string;
+    - ``source_fields[]`` kept verbatim as authored (Phase 3 resolves them against
+      the normalized ``retrieval_needs.*`` entries and exact-request coverage);
+    - ``required`` defaults to ``True`` (the gate enforces required topics);
+    - ``min_items`` is a positive int (default ``1``);
+    - ``acceptable_lanes`` defaults to the exact lanes when absent/empty.
+    """
+    out: list[dict] = []
+    for item in _as_list(plan.get("topic_evidence_requirements")):
+        if not isinstance(item, dict):
+            continue
+        topic = item.get("topic")
+        if not isinstance(topic, str) or not topic.strip():
+            continue
+        source_fields = [str(s).strip() for s in _as_list(item.get("source_fields"))
+                         if str(s).strip()]
+        min_items = item.get("min_items")
+        min_items = min_items if isinstance(min_items, int) and min_items >= 1 else 1
+        lanes = [str(x).strip() for x in _as_list(item.get("acceptable_lanes"))
+                 if str(x).strip()]
+        out.append({
+            "topic": topic.strip(),
+            "required": bool(item.get("required", True)),
+            "source_fields": source_fields,
+            "min_items": min_items,
+            "acceptable_lanes": lanes or list(_TER_ACCEPTABLE_LANES),
+        })
+    return out
+
+
 def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
                    unresolved: list[dict], warnings: list[str]) -> dict:
     """Resolve a section's evidence needs into exact retrieval lanes.
@@ -444,6 +492,7 @@ def _build_section(nid: str, order: int, meta: dict | None, plan: dict | None,
         "rationale": meta.get("rationale"),
         "required_topics": _str_list(plan.get("coverage_requirements"),
                                      plan.get("required_topics")),
+        "topic_evidence_requirements": _topic_evidence_requirements(plan),
         "key_questions": _str_list(plan.get("key_questions")),
         "expected_sources": _str_list(plan.get("expected_sources"),
                                       plan.get("expected_source_handles")),

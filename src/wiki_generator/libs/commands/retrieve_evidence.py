@@ -30,6 +30,10 @@ def build_options(args: argparse.Namespace) -> "evidence.EvidenceOptions":
         kwargs["max_per_lane"] = args.max_per_lane
     if getattr(args, "max_total_per_section", None) is not None:
         kwargs["max_total_per_section"] = args.max_total_per_section
+    # Omitted when absent so the dataclass default (baseline) stays the single
+    # source of truth and an older arg namespace remains non-breaking.
+    if getattr(args, "coverage_mode", None) is not None:
+        kwargs["coverage_mode"] = args.coverage_mode
     return evidence.EvidenceOptions(**kwargs)
 
 

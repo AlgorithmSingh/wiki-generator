@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from .. import util
 from ..context_docs import is_provenance_section, section_has_retrieval_signal
 from .aggregate import EXPECTED_LABEL_TO_LANE, aggregate
+from .evidenced_coverage import evaluate_evidenced_coverage
 from .lanes import bm25 as bm25_lane
 from .lanes import contracts as contracts_lane
 from .lanes import files as files_lane
@@ -73,9 +74,17 @@ def run(options: EvidenceOptions, *, vector_backend=None) -> EvidenceResult:
             "vector lane unavailable on this host (backend not importable); "
             "hybrid recall skipped — exact/lexical lanes unaffected")
 
+    # Phase 3 evidenced coverage: deterministically map each planned required
+    # topic to citeable exact evidence. In enhancement mode a weak/missing
+    # required topic fails the run BEFORE Phase 4 (bad_underspecified_normalized_plan);
+    # baseline reports the matrix but never gates.
+    evidenced = evaluate_evidenced_coverage(bundle, packets, options)
+
     validation, category, exit_code = validate_run(
-        bundle, packets, options, substrate_warnings=bundle.warnings)
-    files_written = write_all(bundle, options, packets, validation, unresolved_all)
+        bundle, packets, options, substrate_warnings=bundle.warnings,
+        evidenced=evidenced)
+    files_written = write_all(bundle, options, packets, validation, unresolved_all,
+                              evidenced=evidenced)
     return EvidenceResult(
         ok=category is None, status=validation["status"], failure_category=category,
         exit_code=exit_code, retrieval_mode=bundle.retrieval_mode,

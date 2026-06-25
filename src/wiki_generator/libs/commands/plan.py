@@ -51,7 +51,8 @@ sections:[{id(kebab), title, order, parent, purpose, rationale, priority}]}
 2. plans/document-plan.md — the same plan as a readable outline.
 3. plans/section-plans.jsonl — one JSON object per line, 1:1 with the sections, \
 each {section_id, title, parent_section_id, coverage_labels[], goal, \
-coverage_requirements[], required_topics[], key_questions[], \
+coverage_requirements[], required_topics[], topic_evidence_requirements[], \
+key_questions[], \
 evidence_needs:{symbol_ids[], file_anchors[], query_packs[], graph_nodes[], \
 contracts[], search_hints[], context_artifacts[]}, depends_on[], \
 verification_needs[], estimated_size}.
@@ -101,7 +102,21 @@ coverage_labels[]/search_hints[]) — it is planner CONTEXT only, never citeable
 evidence: do not place its candidate paths in a file_anchors[] exact lane; cite \
 exact handles from planning-handles.md instead. A coverage-enhanced run gates the \
 normalized plan against all thirteen mandatory families before Phase 3, so omitting \
-a supported family fails loudly."""
+a supported family fails loudly.
+
+topic_evidence_requirements[] (enhancement mode): for every required_topics[] entry \
+in a normal source-evidence section, add one object \
+{topic, required:true, source_fields:[…], min_items, acceptable_lanes:[…]}. \
+source_fields[] must point at the EXACT normalized retrieval lanes that will ground \
+the topic, by index: e.g. "retrieval_needs.files[0]", "retrieval_needs.symbols[1]", \
+"retrieval_needs.contracts[0]", "retrieval_needs.tests[0]", or \
+"retrieval_needs.query_packs[0]" — the same evidence_needs entries you filled above, \
+not prose. This is plain JSON, not a DSL. Phase 3 enhancement mode maps each required \
+topic through these source_fields to citeable evidence; broad recall \
+(bm25/vector/graph_neighbors/search_hints) is supporting context only and can never \
+make a required topic sufficient. A required topic with weak or missing exact evidence \
+fails the pipeline BEFORE Phase 4 — so only require a topic you can ground with exact \
+handles, and record an unavoidable gap in known_gaps[] instead of over-requiring."""
 
 _DEFAULT_KICKOFF = """You are planning the DeepWiki for the repository summarized \
 in the attached Phase 1 decomposition digest. Work only from the attached upload. \
@@ -115,7 +130,11 @@ coverage_labels[] value (frontend, memory, queue-system, helm-k8s, ci-cd-build, 
 go-native, retrieval-internals, doc-processing, llm-internals, \
 user-tenant-admin-health, sandbox-executor, migrations-operations, glossary). Use \
 `planning-coverage-signals.md` (planner context only, never citeable evidence) to \
-decide which families deserve their own page."""
+decide which families deserve their own page. For each required topic, add a \
+topic_evidence_requirements[] entry whose source_fields[] name the exact \
+retrieval_needs.* lanes (e.g. retrieval_needs.symbols[0], retrieval_needs.files[1]) \
+that ground it — enhancement mode fails before Phase 4 on any required topic without \
+sufficient exact evidence."""
 
 
 def _resolve_text(explicit: str | None, candidates: list[str], default: str,

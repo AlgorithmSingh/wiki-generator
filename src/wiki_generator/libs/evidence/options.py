@@ -12,6 +12,14 @@ from dataclasses import dataclass
 DEFAULT_MAX_PER_LANE = 8
 DEFAULT_MAX_TOTAL_PER_SECTION = 40
 
+# Evidenced-coverage gate modes (Phase 3 evidenced coverage). ``baseline`` is the
+# historical, non-breaking behaviour: evidenced coverage is reported but never
+# gates the run. ``enhancement`` fails the run before Phase 4 when a required
+# topic's evidence is weak or missing (spec "CLI and mode behavior").
+COVERAGE_MODE_BASELINE = "baseline"
+COVERAGE_MODE_ENHANCEMENT = "enhancement"
+COVERAGE_MODES = (COVERAGE_MODE_BASELINE, COVERAGE_MODE_ENHANCEMENT)
+
 
 @dataclass(frozen=True)
 class EvidenceOptions:
@@ -21,6 +29,7 @@ class EvidenceOptions:
     out_dir: str                     # absolute evidence output dir
     max_per_lane: int = DEFAULT_MAX_PER_LANE
     max_total_per_section: int = DEFAULT_MAX_TOTAL_PER_SECTION
+    coverage_mode: str = COVERAGE_MODE_BASELINE
 
     def __post_init__(self) -> None:
         if self.max_per_lane < 1:
@@ -28,3 +37,7 @@ class EvidenceOptions:
         if self.max_total_per_section < 1:
             raise ValueError(
                 f"--max-total-per-section must be >= 1, got {self.max_total_per_section}")
+        if self.coverage_mode not in COVERAGE_MODES:
+            raise ValueError(
+                f"--coverage-mode must be one of {COVERAGE_MODES}, "
+                f"got {self.coverage_mode!r}")

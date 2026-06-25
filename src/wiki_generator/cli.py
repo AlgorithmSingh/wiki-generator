@@ -211,6 +211,15 @@ def build_parser() -> argparse.ArgumentParser:
                      type=int, default=None,
                      help="max evidence items kept per section (default: stable "
                           "implementation constant)")
+    re_.add_argument("--coverage-mode", dest="coverage_mode", default="baseline",
+                     choices=("baseline", "enhancement"),
+                     help=("evidenced-coverage gate. baseline (default): report "
+                           "evidenced coverage without gating (non-breaking for "
+                           "legacy/compact fixtures). enhancement: a required "
+                           "topic with weak/missing exact evidence fails the run "
+                           "(exit 3, bad_underspecified_normalized_plan) BEFORE "
+                           "Phase 4. Still all-sections; no --section, no retry "
+                           "loop, no synthetic evidence."))
 
     _ww_help = ("Phase 4: writing/synthesis only. Consume a clean Phase 1-3 bundle, "
                 "gate on upstream success, generate grounded DeepWiki-style sections "

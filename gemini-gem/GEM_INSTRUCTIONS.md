@@ -200,7 +200,7 @@ One JSON object **per line** (JSON Lines), one line per section in
 `document-plan.json`:
 
 ```json
-{"section_id":"<id matching document-plan>","title":"<title>","parent_section_id":"<parent section_id or null>","coverage_labels":["queue-system"],"goal":"<what a reader should learn>","coverage_requirements":["<claim or question this section must answer>"],"required_topics":["<specific topic this page must cover>"],"key_questions":["<question to resolve during writing>"],"evidence_needs":{"symbol_ids":["<exact symbol_id>"],"file_anchors":["path:line-line"],"query_packs":["web_routes","llm_integrations"],"graph_nodes":["repo:ragflow","dep:pytest"],"contracts":["GET /agents"],"tests":["test/x_test.py::test_fn"],"search_hints":["retrieve: api.apps.*","module layout and primary imports"],"context_artifacts":["derived/planning-digest.md"]},"depends_on":["<other section_id>"],"verification_needs":["<what must be confirmed against real source because the digest signal is approximate/derived>"],"estimated_size":"S|M|L"}
+{"section_id":"<id matching document-plan>","title":"<title>","parent_section_id":"<parent section_id or null>","coverage_labels":["queue-system"],"goal":"<what a reader should learn>","coverage_requirements":["<claim or question this section must answer>"],"required_topics":["<specific topic this page must cover>"],"topic_evidence_requirements":[{"topic":"<one required_topics entry>","required":true,"source_fields":["retrieval_needs.symbols[0]","retrieval_needs.files[1]"],"min_items":1,"acceptable_lanes":["symbol_anchor","file_anchor","contract","test","query_pack"]}],"key_questions":["<question to resolve during writing>"],"evidence_needs":{"symbol_ids":["<exact symbol_id>"],"file_anchors":["path:line-line"],"query_packs":["web_routes","llm_integrations"],"graph_nodes":["repo:ragflow","dep:pytest"],"contracts":["GET /agents"],"tests":["test/x_test.py::test_fn"],"search_hints":["retrieve: api.apps.*","module layout and primary imports"],"context_artifacts":["derived/planning-digest.md"]},"depends_on":["<other section_id>"],"verification_needs":["<what must be confirmed against real source because the digest signal is approximate/derived>"],"estimated_size":"S|M|L"}
 ```
 
 Rules for `section-plans.jsonl`:
@@ -211,6 +211,18 @@ Rules for `section-plans.jsonl`:
   page; the normalizer resolves it against planned ids. `required_topics[]`
   (optional): the specific sub-topics this page must cover (merged with
   `coverage_requirements`).
+- `topic_evidence_requirements[]` (optional; required for a clean enhancement-mode
+  run): one object per required topic — `{topic, required, source_fields[],
+  min_items, acceptable_lanes[]}`. `source_fields[]` point at the **exact**
+  `retrieval_needs.*` lanes you filled, by index (e.g. `retrieval_needs.files[0]`,
+  `retrieval_needs.symbols[1]`, `retrieval_needs.contracts[0]`,
+  `retrieval_needs.tests[0]`, `retrieval_needs.query_packs[0]`) — plain JSON, not a
+  query. Phase 3 enhancement mode maps each required topic through these to citeable
+  evidence IDs; broad recall (`bm25`/`vector`/`graph_neighbors`/`search_hints`) is
+  supporting context only and can never make a required topic sufficient. A required
+  topic with weak/missing exact evidence fails the pipeline **before Phase 4**, so
+  only require a topic you can ground with exact handles; record an unavoidable gap
+  in `known_gaps[]` instead of over-requiring.
 - Exact lanes (`symbol_ids`, `file_anchors`, `contracts`, `tests`, `graph_nodes`)
   hold **only exact handles**. If you cannot name one, move the request to
   `search_hints[]` — do not put `retrieve: <query>`, globs, display labels, or

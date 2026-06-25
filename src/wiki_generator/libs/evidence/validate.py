@@ -7,6 +7,7 @@ between a clean pass, a bad/underspecified plan, and a retriever bug.
 from __future__ import annotations
 
 from ..context_docs import is_generated_context_path
+from .evidenced_coverage import CONTRACT_CHECK_NAME
 from .schema import (
     CAT_BAD_PLAN, CAT_BUG, EXIT_FOR_CATEGORY, VALIDATION_SCHEMA_VERSION,
     validate_packet,
@@ -68,7 +69,8 @@ def _anchor_exists(bundle, source) -> bool:
     return False
 
 
-def validate_run(bundle, packets, options, *, substrate_warnings) -> tuple[dict, str | None, int]:
+def validate_run(bundle, packets, options, *, substrate_warnings,
+                 evidenced=None) -> tuple[dict, str | None, int]:
     section_order = bundle.section_order
     contract_checks: list = []
     bug_errors: list = []
@@ -199,6 +201,25 @@ def validate_run(bundle, packets, options, *, substrate_warnings) -> tuple[dict,
         if not coverage_errors else f"{len(coverage_errors)} exact request(s) lost"))
     bug_errors.extend(coverage_errors)
     coverage_failed_set = set(coverage_failed_sids)
+
+    # 7. Phase 3 evidenced coverage (enhancement mode only). A required topic with
+    # weak/missing exact evidence is a plan-quality failure BEFORE Phase 4 — it is
+    # never healed, synthesized, or downgraded here. Baseline mode reports the
+    # matrix but adds no gate (the check is omitted so legacy runs are unchanged).
+    evidenced_errors: list = []
+    if evidenced is not None and evidenced.enforced:
+        contract_checks.append(_check(
+            CONTRACT_CHECK_NAME, not evidenced.has_blocking,
+            "all required topics have sufficient exact evidence"
+            if not evidenced.has_blocking
+            else f"{len(evidenced.blocking_section_ids)} section(s) with weak/missing "
+                 "required-topic evidence"))
+        if evidenced.has_blocking:
+            evidenced_errors = list(evidenced.blocking_diagnostics)
+            for s in evidenced.blocking_section_ids:
+                if s not in plan_failures:
+                    plan_failures.append(s)
+
     plan_only_failures = [s for s in plan_failures if s not in coverage_failed_set]
 
     # --- classify -------------------------------------------------------------
@@ -230,7 +251,7 @@ def validate_run(bundle, packets, options, *, substrate_warnings) -> tuple[dict,
             [f"plan-quality failures: {plan_only_failures}"] if plan_only_failures
             else []) + (
             [f"exact-coverage failures: {sorted(coverage_failed_sids)}"]
-            if coverage_failed_sids else []),
+            if coverage_failed_sids else []) + evidenced_errors,
     }
     return validation, category, EXIT_FOR_CATEGORY[category]
 
