@@ -76,6 +76,33 @@ The coverage question is answered in layers, not by one phase:
 The benchmark export `ragflow-deepwiki.md` is only a coverage/structure warning
 signal. It must not be counted as evidence.
 
+### Concrete Phase 3 contract for the next agent
+
+The next agent should implement a deterministic evidenced-coverage gate, not a
+healing loop.
+
+Required contract:
+
+- Preserve/consume additive normalized SectionPlan field
+  `topic_evidence_requirements[]` in baseline-compatible fashion.
+- In enhancement mode, each required topic must map to explicit source fields such
+  as `retrieval_needs.files[0]`, `retrieval_needs.symbols[1]`,
+  `retrieval_needs.contracts[0]`, `retrieval_needs.tests[0]`, or
+  `retrieval_needs.query_packs[0]`.
+- Map those source fields to existing Phase 3 exact-request coverage records and
+  final citeable `evidence_id`s. Do not use fuzzy prose matching to claim topic
+  support.
+- Write deterministic `evidence/evidenced-coverage.json` and
+  `evidence/evidenced-coverage-report.md`, and surface the result through the
+  manifest or retrieval validation artifacts.
+- Statuses are `sufficient`, `weak`, `missing`, and `not_applicable`.
+- In enhancement mode, `weak` or `missing` required-topic evidence exits `3` with
+  `bad_underspecified_normalized_plan` before Phase 4 can run.
+- Baseline mode remains non-breaking for legacy/compact fixtures.
+- No synthetic evidence, no silent required-to-optional downgrade, no fallback
+  rescue, no product `--section`, no `--force`, no retry-until-green, and no
+  validator weakening.
+
 ## Next coding-agent work
 
 Milestone 1 from the canonical spec is complete locally:
@@ -158,8 +185,9 @@ Implemented after the coverage-signal slice:
 
 ### Remaining Milestone 2 work — active pending backlog
 
-- **Next slice:** Phase 3 per-page/child evidence retrieval with per-required-topic
-  sufficiency reporting, preserving all existing Phase 3 constraints.
+- **Next slice:** Phase 3 evidenced-coverage gate using explicit
+  `topic_evidence_requirements[]`, exact source-field coverage, and fail-closed
+  enhancement-mode behavior before Phase 4.
 - **Then:** Phase 4 hierarchical writing emitting planned-vs-generated coverage
   metadata and keeping all validators strict.
 - **Then:** non-live/fake-provider hierarchical E2E plus benchmark-only
@@ -172,15 +200,21 @@ not run a live/billed retry without explicit user approval.
 
 The next slice should be accepted only if non-live tests show:
 
-- Phase 3 reads the normalized hierarchical plan, including `coverage_labels[]`,
-  `parent_section_id`, and `required_topics[]`.
-- Evidence packets or validation reports map citeable evidence items back to each
-  planned `section_id` and required topic.
-- Each required topic receives deterministic `sufficient`, `weak`, or `missing`
-  status with counts, evidence IDs/handles, source categories, and remediation.
+- Phase 2 normalization preserves `topic_evidence_requirements[]` without making
+  it mandatory in baseline mode.
+- Planner prompt surfaces ask for deterministic topic evidence requirements in
+  enhancement-mode planning.
+- Phase 3 reads `coverage_labels[]`, `parent_section_id`, `required_topics[]`, and
+  `topic_evidence_requirements[]` from the normalized plan.
+- Phase 3 writes deterministic `evidence/evidenced-coverage.json` and
+  `evidence/evidenced-coverage-report.md`.
+- Required topics map to citeable `evidence_id`s through exact source-field
+  coverage records, not fuzzy prose matching.
+- Each topic receives `sufficient`, `weak`, `missing`, or `not_applicable` status
+  with counts, evidence IDs/handles, source categories, and remediation.
 - In enhancement mode, `weak` or `missing` required-topic evidence is a blocking
-  **pipeline failure before Phase 4**; baseline/legacy behavior remains
-  non-breaking only where explicitly requested.
+  **pipeline failure before Phase 4**, exits `3`, and uses
+  `bad_underspecified_normalized_plan`; baseline remains non-breaking.
 - Context artifacts, `derived/`, `plans/`, generated wiki files, and
   `ragflow-deepwiki.md` are never counted as citeable evidence.
 - No generic retrieval healing loop, no product `--section` retry mode, no
