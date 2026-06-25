@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from . import generated_coverage as gencov
+from .options import COVERAGE_MODE_ENHANCEMENT
 from .schema import WRITING_PACKET_SCHEMA_VERSION
 
 
@@ -21,6 +23,7 @@ class WritingPacket:
     order: int
     data: dict                       # the serializable packet handed to the prompt
     allowed_evidence_ids: list       # this section's own citeable IDs (verbatim)
+    required_topics_coverage: list = None  # enhancement: evidenced topic obligations
 
 
 def _evidence_row(ev: dict) -> dict:
@@ -105,10 +108,32 @@ def build_writing_packet(bundle, sid: str) -> WritingPacket:
         "evidence": evidence_rows,
         "allowed_evidence_ids": allowed_ids,
     }
+
+    # DeepWiki coverage enhancement: carry the planned hierarchy and the Phase 3
+    # evidenced topic rows so the writer knows the exact required topics it must
+    # cover and the exact evidence_ids that support each one.
+    required_topics_coverage = None
+    if getattr(bundle, "coverage_mode", "baseline") == COVERAGE_MODE_ENHANCEMENT:
+        obligations = (bundle.topic_obligations or {}).get(sid) or []
+        data["hierarchy"] = {
+            "parent_section_id": plan.get("parent_section_id"),
+            "coverage_labels": list(plan.get("coverage_labels") or []),
+            "child_section_ids": gencov.child_section_ids(bundle, sid),
+        }
+        data["required_topics_coverage"] = [
+            {"topic": ob.get("topic"),
+             "evidenced_status": ob.get("evidenced_status"),
+             "is_obligation": ob.get("is_obligation"),
+             "supporting_evidence_ids": list(ob.get("mapped_evidence_ids") or []),
+             "min_items": ob.get("min_items")}
+            for ob in obligations]
+        required_topics_coverage = data["required_topics_coverage"]
+
     return WritingPacket(
         section_id=sid,
         title=plan.get("title") or sid,
         order=pkt.get("order"),
         data=data,
         allowed_evidence_ids=allowed_ids,
+        required_topics_coverage=required_topics_coverage,
     )

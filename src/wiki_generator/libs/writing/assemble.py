@@ -11,6 +11,7 @@ import os
 
 from .. import markdown as md
 from .. import util
+from . import generated_coverage as gencov
 from .schema import (
     CITATION_MANIFEST_SCHEMA_VERSION,
     GENERATED_DOCUMENT_SCHEMA_VERSION,
@@ -20,6 +21,52 @@ from .schema import (
 
 def _rel(bundle_root: str, abspath: str) -> str:
     return os.path.relpath(abspath, bundle_root).replace(os.sep, "/")
+
+
+def _hierarchical_contents(bundle, generated: list) -> list:
+    """Nested ``Contents`` lines built from ``parent_section_id`` (document order).
+
+    Top-level pages are numbered; child pages render as indented bullets under their
+    parent so a broad parent and its deep children read as a hierarchy rather than a
+    flat list. Every planned page still appears exactly once."""
+    plans = bundle.section_plans
+    by_sid = {g["section_id"]: g for g in generated}
+    order = [g["section_id"] for g in generated]
+    children: dict = {sid: [] for sid in order}
+    roots: list = []
+    for sid in order:
+        parent = (plans.get(sid) or {}).get("parent_section_id")
+        if parent and parent in by_sid and parent != sid:
+            children[parent].append(sid)
+        else:
+            roots.append(sid)
+
+    lines: list = []
+    visited: set = set()
+
+    def emit(sid: str, depth: int, number=None) -> None:
+        if sid in visited:
+            return
+        visited.add(sid)
+        g = by_sid[sid]
+        link = f"sections/{section_filename(g['order'], sid)}"
+        indent = "  " * depth
+        bullet = f"{number}." if number is not None else "-"
+        lines.append(f"{indent}{bullet} [{g['title']}]({link})")
+        purpose = (plans.get(sid) or {}).get("purpose")
+        if purpose:
+            lines.append(f"{indent}  - {purpose}")
+        for child in children.get(sid, []):
+            emit(child, depth + 1)
+
+    for i, sid in enumerate(roots, 1):
+        emit(sid, 0, number=i)
+    # any page unreachable from a root (e.g. a parent pointer cycle) is still listed.
+    for sid in order:
+        if sid not in visited:
+            emit(sid, 0, number=len(roots) + 1)
+    lines.append("")
+    return lines
 
 
 def _audit_dir(out_dir: str, *parts: str) -> str:
@@ -122,16 +169,22 @@ def build_index(bundle, generated: list, manifest: dict) -> str:
                  "an inline citation to a source anchor._")
     lines.append("")
     lines += md.heading(2, "Contents")
-    plans = bundle.section_plans
-    for i, g in enumerate(generated, 1):
-        sid = g["section_id"]
-        # link target relative to index.md (i.e. sections/NNN-sid.md)
-        link = f"sections/{section_filename(g['order'], sid)}"
-        lines.append(f"{i}. [{g['title']}]({link})")
-        purpose = (plans.get(sid) or {}).get("purpose")
-        if purpose:
-            lines.append(f"   - {purpose}")
-    lines.append("")
+    # DeepWiki coverage enhancement: render nested contents from parent_section_id
+    # when the plan declares a hierarchy; otherwise keep the flat numbered list
+    # (compact baseline fixtures have no parent_section_id and stay byte-identical).
+    if gencov.has_hierarchy(bundle):
+        lines += _hierarchical_contents(bundle, generated)
+    else:
+        plans = bundle.section_plans
+        for i, g in enumerate(generated, 1):
+            sid = g["section_id"]
+            # link target relative to index.md (i.e. sections/NNN-sid.md)
+            link = f"sections/{section_filename(g['order'], sid)}"
+            lines.append(f"{i}. [{g['title']}]({link})")
+            purpose = (plans.get(sid) or {}).get("purpose")
+            if purpose:
+                lines.append(f"   - {purpose}")
+        lines.append("")
     lines += md.heading(2, "Sources")
     lines.append("Each inline citation resolves to a source anchor "
                  "(`wiki/metadata/citation-manifest.json`):")
@@ -168,7 +221,7 @@ def generated_section_record(bundle, options, *, writing_packet, validation,
     ph = [v["message"] for v in validation.violations if v["code"] == "placeholder"]
     ca_cits = [v["message"] for v in validation.violations
                if v["code"] == "context_artifact_citation"]
-    return {
+    record = {
         "schema_version": GENERATED_SECTION_SCHEMA_VERSION,
         "section_id": sid,
         "title": writing_packet.title,
@@ -203,6 +256,19 @@ def generated_section_record(bundle, options, *, writing_packet, validation,
             "warnings": list(validation.warnings),
         },
     }
+    # DeepWiki coverage enhancement: preserve hierarchy + the Phase 3 evidenced topic
+    # status + the writer's generated-topic declaration for the coverage matrix.
+    if getattr(bundle, "coverage_mode", "baseline") == "enhancement":
+        record["parent_section_id"] = plan.get("parent_section_id")
+        record["coverage_labels"] = list(plan.get("coverage_labels") or [])
+        record["required_topics"] = list(plan.get("required_topics") or [])
+        record["evidenced_topics"] = [
+            {"topic": o.get("topic"), "evidenced_status": o.get("evidenced_status"),
+             "is_obligation": o.get("is_obligation"),
+             "supporting_evidence_ids": list(o.get("mapped_evidence_ids") or [])}
+            for o in (bundle.topic_obligations or {}).get(sid, [])]
+        record["covered_topics"] = list(validation.covered_topics)
+    return record
 
 
 def write_generated_metadata(out_dir: str, bundle, options, generated: list,
@@ -224,10 +290,38 @@ def write_generated_metadata(out_dir: str, bundle, options, generated: list,
                                              "writing-validation.json")),
         "provider_mode": options.provider,
         "model": options.model_for_metadata,
+        "coverage_mode": options.coverage_mode,
         "status": validation_doc["status"],
     }
+    # DeepWiki coverage enhancement: reference the generated-coverage artifacts and
+    # record the parent/child hierarchy so the document metadata preserves structure.
+    if validation_doc.get("generated_coverage") is not None:
+        document["generated_coverage_path"] = _rel(
+            bundle.root, os.path.join(meta_dir, "generated-coverage.json"))
+        document["generated_coverage_report_path"] = _rel(
+            bundle.root, os.path.join(out_dir, "validation",
+                                      "generated-coverage-report.md"))
+        document["generated_coverage_status"] = \
+            validation_doc["generated_coverage"]["status"]
+        document["hierarchy"] = [
+            {"section_id": g["section_id"],
+             "parent_section_id": g.get("parent_section_id"),
+             "coverage_labels": list(g.get("coverage_labels") or [])}
+            for g in generated]
     util.write_json(os.path.join(meta_dir, "generated-document.json"), document)
     return document
+
+
+def write_generated_coverage(out_dir: str, matrix: dict) -> tuple[str, str]:
+    """Write the deterministic generated-coverage artifacts (enhancement mode):
+    ``wiki/metadata/generated-coverage.json`` + ``wiki/validation/
+    generated-coverage-report.md``. Returns their absolute paths."""
+    json_path = os.path.join(out_dir, "metadata", "generated-coverage.json")
+    util.write_json(json_path, matrix)
+    report_path = os.path.join(out_dir, "validation",
+                               "generated-coverage-report.md")
+    util.write_text(report_path, gencov.render_generated_coverage_report(matrix))
+    return json_path, report_path
 
 
 # --- validation + run report --------------------------------------------------

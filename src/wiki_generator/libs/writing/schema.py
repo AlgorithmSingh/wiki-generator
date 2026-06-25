@@ -17,6 +17,8 @@ GENERATED_DOCUMENT_SCHEMA_VERSION = "phase4-generated-document-v1"
 CITATION_MANIFEST_SCHEMA_VERSION = "phase4-citation-manifest-v1"
 WRITING_VALIDATION_SCHEMA_VERSION = "phase4-writing-validation-v1"
 WRITING_PACKET_SCHEMA_VERSION = "phase4-writing-packet-v1"
+# DeepWiki coverage enhancement (Phase 4 generated coverage) artifact version.
+GENERATED_COVERAGE_SCHEMA_VERSION = "phase4-generated-coverage-v1"
 
 # --- citation syntax ----------------------------------------------------------
 # Inline evidence-ID citation: [ev:<section_id>:<four_digit_ordinal>].

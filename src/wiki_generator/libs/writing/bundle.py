@@ -29,6 +29,8 @@ from .. import util
 from ..context_docs import is_generated_context_path, looks_like_context_artifact
 from ..evidence.schema import validate_packet
 from .errors import BadInputArtifact, GateFailure
+from .generated_coverage import build_topic_obligations, read_enhancement_gates
+from .options import COVERAGE_MODE_ENHANCEMENT
 
 # Bundle subtrees / docs that may never be cited as source evidence.
 _NON_SOURCE_PREFIXES = ("plans/", "derived/", "planner-digest/", "wiki/")
@@ -90,6 +92,10 @@ class WritingBundle:
     run_metadata: dict | None
     gate_report: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
+    # DeepWiki coverage enhancement (opt-in; baseline leaves these inert).
+    coverage_mode: str = "baseline"
+    evidenced_coverage: dict | None = None    # parsed evidence/evidenced-coverage.json
+    topic_obligations: dict = field(default_factory=dict)  # sid -> [obligation]
 
     def evidence(self, evidence_id: str) -> EvidenceItem | None:
         return self.evidence_index.get(evidence_id)
@@ -486,10 +492,29 @@ def load_and_gate(options) -> WritingBundle:
             f"{len(failed)} precondition gate check(s) failed: {summary}{more}")
 
     index, section_ids = _build_evidence_index(packets, packet_paths)
-    return WritingBundle(
+    coverage_mode = getattr(options, "coverage_mode", "baseline")
+    bundle = WritingBundle(
         root=root, document_plan=doc, section_order=list(section_order),
         section_plans=section_plans, section_raw_by_id=section_raw_by_id,
         packets=packets, packet_paths=packet_paths, evidence_index=index,
         section_evidence_ids=section_ids, retrieval_validation=val,
         readiness_status=readiness, manifest=manifest, run_metadata=run_metadata,
-        gate_report=gate_report, warnings=[])
+        gate_report=gate_report, warnings=[], coverage_mode=coverage_mode)
+
+    # Gate 6 (enhancement mode only): the Phase 2 planned-coverage gate and the
+    # Phase 3 evidenced-coverage gate must be present, enforced, and passing BEFORE
+    # any provider call. Phase 4 consumes these upstream artifacts; it never re-runs
+    # Phase 2/3, repairs plans, retrieves evidence, or synthesizes evidence. A
+    # missing/baseline/failed upstream gate is a pre-provider GateFailure (exit 3).
+    if coverage_mode == COVERAGE_MODE_ENHANCEMENT:
+        gate_failures, evidenced = read_enhancement_gates(root, val)
+        if gate_failures:
+            summary = "; ".join(gate_failures[:6])
+            more = "" if len(gate_failures) <= 6 else \
+                f" (+{len(gate_failures) - 6} more)"
+            raise GateFailure(
+                f"enhancement coverage mode requires passing upstream gates: "
+                f"{summary}{more}")
+        bundle.evidenced_coverage = evidenced
+        bundle.topic_obligations = build_topic_obligations(evidenced)
+    return bundle

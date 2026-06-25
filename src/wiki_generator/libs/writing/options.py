@@ -32,6 +32,17 @@ UNSAFE_MAX_OUTPUT_TOKENS = 8192
 DEFAULT_STYLE = "deepwiki"
 MAX_REWRITE_ATTEMPTS_HARD_CAP = 2
 
+# Phase 4 coverage-gate modes (DeepWiki coverage enhancement). ``baseline`` is the
+# historical, backward-compatible behaviour: Phase 4 writes the grounded wiki with
+# no planned/evidenced upstream coverage gate and no generated-coverage validation.
+# ``enhancement`` (opt-in) refuses to call any provider unless the Phase 2 planned
+# coverage gate and the Phase 3 evidenced coverage gate are present, enforced, and
+# passing, preserves hierarchy, and deterministically validates that every
+# evidenced sufficient required topic was generated with valid citations.
+COVERAGE_MODE_BASELINE = "baseline"
+COVERAGE_MODE_ENHANCEMENT = "enhancement"
+COVERAGE_MODES = (COVERAGE_MODE_BASELINE, COVERAGE_MODE_ENHANCEMENT)
+
 
 @dataclass(frozen=True)
 class WritingOptions:
@@ -62,6 +73,9 @@ class WritingOptions:
     location: str | None = None
     api_key: str | None = None
 
+    # DeepWiki coverage enhancement (opt-in; default non-breaking baseline)
+    coverage_mode: str = COVERAGE_MODE_BASELINE
+
     # misc
     style: str = DEFAULT_STYLE
     audit_raw: bool = True
@@ -74,6 +88,10 @@ class WritingOptions:
             raise ValueError(
                 f"unknown provider mode {self.provider!r}; expected one of "
                 f"{sorted(CLI_PROVIDERS.values())}")
+        if self.coverage_mode not in COVERAGE_MODES:
+            raise ValueError(
+                f"--coverage-mode must be one of {COVERAGE_MODES}, "
+                f"got {self.coverage_mode!r}")
         if not 0.0 <= float(self.temperature) <= 2.0:
             raise ValueError(f"--temperature must be in [0, 2], got {self.temperature}")
         if int(self.max_output_tokens) < 1:
@@ -89,6 +107,11 @@ class WritingOptions:
     def uses_live_model(self) -> bool:
         """True when generation calls a model API (not the gem import path)."""
         return self.provider in (PROVIDER_GEMINI_API, PROVIDER_VERTEX)
+
+    @property
+    def is_enhancement(self) -> bool:
+        """True when the opt-in DeepWiki coverage enhancement mode is requested."""
+        return self.coverage_mode == COVERAGE_MODE_ENHANCEMENT
 
     @property
     def model_for_metadata(self) -> str | None:

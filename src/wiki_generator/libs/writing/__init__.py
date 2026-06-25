@@ -190,6 +190,11 @@ def run(options: WritingOptions, *, provider=None) -> WritingResult:
 
     validation_doc = validate_document(bundle, generated, manifest, options.out_dir)
     assemble.write_validation(options.out_dir, validation_doc)
+    # DeepWiki coverage enhancement: emit the deterministic generated-coverage
+    # artifacts (written even on failure, so a failed run leaves an auditable matrix).
+    if validation_doc.get("generated_coverage") is not None:
+        assemble.write_generated_coverage(
+            options.out_dir, validation_doc["generated_coverage"])
     document = assemble.write_generated_metadata(
         options.out_dir, bundle, options, generated, manifest, validation_doc)
     report_path = assemble.write_run_report(

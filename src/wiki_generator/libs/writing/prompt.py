@@ -59,8 +59,8 @@ Return ONLY a single JSON object — no prose before or after, no markdown fence
 around it — matching the response contract you are given."""
 
 
-def _response_contract(section_id: str, title: str) -> dict:
-    return {
+def _response_contract(section_id: str, title: str, *, covered_topics=None) -> dict:
+    contract = {
         "schema_version": SECTION_DRAFT_SCHEMA_VERSION,
         "section_id": section_id,
         "title": title,
@@ -74,6 +74,54 @@ def _response_contract(section_id: str, title: str) -> dict:
             "no_placeholders": True,
         },
     }
+    if covered_topics is not None:
+        # DeepWiki coverage enhancement: a structured generated-topic declaration.
+        # One row per required topic, status ``covered``, the exact supporting
+        # evidence_ids actually cited, and the markdown anchor (heading slug) where
+        # the topic is explained.
+        contract["covered_topics"] = covered_topics
+    return contract
+
+
+def _enhancement_block(wp) -> list[str]:
+    """Prompt guidance for DeepWiki coverage enhancement: the planned hierarchy and
+    the exact required topics (with supporting evidence) the writer must cover."""
+    hierarchy = (wp.data.get("hierarchy") or {})
+    obligations = [o for o in (wp.required_topics_coverage or [])
+                   if o.get("is_obligation")]
+    lines: list[str] = ["", "## DeepWiki coverage enhancement — REQUIRED", ""]
+    parent = hierarchy.get("parent_section_id")
+    labels = hierarchy.get("coverage_labels") or []
+    children = hierarchy.get("child_section_ids") or []
+    lines.append(
+        f"This page sits in a planned hierarchy: parent_section_id="
+        f"`{parent}`, coverage_labels={labels or '[]'}, "
+        f"child_section_ids={children or '[]'}. Write this page's own depth; do not "
+        "fold a child page's required topics into this broad parent (a broad parent "
+        "page never counts as coverage for a child required topic).")
+    lines.append("")
+    if obligations:
+        lines.append("You MUST explain each required topic below in its own non-empty "
+                     "paragraph/subsection with valid inline citations to the exact "
+                     "supporting evidence_ids listed, and declare it in "
+                     "`covered_topics[]`:")
+        lines.append("")
+        for ob in obligations:
+            ids = ", ".join(f"`{e}`" for e in ob.get("supporting_evidence_ids") or [])
+            lines.append(f"- **{ob.get('topic')}** — cite from: {ids or '(none)'}")
+        lines.append("")
+        lines.append("For every required topic, add a `covered_topics[]` row with "
+                     "`status: \"covered\"`, the `evidence_ids` you actually cited "
+                     "(each MUST be one of that topic's supporting evidence_ids), and "
+                     "a `markdown_anchor` equal to the GitHub heading slug where you "
+                     "explain it. Omitting a required topic, leaving an empty "
+                     "heading, or citing an id outside its supporting set fails "
+                     "validation.")
+    else:
+        lines.append("_This page has no evidenced required-topic obligations; return "
+                     "an empty `covered_topics` list._")
+    lines.append("")
+    return lines
 
 
 def build_section_prompt(writing_packet) -> str:
@@ -106,11 +154,27 @@ def build_section_prompt(writing_packet) -> str:
                      "write a grounded section, return markdown that states only "
                      "what the (empty) evidence supports._")
     parts.append("")
+
+    # DeepWiki coverage enhancement: hierarchy + required-topic obligations and the
+    # extended response contract carrying covered_topics[]. Only present in
+    # enhancement mode (baseline packets carry no required_topics_coverage).
+    covered_topics_example = None
+    if wp.required_topics_coverage is not None:
+        parts += _enhancement_block(wp)
+        obligations = [o for o in wp.required_topics_coverage
+                       if o.get("is_obligation")]
+        covered_topics_example = [
+            {"topic": ob.get("topic"), "status": "covered",
+             "evidence_ids": list(ob.get("supporting_evidence_ids") or [])[:1],
+             "markdown_anchor": "<github-heading-slug>"}
+            for ob in obligations] or []
+
     parts.append("## Response contract (return EXACTLY this JSON shape)")
     parts.append("")
     parts.append("```json")
-    parts.append(json.dumps(_response_contract(sid, wp.title), indent=2,
-                            ensure_ascii=False))
+    parts.append(json.dumps(
+        _response_contract(sid, wp.title, covered_topics=covered_topics_example),
+        indent=2, ensure_ascii=False))
     parts.append("```")
     parts.append("")
     parts.append("Return only the JSON object.")

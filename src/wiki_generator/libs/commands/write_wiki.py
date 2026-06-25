@@ -67,6 +67,10 @@ def build_options(args: argparse.Namespace) -> WritingOptions:
         kwargs["max_rewrite_attempts"] = args.max_rewrite_attempts
     if getattr(args, "style", None):
         kwargs["style"] = args.style
+    # Omitted when absent so the dataclass default (baseline) stays the single
+    # source of truth and an older arg namespace remains non-breaking.
+    if getattr(args, "coverage_mode", None) is not None:
+        kwargs["coverage_mode"] = args.coverage_mode
     return WritingOptions(**kwargs)
 
 

@@ -262,6 +262,21 @@ def build_parser() -> argparse.ArgumentParser:
                     default=None,
                     help="bounded format/citation rewrites for gemini-api/vertex "
                          "(0..2; default 1). Never used to add evidence.")
+    ww.add_argument("--coverage-mode", dest="coverage_mode", default="baseline",
+                    choices=("baseline", "enhancement"),
+                    help=("DeepWiki coverage enhancement. baseline (default): write "
+                          "the grounded wiki with no upstream coverage gate and no "
+                          "generated-coverage validation (non-breaking for compact "
+                          "fixtures). enhancement: refuse to call any provider unless "
+                          "the Phase 2 planned-coverage gate (plans/coverage-gate.json) "
+                          "and Phase 3 evidenced-coverage gate "
+                          "(evidence/evidenced-coverage.json + the "
+                          "required_topic_evidence_sufficient contract check) are "
+                          "enforced/passing (else exit 3, pre-provider); preserve "
+                          "parent/child hierarchy; and deterministically validate that "
+                          "every evidenced sufficient required topic is generated with "
+                          "valid mapped citations (else exit 5). Never re-runs Phase "
+                          "2/3 or synthesizes evidence."))
     ww.add_argument("--project", default=None,
                     help="GCP project for vertex (default $GOOGLE_CLOUD_PROJECT)")
     ww.add_argument("--location", default=None,

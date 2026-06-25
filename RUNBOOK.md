@@ -360,6 +360,31 @@ evidence and never runs for terminal failures (cited context artifact, invented
 identifier, placeholder, truncation). If the bundle carries no command manifest,
 pass `--accept-no-force` to assert Phase 3 was not force-run.
 
+### DeepWiki coverage enhancement mode (`--coverage-mode enhancement`)
+
+`write-wiki --coverage-mode enhancement` (default `baseline`, fully non-breaking)
+adds the opt-in DeepWiki coverage layer. Before any provider call it requires the
+two upstream enhancement gates to be present, enforced, and passing — the Phase 2
+planned-coverage gate `plans/coverage-gate.json` (from `normalize-plan
+--coverage-mode enhancement`) and the Phase 3 evidenced-coverage gate
+`evidence/evidenced-coverage.json` plus the `required_topic_evidence_sufficient`
+contract check in `retrieval-validation.json` (from `retrieve-evidence
+--coverage-mode enhancement`). A missing, baseline/report-only, or failed upstream
+gate is a **pre-provider** `GateFailure` (exit `3`); Phase 4 never reruns Phase 2/3,
+repairs plans, retrieves, or synthesizes evidence. In enhancement mode the writer
+also receives the planned parent/child hierarchy and the exact Phase 3 mapped
+`evidence_id`s for each required topic, the index renders nested contents, and the
+section response declares `covered_topics[]`. After generation a deterministic
+generated-coverage check (`generated_required_topics_covered`) requires every
+evidenced **sufficient** required topic to be declared `covered` with mapped
+evidence IDs that resolve through the citation manifest and are cited near the
+topic's text/anchor; an omitted/placeholder/out-of-scope/uncited topic is a
+**post-provider** writing-validation failure (exit `5`). Artifacts written:
+`wiki/metadata/generated-coverage.json` and
+`wiki/validation/generated-coverage-report.md`, plus hierarchy + generated-coverage
+references in `generated-sections.jsonl` / `generated-document.json`. This slice is
+proven non-live with fake providers only; no live retry until the user approves it.
+
 The earlier live Vertex Phase 4 attempt failed closed on an unsupported
 shell-expanded identifier, `/ragflow/conf/service_conf.yaml`, in the `deployment`
 section. The Iteration 2 fix (`docs/specs/done/PHASE4_WRITING_SYNTHESIS_ITERATION_2_SPEC.md`) is
@@ -369,10 +394,16 @@ from evidence as a rewriteable `synthesized_identifier`, distinct from a termina
 `invented_identifier`. The successful live run at `20260623-183730` exercised
 that path and passed the then-current validation. Follow-up review found a
 separate malformed citation-token validator gap and broader coverage gap; the
-malformed-token validator enhancement is now implemented locally under
-`docs/specs/not-done/PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md` Milestone 1. Treat any
-future live Phase 4 retry as blocked until Milestone 2/non-live enhancement work
-passes and the user explicitly approves another billed run.
+malformed-token validator enhancement (Milestone 1) and the Milestone 2 enhancement
+slices — coverage taxonomy/validation, Phase 2 planning-obligation preservation,
+Phase 1 coverage signals, the Phase 2 planned-coverage gate, the Phase 3
+evidenced-coverage gate, and now the Phase 4 enhancement-mode hierarchical writing +
+generated-coverage gate (`write-wiki --coverage-mode enhancement`, see above) — are
+implemented and tested non-live under
+`docs/specs/not-done/PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md`. Treat any
+future live Phase 4 retry as blocked until the remaining non-live hierarchical E2E
+and benchmark-only comparison pass and the user explicitly approves another billed
+run.
 
 ---
 

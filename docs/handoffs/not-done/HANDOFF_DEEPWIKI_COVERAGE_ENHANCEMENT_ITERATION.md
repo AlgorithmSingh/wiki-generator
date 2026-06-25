@@ -18,10 +18,12 @@ Current implementation status: **Milestone 1 is implemented and tested.
 Milestone 2 is in progress: coverage taxonomy/validation, Phase 2
 planning/PagePlan obligation preservation, Phase 1 deterministic coverage-signal
 expansion, the Phase 2 enhancement-mode planned-coverage upstream-prevention gate
-(`normalize-plan --coverage-mode enhancement`), and the Phase 3 evidenced-coverage
-gate (`retrieve-evidence --coverage-mode enhancement`) are implemented and tested
-(non-live). Pending next: Phase 4 hierarchical writing and generated coverage, and
-non-live hierarchical E2E before any approved live retry.**
+(`normalize-plan --coverage-mode enhancement`), the Phase 3 evidenced-coverage
+gate (`retrieve-evidence --coverage-mode enhancement`), and the Phase 4
+enhancement-mode hierarchical writing + generated-coverage gate
+(`write-wiki --coverage-mode enhancement`) are implemented and tested
+(non-live). Pending next: non-live hierarchical E2E and benchmark-only comparison
+before any approved live retry.**
 
 ## Why this exists
 
@@ -279,12 +281,76 @@ gate). The two evidenced-coverage artifacts are now written on every Phase 3 run
 (baseline = report-only) and referenced from the manifest — additive, deterministic,
 and verified byte-identical on rerun.
 
+### Milestone 2 — Phase 4 enhancement-mode hierarchical writing + generated-coverage gate (implemented, non-live)
+
+Implemented after the evidenced-coverage gate. This is the Phase 4 Generated
+Coverage Contract: an opt-in `write-wiki --coverage-mode enhancement` mode that
+trusts and consumes the upstream Phase 2/3 enhancement gates and validates generated
+coverage deterministically. Baseline/default is fully non-breaking.
+
+- `write-wiki` gains `--coverage-mode {baseline,enhancement}` (default `baseline`).
+  `WritingOptions.coverage_mode` is validated; the wrapper omits it when absent so an
+  older arg namespace defaults to baseline.
+- `src/wiki_generator/libs/writing/generated_coverage.py` (new) is the engine:
+  `read_enhancement_gates` (pre-provider) requires `plans/coverage-gate.json` to be an
+  enforced enhancement gate with `passed`/`status: pass`, `evidence/evidenced-coverage.json`
+  to be `coverage_mode: enhancement` / `enforced: true` / `status: pass`, and the
+  `required_topic_evidence_sufficient` retrieval-validation contract check to be
+  present and passing; `build_topic_obligations` derives per-section required-topic
+  obligations with exact Phase 3 `mapped_evidence_ids`; `evaluate_generated_coverage`
+  checks the writer's `covered_topics[]` against the generated markdown (every
+  sufficient required topic declared `covered`, evidence IDs within the topic's mapped
+  set, resolving through the citation manifest, cited within the topic's local block
+  near its text/anchor).
+- `libs/writing/bundle.py` runs the enhancement gate as a sixth pre-provider gate in
+  `load_and_gate` (missing/baseline/failed upstream gate → `GateFailure`, exit 3) and
+  attaches `coverage_mode` / `evidenced_coverage` / `topic_obligations` to the
+  `WritingBundle`.
+- `libs/writing/packet.py` + `prompt.py` carry the planned hierarchy and evidenced
+  topic rows into each WritingPacket/prompt and extend the section response contract
+  with `covered_topics[]` (backward-compatible; baseline unchanged).
+- `libs/writing/validate.py` threads `covered_topics[]` through section validation
+  and adds the named final check `generated_required_topics_covered`; a generated
+  coverage failure is a writing-validation failure (exit 5) after provider output, not
+  a rewrite target.
+- `libs/writing/assemble.py` renders a nested `index.md` from `parent_section_id`
+  (flat when no hierarchy, so compact fixtures are byte-identical), augments
+  `generated-sections.jsonl` rows with hierarchy + evidenced/generated topic status,
+  references the coverage artifacts + hierarchy from `generated-document.json`, and
+  writes `wiki/metadata/generated-coverage.json` + `wiki/validation/generated-coverage-report.md`.
+- All existing writing validators stay strict; no healing loop, synthetic filler,
+  required→optional downgrade, post-hoc `covered_topics[]` mutation, or use of
+  `ragflow-deepwiki.md` as evidence.
+- `tests/test_phase4_generated_coverage.py` (24 tests): enhancement happy path over a
+  real decomposed+retrieval-built bundle (nested index + generated-coverage artifacts;
+  packets carry exact mapped IDs; rerun byte-identical); pre-provider exit-3 gate
+  failures (missing/baseline/failed planned gate, missing/baseline evidenced gate,
+  missing retrieval contract check — with NO provider call); post-provider exit-5
+  failures (omitted topic, declared-without-local-citation, out-of-scope id,
+  placeholder-only); baseline/default non-breaking; pure-evaluator units; CLI surface.
+
+Work log (this slice): files changed — `cli.py`, `libs/commands/write_wiki.py`,
+`libs/writing/{options,schema,bundle,packet,prompt,validate,assemble,__init__}.py`,
+new `libs/writing/generated_coverage.py`, new `tests/test_phase4_generated_coverage.py`,
+plus `README.md`, `RUNBOOK.md`, `docs/README.md`, this handoff, and the active spec.
+Verification (non-live): `git diff --check` clean; `git diff --exit-code --
+docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` unchanged; `pytest -q
+tests/test_phase4.py tests/test_phase3_evidenced_coverage.py
+tests/test_phase2_enhancement_gate.py tests/test_phase4_generated_coverage.py` →
+160 passed; full suite `412 passed, 1 skipped` (pre-existing faiss-backend skip). No
+Vertex/Gemini/API/network; no historical wiki edits; protected spec untouched.
+Risks/notes: enhancement mode is opt-in and NOT wired into the default Phase 4 path
+(it would fail the compact fixtures, exactly like the upstream gates). Phase 4 trusts
+`plans/coverage-gate.json`; tests hand-write a passing gate on a 2-section bundle
+because Phase 2's 13-family gate (separately tested) cannot pass a compact plan — the
+real producer is `normalize-plan --coverage-mode enhancement`.
+
 ### Remaining Milestone 2 work — active pending backlog
 
-- **Next slice:** Phase 4 hierarchical writing emitting planned-vs-generated coverage
-  metadata and keeping all validators strict.
-- **Then:** non-live/fake-provider hierarchical E2E plus benchmark-only
-  comparison against `ragflow-deepwiki.md`.
+- **Next slice:** non-live/fake-provider hierarchical E2E over an expanded
+  multi-family plan (planning → evidence → writing), keeping all validators strict.
+- **Then:** benchmark-only comparison against `ragflow-deepwiki.md` (structure/
+  coverage only, never citeable evidence).
 
 Do not begin the next pipeline-expansion slice without a concrete prompt, and do
 not run a live/billed retry without explicit user approval.

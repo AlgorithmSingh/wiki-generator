@@ -13,6 +13,8 @@ import os
 from dataclasses import dataclass, field
 
 from . import citations as cit
+from . import generated_coverage as gencov
+from .options import COVERAGE_MODE_ENHANCEMENT
 from .schema import (
     GOOD_FINISH_REASONS,
     TRUNCATION_FINISH_REASONS,
@@ -54,6 +56,7 @@ class SectionValidation:
     warnings: list = field(default_factory=list)
     citations_total: int = 0
     finish_reason: str = "UNKNOWN"
+    covered_topics: list = field(default_factory=list)  # enhancement declaration
 
     @property
     def rewriteable_problems(self) -> list:
@@ -132,6 +135,10 @@ def validate_section_draft(*, section_id, draft, parse_note, finish_reason,
 
     markdown = draft.get("markdown") if isinstance(draft.get("markdown"), str) else ""
     used_ids = list(draft.get("used_evidence_ids") or [])
+    # Enhancement-mode generated-topic declaration (read-only; never mutated here).
+    # Its semantic validation against the markdown happens in the deterministic
+    # whole-document generated-coverage check (a writing-validation failure, exit 5).
+    covered_topics = gencov.normalize_covered_topics(draft.get("covered_topics"))
 
     # 2. citation resolution ---------------------------------------------------
     cres = cit.resolve_citations(
@@ -195,7 +202,8 @@ def validate_section_draft(*, section_id, draft, parse_note, finish_reason,
         section_id, status, markdown=markdown, used_evidence_ids=used_ids,
         cited_ids=cres["resolved"], cross_section=cres["cross_section"],
         violations=violations, warnings=warnings,
-        citations_total=len(cit.extract_citations(markdown)), finish_reason=fr)
+        citations_total=len(cit.extract_citations(markdown)), finish_reason=fr,
+        covered_topics=covered_topics)
 
 
 # --- final whole-document validation ------------------------------------------
@@ -283,8 +291,23 @@ def validate_document(bundle, generated, citation_manifest, out_dir) -> dict:
     chk("no_truncated_sections", not truncated,
         f"truncated: {truncated}" if truncated else "all complete")
 
+    # 5. DeepWiki coverage enhancement: every evidenced sufficient required topic must
+    # be generated with valid mapped citations near its text/anchor (deterministic,
+    # post-provider). A missing/placeholder/out-of-scope/uncited topic is a
+    # writing-validation failure (exit 5). Never runs in baseline mode.
+    generated_coverage = None
+    if getattr(bundle, "coverage_mode", "baseline") == COVERAGE_MODE_ENHANCEMENT:
+        generated_coverage = gencov.evaluate_generated_coverage(
+            bundle, generated, citation_manifest)
+        gc_counts = generated_coverage["counts"]
+        chk(gencov.GENERATED_COVERAGE_CHECK, generated_coverage["status"] == "pass",
+            f"{gc_counts['covered']}/{gc_counts['required_topics']} evidenced required "
+            "topics generated with valid mapped citations"
+            if generated_coverage["status"] == "pass"
+            else "; ".join(generated_coverage["failures"][:4]))
+
     failed = [c for c in checks if c["status"] != "pass"]
-    return {
+    doc = {
         "schema_version": WRITING_VALIDATION_SCHEMA_VERSION,
         "status": "pass" if not failed else "fail",
         "bundle_root": bundle.root,
@@ -294,3 +317,6 @@ def validate_document(bundle, generated, citation_manifest, out_dir) -> dict:
         "checks": checks,
         "failures": [f"{c['name']}: {c['details']}" for c in failed],
     }
+    if generated_coverage is not None:
+        doc["generated_coverage"] = generated_coverage
+    return doc
