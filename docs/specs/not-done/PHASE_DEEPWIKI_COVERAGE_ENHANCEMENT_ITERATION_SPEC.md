@@ -110,19 +110,23 @@ allowed to imply final sufficiency by itself.
 2. **Evidenced coverage — Phase 3.** Retrieval must map citeable EvidencePacket
    items to each planned page and required topic. This is the next missing layer.
    It should answer, for every planned topic: `sufficient`, `weak`, or `missing`,
-   with exact citeable evidence IDs/handles and remediation. Context artifacts,
-   `derived/`, `plans/`, generated wiki files, and `ragflow-deepwiki.md` remain
-   non-citeable.
+   with exact citeable evidence IDs/handles and remediation. In enhancement mode,
+   required topics must be `sufficient` before Phase 4 may run. `weak` or
+   `missing` required-topic evidence is a **pipeline failure before Phase 4**, not
+   something to heal, synthesize, auto-retry-until-green, or pass to the writer as
+   if supported. Context artifacts, `derived/`, `plans/`, generated wiki files,
+   and `ragflow-deepwiki.md` remain non-citeable.
 3. **Generated coverage — Phase 4.** The writer must actually explain the planned
    and evidenced topics in the generated page, with valid citations and without
    unsupported identifiers, malformed citations, placeholders, or filler.
 
 The intelligence comes from LLM planning and writing constrained by deterministic
 artifact contracts and gates. Phase 1 supplies deterministic repo signals, Phase 2
-uses LLM judgment to plan coverage, Phase 3 deterministically proves evidence
-sufficiency, and Phase 4 uses LLM synthesis under strict validation. The benchmark
-comparison against `ragflow-deepwiki.md` is a warning system for coverage/structure
-gaps, never citeable evidence and never the sole quality bar.
+uses LLM judgment to plan coverage, Phase 3 deterministically validates evidence
+sufficiency and fails closed on weak/missing required evidence, and Phase 4 uses
+LLM synthesis under strict validation. The benchmark comparison against
+`ragflow-deepwiki.md` is a warning system for coverage/structure gaps, never
+citeable evidence and never the sole quality bar.
 
 ## Milestone 1 — immediate writing-validation enhancement
 
@@ -517,14 +521,15 @@ Contract, then implement it. Acceptance should require non-live tests proving:
   planned `section_id` and required topic.
 - Each required topic receives a deterministic status: `sufficient`, `weak`, or
   `missing`, with counts, evidence IDs/handles, source categories, and remediation.
-- Enhancement mode fails loudly before Phase 4 when a required topic has missing
-  evidence, while baseline/legacy behavior remains non-breaking where explicitly
-  requested.
+- In enhancement mode, `weak` or `missing` evidence for a required topic is a
+  blocking **pipeline failure before Phase 4**. Baseline/legacy behavior remains
+  non-breaking only where explicitly requested.
 - Context artifacts, `derived/`, `plans/`, generated wiki files, and
   `ragflow-deepwiki.md` are never counted as citeable evidence.
 - No generic retrieval healing loop, no product `--section` retry mode, no
   `--force` after readiness failure, no fallback rescue for no-signal sections,
-  and no validator weakening.
+  no synthetic evidence, no silent downgrade to optional, and no validator
+  weakening.
 - Tests include an expanded hierarchical fixture that passes evidenced coverage
   and fixtures where a planned page/topic lacks evidence and fails with clear
   diagnostics.
@@ -593,8 +598,10 @@ coding-agent work should keep validator behavior strict and proceed with the nex
 concrete non-live slice: **define and implement Phase 3 evidenced coverage**. The
 agent should first define what “enough evidence” means for a planned page/topic,
 then implement deterministic mapping/reporting from planned `section_id` +
-`required_topics[]` to citeable EvidencePacket items. Do not call Vertex/Gemini or
-any live model. Do not edit the historical generated wiki in place. Do not modify
+`required_topics[]` to citeable EvidencePacket items. In enhancement mode, weak or
+missing required-topic evidence must be treated as a pipeline failure before Phase
+4, not as a healing target. Do not call Vertex/Gemini or any live model. Do not
+edit the historical generated wiki in place. Do not modify
 `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. Keep validators strict.
 If a Milestone 2 slice is too large for one coding session, stop after a coherent
 non-live increment and report the remaining work clearly.

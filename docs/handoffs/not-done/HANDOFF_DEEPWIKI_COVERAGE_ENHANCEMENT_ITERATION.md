@@ -65,9 +65,11 @@ The coverage question is answered in layers, not by one phase:
 1. **Planned coverage (Phase 2):** the normalized plan names the required topic
    families/pages/topics. This is now implemented through the planned-coverage
    gate, but it does not prove evidence exists.
-2. **Evidenced coverage (Phase 3):** retrieval must prove that each planned page
-   and required topic has enough citeable repo evidence, or fail/report a clear
-   weak/missing status. This is the next work.
+2. **Evidenced coverage (Phase 3):** retrieval must validate that each planned
+   page and required topic has enough citeable repo evidence. In enhancement
+   mode, `weak` or `missing` required-topic evidence is a **pipeline failure
+   before Phase 4**, not something to heal, synthesize, retry-until-green, or pass
+   to the writer as supported. This is the next work.
 3. **Generated coverage (Phase 4):** the final wiki must actually explain the
    planned/evidenced topics with valid citations and strict validators.
 
@@ -176,14 +178,15 @@ The next slice should be accepted only if non-live tests show:
   planned `section_id` and required topic.
 - Each required topic receives deterministic `sufficient`, `weak`, or `missing`
   status with counts, evidence IDs/handles, source categories, and remediation.
-- Enhancement mode fails loudly before Phase 4 when required-topic evidence is
-  missing; baseline/legacy behavior remains non-breaking where explicitly
-  requested.
+- In enhancement mode, `weak` or `missing` required-topic evidence is a blocking
+  **pipeline failure before Phase 4**; baseline/legacy behavior remains
+  non-breaking only where explicitly requested.
 - Context artifacts, `derived/`, `plans/`, generated wiki files, and
   `ragflow-deepwiki.md` are never counted as citeable evidence.
 - No generic retrieval healing loop, no product `--section` retry mode, no
   `--force` after readiness failure, no fallback rescue for no-signal sections,
-  and no validator weakening.
+  no synthetic evidence, no silent downgrade to optional, and no validator
+  weakening.
 
 ## Required guardrails
 
