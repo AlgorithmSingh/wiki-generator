@@ -16,9 +16,10 @@ against `35bdc18`. It failed closed before Phase 3: planned coverage passed
 (`0/46` complete required-topic obligations; 21 missing TER rows and 25
 invalid/broad-only source-field mappings, commonly raw `evidence_needs.*` source
 field names where canonical `retrieval_needs.*` fields are expected). Phase 3 and
-Phase 4 did not run. Pending next: fix Phase 2 producer/normalizer/repair handling
-of raw source-field aliases and missing TER diagnostics non-live; no further
-live/billed retry unless the user explicitly approves it.**
+Phase 4 did not run. Pending next: implement the Phase 2 TER source-field
+canonicalization and enhancement-repair diagnostics slice described below,
+non-live only; no further live/billed retry unless the user explicitly approves
+it after that slice passes.**
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
 enhancement track. It consolidates the immediate malformed-citation validator
@@ -296,19 +297,118 @@ normalization failed before Phase 3 after bounded Step 1b repair:
   canonical `retrieval_needs.files[0]`, `retrieval_needs.symbols[0]`, and
   `retrieval_needs.query_packs[0]`.
 
-Next upstream refinement, non-live first:
+## Phase 2 TER Source-Field Canonicalization and Enhancement Repair Diagnostics — next implementation slice
 
-- Decide and implement deterministic canonicalization for documented raw-plan
-  aliases in TER `source_fields[]` when the referenced exact lane exists, or make
-  the prompt/schema reject raw aliases before model output is accepted. This is a
-  normalizer/schema contract fix, not source-field guessing.
-- Update bounded `plan-repair` so it consumes the new topic-obligations diagnostics
-  and repairs missing TER rows / invalid source-field names before declaring repair
-  success; then rerun strict enhancement normalization.
-- Add tests for raw `evidence_needs.file_anchors[]` and `evidence_needs.symbol_ids[]`
-  alias handling, missing TER repair diagnostics, and the real failure pattern.
-- Do not weaken the topic-obligation gate, synthesize evidence, silently downgrade
-  required topics, or add a generic retry/healing loop.
+### Artifact and quality bar
+
+Artifact being designed: an enhancement-mode Phase 2 normalized plan boundary that
+makes each `topic_evidence_requirements[].source_fields[]` entry canonical,
+traceable, and gateable before Phase 3.
+
+A good artifact has three properties:
+
+1. The normalized SectionPlan stores TER `source_fields[]` in canonical
+   `retrieval_needs.*` form, never ambiguous raw planner aliases.
+2. Any compatibility handling for raw planner aliases is deterministic and
+   trace-preserving: it rewrites only documented raw exact-lane aliases when the
+   raw item actually resolved to a concrete normalized exact lane.
+3. Bounded Step 1b plan repair in enhancement mode does not declare success unless
+   the same strict post-repair normalization plus planned-coverage and
+   topic-obligation gates pass.
+
+### Failure classification
+
+- Raw `evidence_needs.*` source-field aliases inside TER rows are an LLM-authored
+  plan-shape defect exposed by deterministic normalization. The normalizer may
+  canonicalize documented aliases only when the mapping is exact and traceable;
+  otherwise the gate must fail loudly.
+- Missing TER rows for normalized required topics are LLM-authored plan defects.
+  Bounded repair is allowed only as the existing audited Step 1b flow, but it must
+  consume the new topic-obligation diagnostics and rerun strict enhancement
+  validation before accepting output.
+- Broad-only support (`search_hints`, `bm25`, `vector`, `graph_neighbors`) remains
+  a hard plan-quality failure for required topics in enhancement mode. Do not
+  convert broad lanes into exact lanes.
+
+### Source-field canonicalization contract
+
+Documented raw aliases that may be canonicalized when exact and unambiguous:
+
+- `evidence_needs.file_anchors[N]` or `evidence_needs.files[N]` →
+  `retrieval_needs.files[M]`
+- `evidence_needs.symbol_ids[N]` or `evidence_needs.symbols[N]` →
+  `retrieval_needs.symbols[M]`
+- `evidence_needs.contracts[N]` → `retrieval_needs.contracts[M]`
+- `evidence_needs.tests[N]` → `retrieval_needs.tests[M]`
+- `evidence_needs.query_packs[N]` → `retrieval_needs.query_packs[M]`
+
+`M` must refer to the normalized exact lane item produced from the raw lane item
+`N`. If earlier raw items were pruned, unresolved, routed to `search_hints[]`, or
+moved to `context_artifacts[]`, a naive same-index rewrite may be wrong. The
+implementation should either preserve an explicit raw-index → normalized-index map
+while resolving needs, or leave the source field invalid with an actionable
+diagnostic. Do not guess by topic text, fuzzy prose, nearby files, or benchmark
+content.
+
+Raw broad aliases may be normalized only to their broad canonical fields and must
+remain insufficient for required topics:
+
+- `evidence_needs.search_hints[N]` → `retrieval_needs.search_hints[M]`
+- `evidence_needs.graph_nodes[N]` → `retrieval_needs.graph_nodes[M]`
+
+Those broad fields must still fail the topic-obligation gate if they are the only
+support for a required topic.
+
+### Enhancement repair contract
+
+`plan-repair` / `scripts/phase2_step1b_repair_plan.sh` should gain an explicit
+way to run in enhancement mode or otherwise be invoked by the enhancement path so
+that repair success means:
+
+- parse/normalization readiness passes;
+- `plans/coverage-gate.json` would pass in enhancement mode;
+- `plans/topic-obligations-gate.json` would pass in enhancement mode;
+- accepted repair audit artifacts record the topic-obligation diagnostics that were
+  fed to the model and the final post-repair gate verdict.
+
+A repair attempt that only passes old Phase-3 readiness but fails
+`topic-obligations` must be rejected and, if attempts remain, re-prompted with the
+exact topic-obligation diagnostics. After the hard cap, it must fail loudly.
+
+### Non-live implementation boundary
+
+This slice must be implemented and verified without Vertex, Gemini API, Gemini Gem
+live/manual production flows, or any billed provider. Use deterministic fixtures
+and injected/fake repair clients. The live run at
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-141745`
+is read-only diagnostic input only.
+
+### Acceptance — next slice
+
+Accept this slice only when non-live artifacts/tests prove:
+
+- a TER source field authored as `evidence_needs.file_anchors[0]` normalizes to the
+  correct `retrieval_needs.files[0]` when that raw file anchor resolves to the
+  first normalized file exact lane;
+- a TER source field authored as `evidence_needs.symbol_ids[0]` normalizes to the
+  correct `retrieval_needs.symbols[0]` when that raw symbol resolves exactly;
+- raw aliases are not naively same-index rewritten when raw lane pruning would make
+  the normalized index ambiguous or wrong; such cases fail with an actionable
+  topic-obligation diagnostic;
+- broad aliases such as `evidence_needs.search_hints[0]` remain broad-only and fail
+  required-topic obligations in enhancement mode;
+- `normalize-plan --coverage-mode enhancement` passes for a fixture reproducing the
+  live raw-alias pattern once every required topic has a matching exact TER row;
+- `normalize-plan --coverage-mode enhancement` still fails for missing TER rows;
+- bounded `plan-repair` tested with a fake client rejects an attempted repair that
+  passes old readiness but fails topic obligations, feeds the new diagnostics into
+  the next attempt, and accepts only when strict enhancement gates pass;
+- baseline/default behavior remains non-breaking;
+- Phase 3 and Phase 4 validators remain strict; no `--force`, product `--section`,
+  synthetic evidence, benchmark-derived evidence, silent required-topic downgrade,
+  or generic healing/retry-until-green loop is added;
+- `git diff --check`, protected-spec diff check, focused tests, and the full suite
+  pass with `uv run python -m pytest -q`.
 
 ## Phase 3 Evidence Sufficiency Contract — implemented non-live slice
 

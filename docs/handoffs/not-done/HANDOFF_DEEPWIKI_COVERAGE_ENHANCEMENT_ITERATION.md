@@ -30,9 +30,9 @@ the Phase 2 topic-obligation gate failed after bounded Step 1b repair (`0/46`
 complete required-topic obligations; 21 missing TER rows and 25 invalid/broad-only
 source-field mappings, commonly raw `evidence_needs.*` names where canonical
 `retrieval_needs.*` fields are expected). Phase 3 and Phase 4 did not run. Pending
-next: fix Phase 2 producer/normalizer/repair handling of raw source-field aliases
-and missing TER diagnostics non-live; no further live/billed retry unless the user
-explicitly approves it.**
+next: implement the Phase 2 TER source-field canonicalization and enhancement
+repair diagnostics slice non-live; no further live/billed retry unless the user
+explicitly approves it after that slice passes.**
 
 ## Why this exists
 
@@ -426,17 +426,39 @@ Run:
 
 ### Remaining Milestone 2 work — active pending backlog
 
-- Fix Phase 2 producer/normalizer/repair handling of raw `evidence_needs.*`
-  source-field aliases and missing TER diagnostics non-live first.
-- Specifically, decide whether to deterministically canonicalize documented raw
-  aliases to normalized `retrieval_needs.*` fields when the referenced exact lane
-  exists, and update bounded `plan-repair` so it consumes
-  `topic-obligations-gate.json` diagnostics before declaring repair success.
-- Add focused tests for raw alias canonicalization/rejection, missing TER repair
-  diagnostics, and the real failure pattern.
-- Default remains **no live retry**.
+Current next implementation slice: **Phase 2 TER source-field canonicalization and
+enhancement repair diagnostics**, non-live only.
 
-Do not run another live/billed retry without explicit user approval.
+Artifact/quality bar:
+
+- Normalized SectionPlans should store TER `source_fields[]` in canonical
+  `retrieval_needs.*` form.
+- The normalizer may canonicalize documented raw planner aliases such as
+  `evidence_needs.file_anchors[0]`, `evidence_needs.symbol_ids[0]`,
+  `evidence_needs.contracts[0]`, `evidence_needs.tests[0]`, and
+  `evidence_needs.query_packs[0]` only when the raw item resolved to a concrete
+  normalized exact lane. If raw pruning makes the mapping ambiguous, fail loudly;
+  do not guess.
+- Broad aliases (`evidence_needs.search_hints[]`, `evidence_needs.graph_nodes[]`)
+  must remain broad-only and insufficient for required topics.
+- Bounded Step 1b `plan-repair` must consume `topic-obligations-gate.json`
+  diagnostics in enhancement mode and must not declare success merely because old
+  Phase-3 readiness passes. Accepted repair output must pass strict enhancement
+  normalization, planned coverage, and topic obligations.
+
+Required non-live tests:
+
+- raw exact-lane alias canonicalization for files and symbols;
+- ambiguous/pruned raw-index alias rejection with actionable diagnostics;
+- broad alias remains blocking;
+- live-style fixture with all TER rows and raw aliases passes after canonicalization;
+- missing TER rows still fail;
+- fake-client bounded repair rejects old-readiness-only repairs and accepts only
+  strict enhancement-passing repairs;
+- baseline/default behavior remains non-breaking.
+
+Default remains **no live retry**. Do not run another live/billed retry without
+explicit user approval after this slice passes.
 
 ### Completed-slice acceptance summary — Phase 3 evidenced coverage
 
