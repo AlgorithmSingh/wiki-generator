@@ -105,39 +105,44 @@ Implemented contract:
   rescue, no product `--section`, no `--force`, no retry-until-green, and no
   validator weakening.
 
-### Concrete Phase 4 contract for the next agent
+### Concrete non-live E2E contract for the next agent
 
-The next agent should implement generated coverage and hierarchical writing in
-Phase 4, using fake-provider/non-live tests only.
+The next agent should prove the completed enhancement gates together in one fresh
+non-live hierarchical run, then do a benchmark-only coverage/structure comparison.
+This is a validation/integration slice, not a live retry.
 
 Required contract:
 
-- Add an opt-in Phase 4 enhancement mode, e.g. `write-wiki --coverage-mode
-  enhancement`, while baseline/default remains non-breaking.
-- In enhancement mode, fail before any provider call unless Phase 2 planned
-  coverage (`plans/coverage-gate.json`) and Phase 3 evidenced coverage
-  (`evidence/evidenced-coverage.json` plus retrieval-validation contract check)
-  are enforced/pass. Do not rerun Phase 2/3 or synthesize missing evidence.
-- Preserve hierarchy from `parent_section_id` in prompts, index navigation,
-  generated-section metadata, generated-document metadata, and validation reports.
-  Existing flat `sections/NNN-section-id.md` file paths may remain if metadata and
-  index preserve hierarchy.
-- Include evidenced topic rows in WritingPackets so each sufficient required topic
-  carries the exact supporting `evidence_id`s.
-- Require generated topic coverage metadata, preferably via a response field such
-  as `covered_topics[]`, and validate it deterministically against markdown
-  citations and Phase 3 evidenced topic mapped IDs.
-- Write deterministic `wiki/metadata/generated-coverage.json` and
-  `wiki/validation/generated-coverage-report.md`.
-- Fail generated coverage when a required/evidenced topic is omitted, only a
-  placeholder/empty heading, declared without markdown coverage, cited with IDs
-  outside allowed/evidenced IDs, malformed-cited, or backed by context/generated/
-  benchmark artifacts.
-- Generated coverage failures after provider output are writing-validation
-  failures; missing upstream enhancement gates are pre-provider gate failures.
-- No generic healing loop, synthetic filler, required-to-optional downgrade,
-  validator weakening, live/billed calls, or use of `ragflow-deepwiki.md` as
-  evidence.
+- Create a fresh run under
+  `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/non-live-hierarchical-runs/<run-id>/`.
+- Use an expanded multi-family hierarchical plan or deterministic fixture that
+  exercises parent/child pages and multiple mandatory coverage families, with
+  `coverage_labels[]`, `parent_section_id`, `required_topics[]`, and
+  `topic_evidence_requirements[]` preserved.
+- Run or exercise the real enhancement gates together:
+  `normalize-plan --coverage-mode enhancement`,
+  `retrieve-evidence --coverage-mode enhancement`, and
+  `write-wiki --coverage-mode enhancement`.
+- Verify the shell wrappers expose/pass the enhancement flags. In particular,
+  check/fix `scripts/phase2_step2_normalize_plan.sh`,
+  `scripts/phase3_retrieve_evidence.sh`, and `scripts/phase4_write_wiki.sh` so
+  operators can reproduce the enhancement path without bypassing scripts.
+- Use fake-provider or deterministic responses only for Phase 4. No Vertex,
+  Gemini API, Gemini Gem live/manual production flow, network model call, or
+  billed model is allowed.
+- Produce `command-manifest.tsv`, `command-transcript.log`, passing planned/
+  evidenced/generated coverage artifacts, nested `wiki/index.md`, and
+  `NON_LIVE_HIERARCHICAL_E2E_RESULT.md`.
+- Compare against `/Users/ankitsingh/Documents/deep-wiki/ragflow-deepwiki.md` as a
+  benchmark-only coverage/structure warning signal. Never cite it as evidence and
+  do not copy prose/headings to satisfy coverage.
+- If a deterministic wrapper, validator, or artifact contract defect appears, fix
+  that upstream and rerun from the affected phase. Do not hand-edit downstream
+  artifacts, add generic healing loops, synthesize evidence, add filler topics,
+  downgrade required topics, weaken validators, or edit historical live wiki
+  artifacts.
+- End with a clear verdict: whether non-live E2E passes, what gaps remain, and
+  whether it is reasonable to ask the user for explicit live/billed retry approval.
 
 ## Next coding-agent work
 
@@ -381,34 +386,30 @@ This slice is accepted because non-live tests show:
   no synthetic evidence, no silent downgrade to optional, and no validator
   weakening.
 
-### Next-slice acceptance summary — Phase 4 hierarchical writing and generated coverage
+### Next-slice acceptance summary — non-live hierarchical E2E and benchmark-only review
 
-The next slice should be accepted only if non-live tests show:
+The next slice should be accepted only if non-live artifacts show:
 
-- `write-wiki` supports opt-in `--coverage-mode enhancement`; baseline/default
-  remains non-breaking.
-- Enhancement-mode Phase 4 refuses to call any provider unless planned coverage
-  and evidenced coverage artifacts are present, enforced, and passing.
-- Phase 4 consumes hierarchical plans and page-level EvidencePackets without
-  flattening child pages back into the compact 16-section baseline.
-- WritingPackets and prompts include hierarchy fields plus evidenced topic rows.
-- The wiki index, manifests, audit prompts/responses, generated-section metadata,
-  generated-document metadata, and validation reports preserve parent/child
-  structure.
-- Phase 4 writes deterministic `wiki/metadata/generated-coverage.json` and
-  `wiki/validation/generated-coverage-report.md`.
-- Generated coverage metadata maps output pages back to planned `section_id`,
-  `coverage_labels[]`, `required_topics[]`, and evidenced topic statuses.
-- Generated coverage validation fails when a planned/evidenced required topic is
-  omitted, only a placeholder/empty heading, declared without actual markdown
-  coverage, malformed-cited, cited with IDs outside allowed/evidenced IDs, or
-  supported by invalid/context/generated/reference artifacts.
-- Generated coverage failures after provider output are writing-validation
-  failures (`5`); missing/failed upstream enhancement gates are pre-provider gate
-  failures (`3`).
-- Existing writing validators remain strict; no generic healing loop, filler,
-  synthetic evidence, validator weakening, live/billed calls, or use of
-  `ragflow-deepwiki.md` as evidence.
+- planned, evidenced, and generated coverage enhancement gates all pass together
+  in one fresh hierarchical run;
+- wrapper scripts expose/pass `--coverage-mode enhancement` for Phase 2
+  normalization, Phase 3 retrieval, and Phase 4 writing where applicable;
+- the run uses an expanded multi-family hierarchical plan, not only the compact
+  two-page generated-coverage unit fixture;
+- Phase 4 uses fake-provider or deterministic responses only; no live/billed model
+  is called;
+- `wiki/metadata/generated-coverage.json`,
+  `wiki/validation/generated-coverage-report.md`, nested `wiki/index.md`, and
+  generated-section/document metadata are present and passing;
+- `NON_LIVE_HIERARCHICAL_E2E_RESULT.md` records exact commands, exit codes, gate
+  statuses, coverage counts, evidence counts, determinism/rerun notes, and whether
+  any wrapper/code changes were required;
+- benchmark-only comparison against `ragflow-deepwiki.md` identifies remaining
+  coverage/structure gaps without using it as evidence or chasing line count;
+- focused tests and full suite pass using `uv run python -m pytest -q`;
+- protected Phase 3 spec is unchanged, validators remain strict, no historical
+  generated wiki is edited, and no generic healing/synthetic-evidence/filler path
+  is introduced.
 
 ## Required guardrails
 
@@ -424,6 +425,7 @@ The next slice should be accepted only if non-live tests show:
 ```bash
 git diff --check
 git diff --exit-code -- docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md
-python -m pytest -q tests/test_phase4.py
-python -m pytest -q
+uv run python -m pytest -q tests/test_phase4_generated_coverage.py tests/test_phase4.py
+uv run python -m pytest -q tests/test_phase3_evidenced_coverage.py tests/test_phase2_enhancement_gate.py
+uv run python -m pytest -q
 ```

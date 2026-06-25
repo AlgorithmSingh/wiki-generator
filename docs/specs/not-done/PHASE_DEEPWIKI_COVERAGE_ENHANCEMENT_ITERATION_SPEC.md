@@ -261,7 +261,7 @@ Expected behavior:
 - the command remains all-sections only; do not add product `--section` or retry
   loops.
 
-## Phase 4 Generated Coverage Contract — next implementation slice
+## Phase 4 Generated Coverage Contract — implemented non-live slice
 
 This slice must make Phase 4 answer the final coverage question:
 
@@ -400,6 +400,154 @@ Do not call Vertex, Gemini API, Gemini Gem live/manual production flows, or any
 billed model. Do not run a live retry after this slice; the next step is non-live
 hierarchical E2E.
 
+## Non-live Hierarchical E2E and Benchmark-Only Comparison Contract — next implementation slice
+
+This slice must prove the enhancement pipeline as a whole, not merely isolated
+unit fixtures:
+
+```text
+expanded hierarchical plan -> planned coverage gate -> evidenced coverage gate
+-> generated coverage gate -> benchmark-only coverage/structure review
+```
+
+The target artifact is a **fresh, non-live hierarchical E2E run directory** plus a
+human-readable result report. It should demonstrate that the enhanced gates can
+work together over an expanded multi-family plan before any billed/live retry is
+requested.
+
+### Artifact being designed
+
+Create a fresh run under a non-live workspace such as:
+
+```text
+/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/non-live-hierarchical-runs/<timestamp-or-run-id>/
+```
+
+The run should contain, at minimum:
+
+- `command-manifest.tsv` with exact commands and exit codes;
+- `command-transcript.log` with stdout/stderr snippets sufficient for review;
+- an expanded hierarchical bundle or fixture plan covering multiple mandatory
+  topic families, with `parent_section_id`, `coverage_labels[]`,
+  `required_topics[]`, and `topic_evidence_requirements[]` preserved;
+- `plans/coverage-gate.json` + `plans/coverage-gate-report.md` from the real
+  planned-coverage gate where possible;
+- `evidence/evidenced-coverage.json` + report from
+  `retrieve-evidence --coverage-mode enhancement`;
+- `wiki/metadata/generated-coverage.json` +
+  `wiki/validation/generated-coverage-report.md` from
+  `write-wiki --coverage-mode enhancement`;
+- a nested `wiki/index.md` and generated-section/document metadata preserving
+  hierarchy;
+- `NON_LIVE_HIERARCHICAL_E2E_RESULT.md` summarizing verdict, commands, gate
+  statuses, coverage counts, known gaps, and whether any live retry is justified;
+- a benchmark-only comparison note/report against `ragflow-deepwiki.md` that
+  discusses coverage/structure gaps without citing it as evidence.
+
+Generated bulky run artifacts should not be committed unless they are small,
+intentional, and already consistent with repository tracking policy. The durable
+implementation backlog and final status must be mirrored in this spec/handoff and
+`docs/README.md`.
+
+### Required command/path behavior
+
+The E2E task must use the real CLI/script surfaces that a future operator would
+use. If a wrapper is missing an implemented flag, fix the wrapper upstream rather
+than bypassing it silently. In particular, verify and, if necessary, update:
+
+- `scripts/phase2_step2_normalize_plan.sh` supports/passes
+  `--coverage-mode enhancement` to `normalize-plan`;
+- `scripts/phase3_retrieve_evidence.sh` supports/passes
+  `--coverage-mode enhancement` to `retrieve-evidence`;
+- `scripts/phase4_write_wiki.sh` supports/passes
+  `--coverage-mode enhancement` to `write-wiki`.
+
+A wrapper gap is a deterministic upstream defect. Fix the script/help/tests and
+rerun from the affected phase; do not hand-edit downstream artifacts to compensate.
+
+### Non-live provider boundary
+
+Do not call Vertex, Gemini API, Gemini Gem live/manual production flows, or any
+billed model for this slice.
+
+Acceptable approaches:
+
+- deterministic fixture or synthetic mini-repo that exercises multiple mandatory
+  topic families and hierarchy;
+- a fake provider injected through Python-level Phase 4 wiring;
+- gemini-gem prepare/validate mode only if no model is called and responses are
+  deterministic fixtures.
+
+If the current shell wrapper cannot inject a fake provider, the agent may add a
+small non-live harness or test-oriented script, but it must keep production CLI
+behavior honest and documented.
+
+### Gate behavior to prove
+
+The run/report must prove:
+
+- planned coverage passes in enhancement mode for an expanded multi-family plan;
+- a compact/broad-parent-only plan would still fail where required by existing
+  tests (do not weaken the gate to make the E2E pass);
+- evidenced coverage passes with exact mapped `evidence_id`s for required topics;
+- Phase 4 refuses to start in enhancement mode if upstream planned/evidenced gates
+  are missing/baseline/failed;
+- generated coverage passes only when each evidenced sufficient required topic is
+  actually covered and locally cited;
+- generated coverage artifacts are deterministic on rerun for the same inputs;
+- all existing citation, malformed evidence token, unsupported identifier,
+  context-artifact, placeholder, truncation, stale/no-`--force`, and coverage
+  validators remain strict.
+
+### Benchmark-only comparison
+
+Compare the non-live generated hierarchy/coverage matrix against:
+
+```text
+/Users/ankitsingh/Documents/deep-wiki/ragflow-deepwiki.md
+```
+
+Rules:
+
+- benchmark-only; never citeable evidence;
+- no copying sections, headings, prose, or claims into generated output;
+- no line-count parity target;
+- report coverage/structure gaps by topic family and planned/evidenced/generated
+  status;
+- explicitly state whether the non-live E2E is enough to request user approval for
+  a live/billed retry. The default should remain **no live retry** unless all gates
+  pass cleanly and the user explicitly approves.
+
+### Failure policy: fix upstream, not heal
+
+- Deterministic wrapper/validator/artifact defects must be fixed upstream and
+  tested.
+- Weak/missing planned or evidenced required-topic coverage remains a pipeline
+  failure before Phase 4 in enhancement mode.
+- Missing generated coverage remains a Phase 4 writing-validation failure after
+  provider/fake-provider output.
+- Do not add retry-until-green, synthetic evidence, filler topics, silent
+  required-to-optional downgrades, benchmark-derived evidence, or validator
+  weakening.
+- If the fake provider or fixture is insufficient, improve the fixture/harness or
+  prompt contract; do not mutate generated coverage declarations post hoc.
+
+### Next-slice acceptance — non-live hierarchical E2E
+
+Accept the next slice only when the agent reports and/or commits evidence that:
+
+- all three enhancement gates were exercised together in one fresh non-live run;
+- wrapper help/behavior exposes the enhancement flags needed to reproduce the run;
+- run artifacts and `NON_LIVE_HIERARCHICAL_E2E_RESULT.md` exist in the non-live
+  workspace;
+- the benchmark-only comparison exists and does not treat `ragflow-deepwiki.md` as
+  evidence;
+- relevant focused tests and the full suite pass via `uv run python -m pytest -q`;
+- protected Phase 3 spec content is unchanged;
+- no live/billed provider was called;
+- docs/handoff/status are updated with verdict, run path, risks, and remaining
+  live-retry approval status.
+
 ## Milestone 1 — immediate writing-validation enhancement
 
 This milestone is implemented locally and tested. It was the first implementation
@@ -496,8 +644,8 @@ validation fails.
 ```bash
 git diff --check
 git diff --exit-code -- docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md
-python -m pytest -q tests/test_phase4.py
-python -m pytest -q
+uv run python -m pytest -q tests/test_phase4.py
+uv run python -m pytest -q
 ```
 
 No Vertex/Gemini/API calls are allowed for Milestone 1.
@@ -921,42 +1069,60 @@ This implementation slice is accepted because non-live tests prove:
   a fixture where only broad recall exists and is `weak`/blocking, and a fixture
   proving baseline mode remains non-breaking.
 
-### Next-slice acceptance — Phase 4 hierarchical writing and generated coverage
+### Completed-slice acceptance — Phase 4 hierarchical writing and generated coverage
 
-The next implementation slice should be accepted only when non-live tests prove:
+The Phase 4 implementation slice is accepted as a non-live foundation because tests
+prove:
 
-- `write-wiki` supports an opt-in enhancement coverage mode while default baseline
-  remains backward-compatible.
-- Enhancement-mode Phase 4 refuses to call any provider unless Phase 2 planned
-  coverage and Phase 3 evidenced coverage artifacts show enforced/pass status.
+- `write-wiki` supports opt-in `--coverage-mode enhancement`; baseline/default
+  remains non-breaking.
+- Enhancement-mode Phase 4 refuses to call any provider unless planned coverage
+  and evidenced coverage artifacts are present, enforced, and passing.
 - Phase 4 consumes hierarchical plans and page-level EvidencePackets without
   flattening child pages back into the compact 16-section baseline.
-- WritingPackets and prompts include hierarchy fields plus evidenced topic rows;
-  fake-provider tests prove the writer receives the topic evidence obligations.
-- Generated artifacts preserve parent/child structure in the wiki index,
-  manifests, audit prompts/responses, generated-section metadata, and validation
-  reports.
-- Phase 4 emits deterministic `wiki/metadata/generated-coverage.json` and
-  `wiki/validation/generated-coverage-report.md` mapping generated pages back to
-  planned `section_id`, `coverage_labels[]`, `required_topics[]`, and evidenced
-  topic statuses.
-- Section responses include or otherwise produce a deterministic generated-topic
-  coverage declaration, and validators require every planned/evidenced sufficient
-  required topic to be generated with valid citations.
+- WritingPackets and prompts include hierarchy fields plus evidenced topic rows.
+- The wiki index, manifests, audit prompts/responses, generated-section metadata,
+  generated-document metadata, and validation reports preserve parent/child
+  structure.
+- Phase 4 writes deterministic `wiki/metadata/generated-coverage.json` and
+  `wiki/validation/generated-coverage-report.md`.
+- Generated coverage metadata maps output pages back to planned `section_id`,
+  `coverage_labels[]`, `required_topics[]`, and evidenced topic statuses.
 - Generated coverage validation fails when a planned/evidenced required topic is
-  omitted, only mentioned as a placeholder/empty heading, declared without actual
-  markdown coverage, cited with malformed evidence tokens, cited with IDs outside
-  the evidenced topic/allowed evidence, or supported by invalid/context/generated/
-  reference artifacts.
-- Generated coverage failures are writing-validation failures after provider
-  output (`5`), while missing/failed upstream enhancement gates are pre-provider
-  gate failures (`3`).
-- Existing citation, unsupported-identifier, malformed-token, no-context,
-  placeholder, truncation, and no-`--force` validators remain strict.
-- No live Vertex/Gemini/API calls; use fake-provider or deterministic non-live
-  fixtures only.
-- No generic healing/retry-until-green loop, no synthetic filler, no validator
-  weakening, and no use of `ragflow-deepwiki.md` as evidence.
+  omitted, only a placeholder/empty heading, declared without actual markdown
+  coverage, malformed-cited, cited with IDs outside allowed/evidenced IDs, or
+  supported by invalid/context/generated/reference artifacts.
+- Generated coverage failures after provider output are writing-validation
+  failures (`5`); missing/failed upstream enhancement gates are pre-provider gate
+  failures (`3`).
+- Existing writing validators remain strict; no generic healing loop, filler,
+  synthetic evidence, validator weakening, live/billed calls, or use of
+  `ragflow-deepwiki.md` as evidence.
+
+### Next-slice acceptance — non-live hierarchical E2E and benchmark-only review
+
+The next implementation/validation slice should be accepted only when non-live
+artifacts prove:
+
+- planned, evidenced, and generated coverage enhancement gates all pass together
+  in one fresh hierarchical run;
+- wrapper scripts expose and pass `--coverage-mode enhancement` for Phase 2
+  normalization, Phase 3 retrieval, and Phase 4 writing where applicable;
+- an expanded multi-family hierarchical plan exercises parent/child pages and
+  multiple mandatory topic families, not just the compact two-page fixture;
+- Phase 4 uses fake-provider or deterministic responses only; no Vertex/Gemini/API
+  live call is made;
+- `wiki/metadata/generated-coverage.json`,
+  `wiki/validation/generated-coverage-report.md`, nested `wiki/index.md`, and
+  generated-section/document metadata are present and passing;
+- the run report records exact commands, exit codes, gate statuses, coverage
+  counts, evidence counts, determinism/rerun notes, and whether any wrapper/code
+  changes were required;
+- benchmark-only comparison against `ragflow-deepwiki.md` identifies remaining
+  coverage/structure gaps without using it as evidence or chasing line count;
+- focused tests and full suite pass using `uv run python -m pytest -q`;
+- no protected Phase 3 spec changes, validator weakening, synthetic evidence,
+  filler, silent downgrade, generic healing loop, or historical live artifact edit.
 
 ### Milestone 2 acceptance criteria
 
