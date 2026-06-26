@@ -13,24 +13,14 @@ canonicalization + enhancement-repair diagnostics, and the **Phase 2/3 TER
 evidence-alignment** slice (lane/type consistency + citeable-substrate viability)
 are implemented and tested non-live. The latest user-approved live/billed RAGFlow
 retry at
-`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-160914`
-ran against `f1fae66`: Phase 2 bounded repair succeeded, planned coverage passed
-`13/13`, and topic obligations passed `59/59`. Phase 3 retrieved `22/22` packets
-and `704` evidence items, then correctly failed before Phase 4 because evidenced
-coverage was `56/59` sufficient, `1` weak, and `2` missing. Blocking topics were
-Go build process (`go.mod` exact lane had no citeable evidence while `build.sh`
-evidence existed), Docker image build instructions (`Dockerfile` exact lane had no
-citeable evidence while `docs/develop/build_docker_image.mdx`/`README.md` evidence
-existed), and where to add new tests (TER used `retrieval_needs.tests[0]` but
-`acceptable_lanes[]` listed `file_anchor`). The Phase 2 topic-obligation gate now
-catches all three classes BEFORE Phase 3: each required topic's valid exact source
-field lane must be in `acceptable_lanes[]`, and — when a `CiteableSubstrate` view of
-`rag/chunks.jsonl` is available — the resolved file/test handle must have citeable
-chunk coverage; `normalize-plan` and bounded `plan-repair --coverage-mode
-enhancement` both surface/feed the new
-`topic_evidence_requirement_lane_not_acceptable` /
-`topic_evidence_requirement_source_not_citeable` diagnostics. No further live/billed
-retry unless the user explicitly approves it.**
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-try-f9ad424`
+ran against `f9ad424`: Phase 1 and live Phase 2 planning completed, planned coverage
+passed `13/13`, and the stricter Phase 2 topic-obligation/citeable-substrate gate
+correctly stopped before Phase 3 (`45/58` complete). Bounded live repair attempt 1
+improved the plan to `53/58` complete but was rejected by the same strict gate;
+attempt 2 hit `RemoteProtocolError: Server disconnected without sending a response`.
+Phase 3 and Phase 4 did not run. No further live/billed retry unless the user
+explicitly approves it.**
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
 enhancement track. It consolidates the immediate malformed-citation validator
@@ -1556,9 +1546,16 @@ prose copied; never citeable evidence. Run path (outside the repo, not committed
 
 ### Remaining Milestone 2 work — active pending backlog
 
-1. **Explicit live-retry approval (only remaining step).** Request explicit user
-   approval before any billed Vertex/Gemini retry over the real RAGFlow repo. Default
-   remains **no live retry**.
+1. **No unapproved live retry.** The latest approved live run stopped in Phase 2 at
+   `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-try-f9ad424`.
+   Request explicit user approval before any further billed Vertex/Gemini call over
+   the real RAGFlow repo. Default remains **no live retry**.
+2. **Earliest current blockers.** Repair attempt 1 still had five deterministic TER
+   defects after improving the plan to `53/58` complete; repair attempt 2 failed with
+   external `RemoteProtocolError: Server disconnected without sending a response`.
+   If continuing live, prefer a bounded repair-only continuation from the existing
+   run directory; if changing code/prompts, keep the fix upstream and preserve all
+   Phase 2/3/4 strict gates.
 
 ### Completed-slice acceptance — Phase 2 enhancement-mode planned-coverage upstream prevention
 

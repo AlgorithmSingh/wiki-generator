@@ -27,14 +27,14 @@ gate, the Phase 2 TER source-field canonicalization + enhancement-repair diagnos
 initial parse-ambiguity repair handling, and the **Phase 2/3 TER evidence-alignment**
 slice (lane/type consistency + citeable-substrate viability) are implemented and
 tested non-live. The latest user-approved live/billed retry at
-`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-160914`
-passed Phase 2 after bounded repair (`13/13` planned coverage, `59/59` topic
-obligations), retrieved `22/22` Phase 3 packets with `704` evidence items, and then
-failed before Phase 4 because evidenced coverage was `56/59` sufficient, `1` weak,
-and `2` missing. Those three blockers (non-citeable `go.mod`/`Dockerfile` exact
-lanes, and a `retrieval_needs.tests[0]` source field with `acceptable_lanes`
-`["file_anchor"]`) are now caught at the Phase 2 obligation gate BEFORE Phase 3. No
-further live/billed retry unless the user explicitly approves it.**
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-try-f9ad424`
+ran against `f9ad424`: Phase 1 and live Phase 2 planning completed, planned coverage
+passed `13/13`, and the stricter Phase 2 topic-obligation/citeable-substrate gate
+correctly stopped before Phase 3 (`45/58` complete). Bounded live repair attempt 1
+improved the plan to `53/58` complete but was rejected by the same strict gate;
+attempt 2 hit `RemoteProtocolError: Server disconnected without sending a response`.
+Phase 3 and Phase 4 did not run. No further live/billed retry unless the user
+explicitly approves it.**
 
 ## Why this exists
 
@@ -571,14 +571,40 @@ remain strict (no synthetic evidence, no fuzzy matching, no healing loop, no
 required→optional downgrade, no `--force`/product `--section`). No
 Vertex/Gemini/API/network; protected Phase 3 spec unchanged; baseline non-breaking.
 
+### Live retry after Phase 2/3 TER evidence-alignment — stopped in Phase 2 before Phase 3
+
+A user-approved retry at
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-try-f9ad424`
+ran against `f9ad424`. Preflight passed (`git diff --check`; protected Phase 3 spec
+unchanged). Phase 1 completed and rebuilt vectors. Live Phase 2 Step 1 completed with
+Vertex/Gemini (`prompt=174348`, `output=14891`, `total=192726` tokens).
+
+Strict enhancement normalization stopped before Phase 3:
+
+- planned coverage: PASS, `13/13` mandatory families;
+- topic obligations: FAIL, `45/58` complete, `13` incomplete;
+- citeable-substrate viability: checked against `3587` citeable paths;
+- Phase 3 and Phase 4 did not run.
+
+Bounded live Step 1b repair then ran with `--max-attempts 2`:
+
+- attempt 1 was rejected by strict enhancement gates after improving topic obligations
+  to `53/58` complete; remaining blockers were architecture lane mismatch on
+  `query_pack`, broad-only parent/container topics for runtime/data/deployment, and a
+  testing topic with broad-only acceptable lanes;
+- attempt 2 failed externally with `RemoteProtocolError: Server disconnected without
+  sending a response`;
+- the run stopped at `phase2-plan-repair-live-vertex` exit `1` and wrote
+  `LIVE_RAGFLOW_ENHANCEMENT_RESULT.md`.
+
 ### Remaining Milestone 2 work — active pending backlog
 
-Default remains **no live retry**. With the three `20260626-160914` blocker classes
-now caught upstream at the Phase 2 obligation gate, the next step is a user-approved
-live/billed RAGFlow retry against the stricter gate (only on explicit approval). Do
-not synthesize evidence, downgrade required topics, weaken validators, add a generic
-healing loop, add `--force`/product `--section`, or rerun live without explicit user
-approval.
+Default remains **no live retry**. Earliest current blockers are the five deterministic
+repaired-plan TER defects from attempt 1 plus the external Vertex transport failure on
+attempt 2. A further repair-only continuation or fresh live retry is a billed action
+and requires explicit user approval. Do not synthesize evidence, downgrade required
+topics, weaken validators, add a generic healing loop, add `--force`/product
+`--section`, or rerun live without explicit user approval.
 
 ### Completed-slice acceptance summary — Phase 3 evidenced coverage
 
