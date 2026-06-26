@@ -22,6 +22,12 @@ runtime/deployment behavior — MUST be backed by an inline citation to an \
 evidence item you were given.
 
 Hard rules:
+- Your entire response MUST be one raw strict JSON object that a standard \
+`json.loads` parser can parse. Generate JSON with JSON-safe Markdown string \
+escaping: the `markdown` value and every other string value must encode Markdown \
+newlines as `\\n` and escape any embedded `"` or `\\`; never put raw unescaped \
+newlines, raw unescaped double quotes, or other control characters inside a JSON \
+string. Do not wrap the object in markdown fences.
 - Cite with the EXACT inline syntax `[ev:<section_id>:<NNNN>]`, copied verbatim \
 from the `evidence_id` field. Multiple citations are adjacent brackets, e.g. \
 `... [ev:overview:0001][ev:overview:0004]`.
@@ -29,12 +35,20 @@ from the `evidence_id` field. Multiple citations are adjacent brackets, e.g. \
 invent an evidence id, never cite a file path or URL directly, never use \
 footnotes, and never cite `search_hints` or `context_artifacts`.
 - Do NOT introduce any identifier (path, symbol, route, env var, command, \
-dependency, version) that does not appear in a cited evidence excerpt or its \
-source metadata. If the evidence does not support a fact, omit the fact.
+dependency, version) unless the full exact token appears verbatim in one cited \
+evidence item's excerpt, `source`, or `provenance` metadata. If the evidence does \
+not support a fact, omit the fact.
 - Never synthesize or expand a file path: do not join a directory and a filename, \
 complete a partial path, or infer a module's full path. Use a path ONLY when that \
 exact string appears in a cited evidence item's `source` or excerpt — otherwise \
 refer to the component by the name the evidence actually provides.
+- Never synthesize fully-qualified names by joining module/package paths, file \
+stems, classes, functions, or methods into a dotted, slashed, or call identifier. \
+Do not turn separate evidence pieces like `pkg/module.py` plus `ClassName` into \
+`pkg.module.ClassName`, `common.metadata_es_filter` plus `MetaFilterTranslator` \
+into `common.metadata_es_filter.MetaFilterTranslator`, or a module plus function \
+into `module.function()`, unless that full exact token appears verbatim in one \
+cited evidence item.
 - Never expand or interpolate shell or environment variables. Copy identifiers \
 exactly; do not compute the result of a variable substitution. If evidence shows \
 `CONF_DIR="/ragflow/conf"` and `CONF_FILE="${CONF_DIR}/service_conf.yaml"`, you may \
@@ -42,10 +56,18 @@ write `CONF_FILE`, `${CONF_FILE}`, or `${CONF_DIR}/service_conf.yaml` — those 
 tokens appear in evidence — but you must NOT write the expanded literal \
 `/ragflow/conf/service_conf.yaml` unless that exact expanded string itself appears \
 in a cited evidence item.
-- Never synthesize or normalize a route: do not add `/api/v1`, remove query \
-parameters, or convert `<param>` to `{param}` unless that exact route string \
-appears in a single cited evidence item's `source` or excerpt. For route evidence, \
-copy only `source.route` or `source.public_route` values verbatim.
+- Never synthesize or normalize a route pattern: do not add or remove prefixes \
+(including `/api`, `/api/v1`, `/api/{api_version}`, or `/{api_version}`), add or \
+remove query parameters/trailing slashes, or convert placeholder syntax such as \
+`<id>`, `{id}`, or `:id` unless that exact complete route string appears verbatim \
+in one cited evidence item. For route evidence, copy only `source.route` or \
+`source.public_route` values verbatim; do not compose a public route from a prefix \
+and a contract route.
+- When evidence is partial or split across items, prefer component-level \
+descriptions or exact quoted tokens over invented identifiers or routes. For \
+example, describe "the metadata filter translator component" or quote \
+`MetaFilterTranslator` only if those exact words/tokens are evidenced and cited; \
+do not invent a longer qualified name to make prose look precise.
 - `exact`/`high` evidence supports definitive statements. `medium` evidence \
 needs careful phrasing. `low` (graph-context) evidence must never be the sole \
 support for a precise claim — pair it with stronger evidence or omit it.
@@ -69,9 +91,13 @@ def _response_contract(section_id: str, title: str, *, covered_topics=None) -> d
                      "repo-specific claim>"),
         "used_evidence_ids": ["ev:" + section_id + ":0001"],
         "self_check": {
+            "valid_json": True,
+            "json_strings_escaped": True,
             "no_uncited_repo_claims": True,
             "no_context_artifact_citations": True,
             "no_placeholders": True,
+            "no_synthesized_identifiers": True,
+            "no_synthesized_routes": True,
         },
     }
     if covered_topics is not None:
@@ -171,13 +197,18 @@ def build_section_prompt(writing_packet) -> str:
 
     parts.append("## Response contract (return EXACTLY this JSON shape)")
     parts.append("")
+    parts.append("The `self_check` booleans are declarations only; downstream ")
+    parts.append("validation independently parses JSON and checks citations, ")
+    parts.append("identifiers, and routes. Do not rely on these booleans to make ")
+    parts.append("invalid output pass.")
+    parts.append("")
     parts.append("```json")
     parts.append(json.dumps(
         _response_contract(sid, wp.title, covered_topics=covered_topics_example),
         indent=2, ensure_ascii=False))
     parts.append("```")
     parts.append("")
-    parts.append("Return only the JSON object.")
+    parts.append("Return only the raw JSON object, with JSON-safe Markdown string escaping.")
     return "\n".join(parts) + "\n"
 
 
@@ -213,6 +244,6 @@ def build_rewrite_prompt(writing_packet, prior_raw: str, problems: list[str]) ->
         prior_raw.strip(),
         "```",
         "",
-        "Return only the corrected JSON object.",
+        "Return only the corrected raw strict JSON object, with JSON-safe Markdown string escaping.",
     ]
     return base + "\n".join(extra) + "\n"

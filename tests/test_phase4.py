@@ -304,6 +304,41 @@ def gated(root, **kw):
     return wbundle.load_and_gate(opts_for(root, **kw))
 
 
+def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
+    """Focused guardrails for the Phase 4 prompt failure classes."""
+    for needle in (
+        # strict JSON / escaping failures observed in generated drafts
+        "one raw strict JSON object",
+        "standard `json.loads` parser can parse",
+        "JSON-safe Markdown string escaping",
+        "the `markdown` value and every other string value",
+        "encode Markdown newlines as `\\n`",
+        "raw unescaped newlines",
+        "raw unescaped double quotes",
+        "Return only the raw JSON object, with JSON-safe Markdown string escaping.",
+        # route normalization/synthesis failures
+        "Never synthesize or normalize a route pattern",
+        "`/api/{api_version}`",
+        "`/{api_version}`",
+        "unless that exact complete route string appears verbatim",
+        "copy only `source.route` or `source.public_route` values verbatim",
+        "do not compose a public route from a prefix",
+        # fully-qualified identifier synthesis failures
+        "Never synthesize fully-qualified names by joining",
+        "`common.metadata_es_filter` plus `MetaFilterTranslator`",
+        "`common.metadata_es_filter.MetaFilterTranslator`",
+        "unless that full exact token appears verbatim",
+        # response-contract self checks; downstream validation remains authoritative
+        '"valid_json": true',
+        '"json_strings_escaped": true',
+        '"no_synthesized_identifiers": true',
+        '"no_synthesized_routes": true',
+        "declarations only",
+        "validation independently parses JSON and checks citations",
+    ):
+        testcase.assertIn(needle, prompt)
+
+
 # ---------------------------------------------------------------------------
 class TmpBundleMixin:
     def fresh(self, **kw):
@@ -698,8 +733,11 @@ class GemAndProviderConfigTests(TmpBundleMixin, unittest.TestCase):
         self.assertEqual(res.status, "prepared")
         pdir = os.path.join(root, "wiki", "audit", "prompts")
         self.assertTrue(os.path.isfile(os.path.join(pdir, "overview.md")))
-        self.assertTrue(os.path.isfile(os.path.join(pdir, "service.md")))
+        service_prompt = os.path.join(pdir, "service.md")
+        self.assertTrue(os.path.isfile(service_prompt))
         self.assertTrue(os.path.isfile(os.path.join(pdir, "README_GEM_HANDOFF.md")))
+        with open(service_prompt, encoding="utf-8") as f:
+            _assert_phase4_prompt_contract(self, f.read())
         # no generation happened
         self.assertFalse(os.path.exists(os.path.join(root, "wiki", "index.md")))
 
@@ -853,6 +891,15 @@ class UnitTests(unittest.TestCase):
                                        expected_section_id="s")
         self.assertTrue(any("section_id" in e for e in errs))
         self.assertTrue(any("markdown" in e for e in errs))
+
+    def test_prompt_contract_rejects_json_and_synthesis_failures(self):
+        from types import SimpleNamespace
+        from wiki_generator.libs.writing.prompt import build_section_prompt
+        wp = SimpleNamespace(
+            section_id="service", title="Service", required_topics_coverage=None,
+            allowed_evidence_ids=["ev:service:0001"],
+            data={"section_id": "service", "evidence": []})
+        _assert_phase4_prompt_contract(self, build_section_prompt(wp))
 
 
 # ---------------------------------------------------------------------------
