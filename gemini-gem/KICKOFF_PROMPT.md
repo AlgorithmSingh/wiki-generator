@@ -81,16 +81,25 @@ Constraints (repeat of the Gem rules, in case they aren't loaded):
   `retrieval_needs.symbols[0]`, `retrieval_needs.files[1]`,
   `retrieval_needs.contracts[0]`, `retrieval_needs.tests[0]`,
   `retrieval_needs.query_packs[0]`) that ground the topic, with `acceptable_lanes[]`
-  including at least one exact lane — plain JSON, not a query. Prefer the canonical
-  `retrieval_needs.*` names; raw `evidence_needs.*` aliases are accepted only as
-  compatibility input that Phase 2 canonicalizes when the exact raw handle resolves,
-  so never name a raw handle you did not also place in `evidence_needs`. A deterministic
-  **Phase 2 gate fails before Phase 3** if any merged required topic lacks a matching
-  object, references a `retrieval_needs` lane that does not exist, or is grounded
-  only on broad recall; Phase 3 then maps required topics to citeable evidence and
-  broad recall is never sufficient. A topic with weak/missing exact evidence fails
-  **before Phase 4**, so only require what you can ground with exact handles, and
-  record unavoidable gaps in `known_gaps[]`.
+  including at least one exact lane **and the lane of every exact source field**
+  (a `files[]` field needs `file_anchor`, `tests[]` needs `test`, etc. — pointing at
+  `retrieval_needs.tests[0]` while `acceptable_lanes` is `["file_anchor"]` is a
+  lane/type mismatch the gate rejects). Each exact file/test source field must also be
+  **citeable** — resolve to a file with real chunk coverage; a path that exists but has
+  no extracted content (a tiny `go.mod`, a `Dockerfile` with no chunks) yields no
+  citeable evidence, so ground the topic on a file with real content (`build.sh`,
+  `docs/develop/build_docker_image.mdx`, `README.md`) instead. Plain JSON, not a query.
+  Prefer the canonical `retrieval_needs.*` names; raw `evidence_needs.*` aliases are
+  accepted only as compatibility input that Phase 2 canonicalizes when the exact raw
+  handle resolves, so never name a raw handle you did not also place in
+  `evidence_needs`. A deterministic **Phase 2 gate fails before Phase 3** if any merged
+  required topic lacks a matching object, references a `retrieval_needs` lane that does
+  not exist, points at an exact lane not in its `acceptable_lanes[]`, resolves to a file
+  the substrate cannot cite, or is grounded only on broad recall; Phase 3 then maps
+  required topics to citeable evidence and broad recall is never sufficient. A topic
+  with weak/missing exact evidence fails **before Phase 4**, so only require what you
+  can ground with exact, lane-matched, citeable handles, and record unavoidable gaps in
+  `known_gaps[]`.
 - Treat `CALLS_APPROX` edges, lexical query hits, the derived OpenAPI contract, and
   the static-only test scan as approximate — any section relying on them must list a
   `verification_needs` entry.

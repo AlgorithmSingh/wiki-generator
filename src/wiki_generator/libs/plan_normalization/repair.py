@@ -206,7 +206,7 @@ def build_repair_user(raw_response_text: str, targets: dict, handles: str,
     return "\n".join(parts)
 
 
-def _enhancement_gates(result: _normalize.Result):
+def _enhancement_gates(result: _normalize.Result, substrate=None):
     """Run the Phase 2 enhancement gates over a normalized result.
 
     Returns ``(problems, obligation_diagnostics, gate_dicts)``:
@@ -218,6 +218,12 @@ def _enhancement_gates(result: _normalize.Result):
       repair model so it can fix exactly the underspecified required topics;
     - ``gate_dicts`` — the machine-readable verdict recorded in the repair audit.
 
+    ``substrate`` is the optional :class:`~coverage.CiteableSubstrate` view; when
+    provided, the topic-obligation gate also rejects lane-incompatible or
+    non-citeable exact source fields (a repair that only fixed the older shape
+    defects but still points a required topic at a non-citeable file or a
+    lane-mismatched source field is rejected here).
+
     Read-only: it never edits/synthesizes/heals the plan. (Lazy import of the
     coverage package mirrors ``writer._coverage_summary_md`` and avoids any import
     cycle at module load.)"""
@@ -227,7 +233,8 @@ def _enhancement_gates(result: _normalize.Result):
     cov_gate = _coverage.gate_plan_coverage(document_plan, sections,
                                             mode=_coverage.MODE_ENHANCEMENT)
     ob_gate = _coverage.gate_topic_obligations(document_plan, sections,
-                                               mode=_coverage.MODE_ENHANCEMENT)
+                                               mode=_coverage.MODE_ENHANCEMENT,
+                                               substrate=substrate)
     problems: list[str] = []
     if not cov_gate.passed:
         missing = ", ".join(cov_gate.report.missing_mandatory) or "(unknown)"
@@ -341,6 +348,11 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
     out_dir = os.path.abspath(os.path.expanduser(out_dir))
     max_attempts = max(1, min(int(max_attempts), MAX_ATTEMPTS_HARD_CAP))
     enhancement = coverage_mode == _coverage.MODE_ENHANCEMENT
+    # Build the citeable-substrate view ONCE (it reads the rag corpus) so every
+    # enhancement-gate evaluation below — acceptance, diagnostics, post-repair
+    # check — judges TER source-field citeability against the same substrate Phase 3
+    # consumes. ``None`` (no corpus) -> the gate runs lane/type + shape only.
+    substrate = _coverage.load_citeable_substrate(bundle_dir) if enhancement else None
 
     text = read_text(raw_path)
     if text is None:
@@ -365,7 +377,7 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
     # fails an enhancement gate is NOT accepted — it requires bounded repair.
     if result is not None and _writer.readiness_pass(result):
         gate_problems, _, gate_dicts = (
-            _enhancement_gates(result) if enhancement else ([], [], None))
+            _enhancement_gates(result, substrate) if enhancement else ([], [], None))
         if not gate_problems:
             _writer.write_all(out_dir, result, strict=False, strict_pass=True)
             return {"repaired": False, "attempts": 0, "readiness_pass": True,
@@ -415,7 +427,7 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
         # underspecified required topics (not merely the old readiness errors).
         ob_diags_fed: list = []
         if enhancement and result is not None:
-            _, ob_diags_fed, _ = _enhancement_gates(result)
+            _, ob_diags_fed, _ = _enhancement_gates(result, substrate)
         user = build_repair_user(current_raw, targets, handles,
                                  last_problems if attempt > 1 else None,
                                  obligation_diagnostics=ob_diags_fed or None)
@@ -467,7 +479,7 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
             # "Enhancement repair contract"). The strict post-repair gate verdict is
             # recorded for the audit either way.
             if enhancement:
-                gate_problems, _, gate_dicts = _enhancement_gates(new_result)
+                gate_problems, _, gate_dicts = _enhancement_gates(new_result, substrate)
                 problems += gate_problems
             # diff/mapping artifact for review (spec acceptance #5).
             new_order = list(new_result.document_plan["section_order"])

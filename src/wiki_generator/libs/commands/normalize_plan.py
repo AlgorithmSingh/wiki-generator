@@ -36,7 +36,7 @@ from .. import plan_normalization
 from ..util import log, write_json, write_text
 
 
-def _run_enhancement_gate(out_dir: str) -> int:
+def _run_enhancement_gate(bundle_dir: str, out_dir: str) -> int:
     """Deterministic Phase 2 → Phase 3 enhancement gates over the just-written plan.
 
     Loads the normalized plan from ``out_dir`` (the exact artifacts Phase 3 reads)
@@ -48,14 +48,21 @@ def _run_enhancement_gate(out_dir: str) -> int:
        normal source-evidence section carry a complete, exact, citeable
        ``topic_evidence_requirements[]`` obligation (so it could become sufficient
        evidence in Phase 3)? Writes ``topic-obligations-gate.json`` +
-       ``topic-obligations-report.md``. This catches the live-run failure pattern —
+       ``topic-obligations-report.md``. This catches the live-run failure patterns —
        required topics merged from ``coverage_requirements[]`` with no matching
-       topic-evidence row, or topics grounded only on broad recall — at the Phase 2
-       boundary instead of after Phase 3 retrieves and fails closed.
+       topic-evidence row, topics grounded only on broad recall, a TER source field
+       whose lane is not in ``acceptable_lanes[]``, or an exact file/test source
+       field that resolves in inventory but has no citeable chunk coverage — at the
+       Phase 2 boundary instead of after Phase 3 retrieves and fails closed.
+
+    The citeable-source-availability part of gate 2 reads the bundle's
+    ``rag/chunks.jsonl`` corpus (the same chunk substrate Phase 3 cites) into a
+    read-only :class:`~coverage.CiteableSubstrate` view. When that corpus is absent,
+    the citeability check is skipped (report-only) and only the plan-only shape +
+    lane/type checks run; the gate logs which mode it used.
 
     Returns ``0`` only when BOTH gates pass; ``COVERAGE_GATE_FAIL_EXIT`` (3) when
-    either fails (a planned-coverage miss, or an underspecified required-topic
-    obligation). Neither gate adds or repairs anything — upstream prevention is by
+    either fails. Neither gate adds or repairs anything — upstream prevention is by
     loud failure, not auto-heal."""
     try:
         document_plan, sections = coverage.load_plan_from_dir(out_dir)
@@ -77,9 +84,16 @@ def _run_enhancement_gate(out_dir: str) -> int:
     log("  planned coverage gate report: "
         f"{os.path.join(out_dir, 'coverage-gate-report.md')}")
 
-    # 2) topic-obligation completeness gate (exact citeable obligation per topic).
+    # 2) topic-obligation completeness gate (exact, lane-acceptable, citeable
+    # obligation per topic). The citeable-substrate view is read from the bundle's
+    # rag corpus; absent corpus -> citeability check skipped (report-only).
+    substrate = coverage.load_citeable_substrate(bundle_dir)
+    if substrate is None:
+        log("  topic-obligation gate: no rag/chunks.jsonl corpus — citeable-source "
+            "viability NOT checked (lane/type + shape checks only)")
     ob_gate = coverage.gate_topic_obligations(document_plan, sections,
-                                              mode=coverage.MODE_ENHANCEMENT)
+                                              mode=coverage.MODE_ENHANCEMENT,
+                                              substrate=substrate)
     write_json(os.path.join(out_dir, "topic-obligations-gate.json"),
                ob_gate.to_dict())
     write_text(os.path.join(out_dir, "topic-obligations-report.md"),
@@ -148,7 +162,7 @@ def run(args: argparse.Namespace) -> int:
     # enhancement runs the deterministic planned coverage gate and fails loudly on a missing family.
     coverage_mode = getattr(args, "coverage_mode", coverage.MODE_BASELINE)
     if coverage_mode == coverage.MODE_ENHANCEMENT:
-        gate_rc = _run_enhancement_gate(out_dir)
+        gate_rc = _run_enhancement_gate(bundle_dir, out_dir)
         # A strict-normalization failure is more fundamental than coverage; report
         # both but let strict (rc=1) take precedence over the coverage code (3).
         if gate_rc != 0 and rc == 0:

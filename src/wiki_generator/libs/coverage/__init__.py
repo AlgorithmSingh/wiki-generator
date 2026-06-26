@@ -39,6 +39,11 @@ from .obligations import (
     gate_topic_obligations,
     render_obligations_markdown,
 )
+from .substrate import (
+    CITEABLE_SUBSTRATE_SCHEMA_VERSION,
+    CiteableSubstrate,
+    load_citeable_substrate,
+)
 from .signals import (
     COVERAGE_SIGNALS_SCHEMA_VERSION,
     DETECTORS,
@@ -78,6 +83,9 @@ __all__ = [
     "evaluate_topic_obligations",
     "gate_topic_obligations",
     "render_obligations_markdown",
+    "CITEABLE_SUBSTRATE_SCHEMA_VERSION",
+    "CiteableSubstrate",
+    "load_citeable_substrate",
     "COVERAGE_SIGNALS_SCHEMA_VERSION",
     "DETECTORS",
     "CoverageSignals",

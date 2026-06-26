@@ -24,15 +24,17 @@ enhancement-mode hierarchical writing + generated-coverage gate
 (`write-wiki --coverage-mode enhancement`), the non-live hierarchical E2E +
 benchmark-only comparison, the Phase 2 required-topic evidence-obligation alignment
 gate, the Phase 2 TER source-field canonicalization + enhancement-repair diagnostics,
-and initial parse-ambiguity repair handling are implemented and tested non-live. The
-latest user-approved live/billed retry at
+initial parse-ambiguity repair handling, and the **Phase 2/3 TER evidence-alignment**
+slice (lane/type consistency + citeable-substrate viability) are implemented and
+tested non-live. The latest user-approved live/billed retry at
 `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-160914`
 passed Phase 2 after bounded repair (`13/13` planned coverage, `59/59` topic
 obligations), retrieved `22/22` Phase 3 packets with `704` evidence items, and then
 failed before Phase 4 because evidenced coverage was `56/59` sufficient, `1` weak,
-and `2` missing. Pending next: non-live upstream Phase 2/3 alignment so TER source
-fields are lane-type-consistent and citeable by the retrieval substrate; no further
-live/billed retry unless the user explicitly approves it.**
+and `2` missing. Those three blockers (non-citeable `go.mod`/`Dockerfile` exact
+lanes, and a `retrieval_needs.tests[0]` source field with `acceptable_lanes`
+`["file_anchor"]`) are now caught at the Phase 2 obligation gate BEFORE Phase 3. No
+further live/billed retry unless the user explicitly approves it.**
 
 ## Why this exists
 
@@ -525,33 +527,58 @@ missing (`bad_underspecified_normalized_plan`). Blocking topics:
   TER pointed at `retrieval_needs.tests[0]` while `acceptable_lanes[]` listed
   `file_anchor`, so the lane/type contract did not yield sufficient exact support.
 
+### Milestone 2 — Phase 2/3 TER evidence-alignment gate (implemented, non-live)
+
+Implemented after the `20260626-160914` live retry exposed three TER source-field
+defect classes that passed the Phase 2 obligation gate but failed Phase 3 evidenced
+coverage. The shared Phase 2 obligation gate now also enforces, in enhancement mode:
+
+- **Lane/type consistency** (`coverage/obligations.py`): for each valid exact
+  `source_fields[]` entry, its lane (`files → file_anchor`, `symbols →
+  symbol_anchor`, `contracts → contract`, `tests → test`, `query_packs →
+  query_pack`) must be in the TER's `acceptable_lanes[]`. A valid exact field whose
+  lane is not accepted (while `acceptable_lanes[]` does contain an exact lane) is
+  blocking with `topic_evidence_requirement_lane_not_acceptable` (the live `testing`
+  blocker — `retrieval_needs.tests[0]` vs `["file_anchor"]`).
+- **Citeable-substrate viability**: new read-only `CiteableSubstrate`
+  (`coverage/substrate.py`, `load_citeable_substrate`) streams `rag/chunks.jsonl`
+  and `rag/spans.jsonl` once into the citeable-path sets. Citeability is
+  lane-specific: `file_anchor` cites via chunk OR span (the file lane uses
+  `overlapping_spans` + `overlapping_chunks` + `file_repr_chunks`, and a Python file
+  always has a `module_header` span), `test` via chunk only (`tests.py` uses only
+  `file_repr_chunks`). A lane-acceptable exact file/test source field not citeable on
+  its lane is blocking with `topic_evidence_requirement_source_not_citeable` (the
+  live `go.mod`/`Dockerfile` blockers — zero chunks and zero spans).
+  `symbol_anchor`/`contract`/`query_pack` citeability is undecidable (tri-state
+  `None`, never a false fail). When the corpus is absent/empty the citeability check
+  is skipped/report-only; the gate records `citeability_checked`.
+- **Wiring**: `normalize-plan --coverage-mode enhancement` builds the substrate from
+  the bundle and passes it (exit `3` before Phase 3 on a defect; baseline
+  unchanged). Bounded `plan-repair --coverage-mode enhancement` builds the substrate
+  once and threads it into every enhancement-gate evaluation, so an old-style repair
+  that still has lane/type or non-citeable defects is rejected, its diagnostics fed
+  into the next attempt, and after the cap it fails loudly.
+- **Prompts**: `plan.py`, `gemini-gem/GEM_INSTRUCTIONS.md`, `KICKOFF_PROMPT.md` now
+  explain lane/type matching and the citeable-exact-handle requirement.
+- **Tests**: `tests/test_phase2_obligation_gate.py` adds lane/type units,
+  citeability units + substrate-loader, an integrated `normalize-plan`-with-corpus
+  suite, and a live-style 3-blocker bounded-repair E2E (fake client: fails
+  pre-Phase3, then passes after pointing topics at lane-compatible citeable fields;
+  rejects an old-style repair; baseline non-breaking).
+
+Phase 3 evidenced coverage and Phase 4 generated coverage are **unchanged** and
+remain strict (no synthetic evidence, no fuzzy matching, no healing loop, no
+required→optional downgrade, no `--force`/product `--section`). No
+Vertex/Gemini/API/network; protected Phase 3 spec unchanged; baseline non-breaking.
+
 ### Remaining Milestone 2 work — active pending backlog
 
-Default remains **no live retry**. The next remaining work is the non-live **Phase
-2/3 TER evidence-alignment** slice now specified in the active spec. The target
-artifact is an enhancement-mode Phase 2/3 boundary where a TER source field cannot
-pass Phase 2 unless it is both lane-type-consistent with `acceptable_lanes[]` and
-citeable by the retrieval substrate that Phase 3 consumes.
-
-Required next-slice behavior:
-
-- `retrieval_needs.tests[0]` with `acceptable_lanes:["file_anchor"]` must fail before
-  Phase 3 with an actionable lane/type diagnostic; `acceptable_lanes:["test"]` should
-  remain valid when the test lane is citeable.
-- exact file source fields that resolve in inventory but have no citeable
-  `rag/chunks.jsonl`/retrieval-substrate coverage must fail before Phase 3 in
-  enhancement mode, or the deterministic retrieval substrate must be improved so they
-  are citeable.
-- bounded `plan-repair --coverage-mode enhancement` must audit/feed these diagnostics
-  and reject old-style repairs that still contain lane/type or non-citeable exact
-  source-field defects.
-- a fixture reproducing the three `20260626-160914` blockers must fail pre-Phase3
-  before repair and pass after fake-client repair points topics at lane-compatible,
-  citeable exact source fields.
-
-Do not synthesize evidence, downgrade required topics, weaken validators, add a
-generic healing loop, add `--force`/product `--section`, or rerun live without
-explicit user approval.
+Default remains **no live retry**. With the three `20260626-160914` blocker classes
+now caught upstream at the Phase 2 obligation gate, the next step is a user-approved
+live/billed RAGFlow retry against the stricter gate (only on explicit approval). Do
+not synthesize evidence, downgrade required topics, weaken validators, add a generic
+healing loop, add `--force`/product `--section`, or rerun live without explicit user
+approval.
 
 ### Completed-slice acceptance summary — Phase 3 evidenced coverage
 

@@ -121,14 +121,25 @@ as compatibility input: Phase 2 canonicalizes them to retrieval_needs.* ONLY whe
 that exact raw handle resolves to a normalized lane, otherwise the topic fails the \
 gate — so never use a raw alias for a handle you did not also place in evidence_needs. \
 acceptable_lanes[] must include \
-at least one exact lane (file_anchor/symbol_anchor/contract/test/query_pack). This is \
+at least one exact lane (file_anchor/symbol_anchor/contract/test/query_pack), AND it \
+MUST contain the lane of each exact source_field you list: a files[] source field \
+needs file_anchor, symbols[] needs symbol_anchor, contracts[] needs contract, tests[] \
+needs test, query_packs[] needs query_pack. Pointing a source_field at \
+retrieval_needs.tests[0] while acceptable_lanes is ["file_anchor"] is a lane/type \
+mismatch the gate rejects — match the lane to the source field. Also, an exact \
+file/test source_field must be CITEABLE: it must resolve to a file the retrieval \
+substrate has chunked. A path that exists in the repo but has no extracted content \
+(e.g. a tiny go.mod or a Dockerfile with no chunk coverage) produces no citeable \
+evidence; do not ground a required topic on it — choose a file with real content \
+(e.g. build.sh, docs/develop/build_docker_image.mdx, README.md) instead. This is \
 plain JSON, not a DSL. A coverage-enhanced run now runs a deterministic Phase 2 gate \
 that fails loudly BEFORE Phase 3 if any merged required topic lacks a matching object, \
-points at a retrieval_needs lane that does not exist, or is grounded only on broad \
-recall (bm25/vector/graph_neighbors/search_hints); Phase 3 then maps each topic to \
-citeable evidence and broad recall can never make a topic sufficient. So only require \
-a topic you can ground with exact handles, and record an unavoidable gap in \
-known_gaps[] instead of over-requiring."""
+points at a retrieval_needs lane that does not exist, points at an exact lane not in \
+its acceptable_lanes[], resolves to a file the substrate cannot cite, or is grounded \
+only on broad recall (bm25/vector/graph_neighbors/search_hints); Phase 3 then maps \
+each topic to citeable evidence and broad recall can never make a topic sufficient. \
+So only require a topic you can ground with exact, lane-matched, citeable handles, and \
+record an unavoidable gap in known_gaps[] instead of over-requiring."""
 
 _DEFAULT_KICKOFF = """You are planning the DeepWiki for the repository summarized \
 in the attached Phase 1 decomposition digest. Work only from the attached upload. \

@@ -8,15 +8,38 @@ purely from the **normalized plan** and **before Phase 3 retrieval runs**:
     the plan already carry a complete, exact, citeable evidence obligation that
     Phase 3 could actually satisfy?
 
+Three independent defect classes make a required topic's obligation incomplete:
+
+1. **Shape** — the topic has a matching ``topic_evidence_requirements[]`` row with
+   ``required:true``, non-empty ``source_fields[]`` referencing real
+   ``retrieval_needs.*`` entries, at least one exact citeable lane, and
+   ``acceptable_lanes[]`` that include an exact lane (purely from the plan).
+2. **Lane/type consistency** — a valid exact ``source_fields[]`` entry's lane
+   (``files → file_anchor`` …) must be present in the topic's ``acceptable_lanes[]``;
+   otherwise Phase 3 would never count it. The live ``testing`` blocker pointed at
+   ``retrieval_needs.tests[0]`` while ``acceptable_lanes`` listed only
+   ``file_anchor``, so Phase 3 marked it weak after the producer gate had marked it
+   complete.
+3. **Citeable-substrate viability** — a valid, lane-acceptable exact file/test
+   source field must resolve to a handle the retrieval substrate can actually cite:
+   for ``file_anchor`` a path with a chunk OR span, for ``test`` a path with a
+   chunk (mirroring what ``evidence/lanes/files.py`` and ``tests.py`` draw from).
+   The live ``go.mod`` / ``Dockerfile`` blockers resolved in inventory but had
+   **zero** chunks/spans, so Phase 3 produced no citeable evidence. This check needs
+   the optional :class:`~.substrate.CiteableSubstrate` view; without it the
+   citeability check is skipped (report-only), but the shape and lane/type checks
+   are plan-only.
+
 It exists because the live RAGFlow enhancement run reached Phase 3 with 67 of 112
 required topics having **no matching** ``topic_evidence_requirements[]`` row (the
 planner authored ``coverage_requirements[]`` that normalization merges into
 ``required_topics[]``, but only authored topic-evidence rows for the originally
-authored ``required_topics[]``), plus other topics mapped only to broad recall.
-Those defects are deterministic plan-shape defects: they are visible in the plan
-itself, with no evidence retrieved. Catching them here fails the pipeline at the
-Phase 2 → Phase 3 boundary with an actionable diagnostic instead of letting it run
-23 packets / 707 evidence items and fail closed downstream.
+authored ``required_topics[]``), plus other topics mapped only to broad recall, and
+a later run reached Phase 3 with lane-incompatible or non-citeable exact source
+fields. Those defects are deterministic plan/substrate defects: they are visible
+before retrieval. Catching them here fails the pipeline at the Phase 2 → Phase 3
+boundary with an actionable diagnostic instead of letting it run 22 packets / 704
+evidence items and fail closed downstream.
 
 This is **upstream prevention by loud failure**, not a healing loop. The evaluator
 is LLM-free, network-free, read-only: it never edits the plan, never synthesizes a
@@ -39,6 +62,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..context_docs import is_provenance_section
+from .substrate import CiteableSubstrate
 from .validate import (
     COVERAGE_GATE_FAIL_EXIT,
     COVERAGE_GATE_PASS_EXIT,
@@ -83,6 +107,12 @@ CODE_INVALID_SOURCE_FIELD = "topic_evidence_requirement_invalid_source_field"
 CODE_RAW_ALIAS_SOURCE_FIELD = "topic_evidence_requirement_raw_alias_source_field"
 CODE_BROAD_ONLY_SOURCE_FIELDS = "topic_evidence_requirement_broad_only_source_fields"
 CODE_BROAD_ONLY_ACCEPTABLE_LANES = "topic_evidence_requirement_broad_only_acceptable_lanes"
+# A valid exact source field whose lane is not in acceptable_lanes[] (which do list
+# an exact lane): Phase 3 would not count it. The live `testing` blocker.
+CODE_LANE_NOT_ACCEPTABLE = "topic_evidence_requirement_lane_not_acceptable"
+# A valid, lane-acceptable exact file/test source field whose handle the retrieval
+# substrate cannot cite (no chunk coverage). The live go.mod / Dockerfile blockers.
+CODE_SOURCE_NOT_CITEABLE = "topic_evidence_requirement_source_not_citeable"
 
 
 # --- shared source-field grammar / topic enumeration --------------------------
@@ -112,6 +142,46 @@ def field_index_valid(section: dict, field_name: str, idx: int) -> bool:
         return False
     items = (section.get("retrieval_needs") or {}).get(field_name)
     return isinstance(items, list) and 0 <= idx < len(items)
+
+
+def resolve_source_handle(section: dict, field_name: str, idx: int):
+    """The concrete handle a valid exact source field points at, read straight from
+    the normalized plan: the resolved ``path`` for ``files``/``tests``, the resolved
+    ``symbol_id`` for ``symbols``, else the requested input. ``None`` when out of
+    range. This is the handle the citeability check tests against the substrate."""
+    items = (section.get("retrieval_needs") or {}).get(field_name)
+    if not (isinstance(items, list) and 0 <= idx < len(items)):
+        return None
+    item = items[idx]
+    if not isinstance(item, dict):
+        return None
+    if field_name in ("files", "tests"):
+        return item.get("path")
+    if field_name == "symbols":
+        return item.get("symbol_id")
+    if field_name == "contracts":
+        return item.get("operation") or item.get("input")
+    return item.get("input")
+
+
+def citeable_handle(substrate, lane, handle):
+    """Tri-state citeability of an exact handle against the retrieval substrate.
+
+    ``True``/``False`` when decidable; ``None`` when undecidable. Decidable only for
+    the path-backed lanes, and lane-specifically (mirroring what each evidence lane
+    draws from): ``file_anchor`` cites via chunk OR span (``cites_file``), ``test``
+    via chunk only (``cites_test``). A path-backed field with no resolved handle is
+    ``False`` (a fileless handle can never be cited). ``None`` for no/unavailable
+    substrate or a lane this view does not model (symbol/contract/query_pack — a
+    resolved symbol always yields at least its own span), so those never yield a
+    false non-citeable failure."""
+    if substrate is None or not getattr(substrate, "available", False):
+        return None
+    if lane == "file_anchor":
+        return substrate.cites_file(handle)   # cites_file(None) -> False
+    if lane == "test":
+        return substrate.cites_test(handle)   # cites_test(None) -> False
+    return None
 
 
 def enumerate_section_topics(section: dict):
@@ -210,6 +280,11 @@ class ObligationReport:
     complete_count: int
     incomplete_count: int
     not_applicable_count: int
+    # Whether the citeable-substrate viability check actually ran (a real chunk
+    # corpus was available). When False, only the plan-only shape and lane/type
+    # checks ran; the citeability check was report-only/skipped, not "all citeable".
+    citeability_checked: bool = False
+    citeable_path_count: int = 0
     blocking_sections: list = field(default_factory=list)
     diagnostics: list = field(default_factory=list)      # actionable dicts
     sections: list = field(default_factory=list)         # SectionObligations
@@ -219,6 +294,8 @@ class ObligationReport:
             "schema_version": self.schema_version, "mode": self.mode,
             "status": self.status, "enforced": self.enforced,
             "failure_category": self.failure_category,
+            "citeability_checked": self.citeability_checked,
+            "citeable_path_count": self.citeable_path_count,
             "counts": {
                 "sections": self.section_count,
                 "required_topics": self.required_topic_count,
@@ -233,12 +310,18 @@ class ObligationReport:
 
 
 # --- per-source-field + per-topic evaluation ----------------------------------
-def _classify_source_field(section: dict, source_field: str) -> dict:
-    """Classify one ``source_fields[]`` entry against the normalized plan shape.
+def _classify_source_field(section: dict, source_field: str, acceptable: list,
+                           substrate) -> dict:
+    """Classify one ``source_fields[]`` entry against the normalized plan and (when
+    available) the retrieval substrate.
 
     ``valid`` means it references a real ``retrieval_needs.*`` entry; ``exact`` means
-    that entry is a citeable exact lane. The two booleans drive every obligation
-    defect: a topic needs at least one ``valid and exact`` source field.
+    that entry is a citeable exact lane. For a ``valid and exact`` field we also
+    decide ``lane_acceptable`` (its lane is in the topic's ``acceptable_lanes[]``,
+    so Phase 3 would count it) and ``citeable`` (tri-state — the substrate can cite
+    the resolved ``handle``). These three drive every obligation defect: a topic
+    needs at least one source field that is valid, exact, lane-acceptable, and not
+    proven non-citeable.
 
     A ``raw_alias`` is a leftover ``evidence_needs.*`` planner alias that Phase 2
     normalization could NOT canonicalize to a normalized ``retrieval_needs.*`` lane
@@ -261,14 +344,24 @@ def _classify_source_field(section: dict, source_field: str) -> dict:
         lane, kind = None, "unknown"
         valid = False
         exact = False
+
+    # lane/type consistency + citeable-substrate viability are only meaningful for a
+    # source field that already references a real exact lane.
+    lane_acceptable = bool(valid and exact and lane in acceptable)
+    handle = resolve_source_handle(section, field_name, idx) if (valid and exact) else None
+    citeable = citeable_handle(substrate, lane, handle) if (valid and exact) else None
     return {
         "source_field": source_field, "field": field_name, "index": idx,
         "lane": lane, "kind": kind, "valid": valid, "exact": exact,
+        "lane_acceptable": lane_acceptable, "handle": handle, "citeable": citeable,
     }
 
 
-def _remediation(topic: str, defects: list) -> str:
+def _remediation(topic: str, defects: list, sf_results: list | None = None,
+                 acceptable: list | None = None) -> str:
     """One actionable remediation line for the worst defect on a topic."""
+    sf_results = sf_results or []
+    acceptable = acceptable or []
     if CODE_MISSING_TER in defects:
         return (f"add a topic_evidence_requirements[] row for required topic "
                 f"'{topic}' (required:true) whose source_fields[] point at the exact "
@@ -300,6 +393,28 @@ def _remediation(topic: str, defects: list) -> str:
                 f"(search_hints/graph_nodes); add at least one exact source_field "
                 f"(files/symbols/contracts/tests/query_packs) that resolves to "
                 f"citeable evidence. Broad recall is never sufficient.")
+    if CODE_LANE_NOT_ACCEPTABLE in defects:
+        bad = [r for r in sf_results
+               if r.get("valid") and r.get("exact") and not r.get("lane_acceptable")]
+        pairs = ", ".join(f"{r['source_field']} (lane {r['lane']})" for r in bad) or "(none)"
+        return (f"'{topic}' exact source field(s) {pairs} point at a lane not in "
+                f"acceptable_lanes[]={sorted(acceptable)}; Phase 3 only counts a "
+                f"source field whose lane is in acceptable_lanes[]. Either add that "
+                f"lane to acceptable_lanes[], or point source_fields[] at an exact "
+                f"retrieval_needs.* lane (files/symbols/contracts/tests/query_packs) "
+                f"that IS acceptable.")
+    if CODE_SOURCE_NOT_CITEABLE in defects:
+        bad = [r for r in sf_results
+               if r.get("valid") and r.get("exact") and r.get("lane_acceptable")
+               and r.get("citeable") is False]
+        pairs = ", ".join(f"{r['source_field']} -> {r['handle']!r}" for r in bad) or "(none)"
+        return (f"'{topic}' exact source field(s) {pairs} resolve to a handle the "
+                f"retrieval substrate cannot cite (no chunk coverage in "
+                f"rag/chunks.jsonl), so Phase 3 would retrieve no citeable evidence "
+                f"for this topic. Point source_fields[] at an exact retrieval_needs.* "
+                f"lane whose handle has citeable chunk coverage, or improve Phase 1 "
+                f"decomposition/indexing so that file is chunked. Do NOT synthesize "
+                f"evidence in Phase 3.")
     if CODE_BROAD_ONLY_ACCEPTABLE_LANES in defects:
         return (f"'{topic}' acceptable_lanes[] contains no exact citeable lane "
                 f"(file_anchor/symbol_anchor/contract/test/query_pack); broad-only "
@@ -308,7 +423,7 @@ def _remediation(topic: str, defects: list) -> str:
 
 
 def _eval_topic(section: dict, topic: str, ter: dict | None, required: bool,
-                provenance: bool) -> TopicObligation:
+                provenance: bool, substrate) -> TopicObligation:
     if provenance:
         return TopicObligation(topic=topic, required=required,
                                status=STATUS_NOT_APPLICABLE)
@@ -322,8 +437,9 @@ def _eval_topic(section: dict, topic: str, ter: dict | None, required: bool,
             defects=defects, remediation=_remediation(topic, defects))
 
     source_fields = list(ter.get("source_fields") or [])
-    sf_results = [_classify_source_field(section, sf) for sf in source_fields]
     acceptable = list(ter.get("acceptable_lanes") or sorted(EXACT_LANES))
+    sf_results = [_classify_source_field(section, sf, acceptable, substrate)
+                  for sf in source_fields]
 
     if not required:
         # An extra topic_evidence_requirements[] row not marked required and not in
@@ -336,6 +452,15 @@ def _eval_topic(section: dict, topic: str, ter: dict | None, required: bool,
     has_invalid = any(not r["valid"] for r in sf_results)
     has_raw_alias = any(r["kind"] == "raw_alias" for r in sf_results)
     has_valid_exact = any(r["valid"] and r["exact"] for r in sf_results)
+    # exact source fields whose lane Phase 3 would actually count for this topic.
+    acceptable_exact = [r for r in sf_results
+                        if r["valid"] and r["exact"] and r["lane_acceptable"]]
+    has_acceptable_exact = bool(acceptable_exact)
+    has_exact_in_acceptable = bool(set(acceptable) & EXACT_LANES)
+    # a lane-acceptable exact field grounds the topic UNLESS the substrate proved its
+    # handle non-citeable (``citeable is False``). ``None`` (undecidable) stays
+    # groundable, so symbols/contracts/query packs and the no-corpus case never fail.
+    has_citeable_grounding = any(r["citeable"] is not False for r in acceptable_exact)
 
     defects: list = []
     if required and not bool(ter.get("required", True)):
@@ -349,39 +474,47 @@ def _eval_topic(section: dict, topic: str, ter: dict | None, required: bool,
             # a more specific subclass of "invalid": a raw evidence_needs.* alias that
             # normalization could not canonicalize (the raw item did not survive).
             defects.append(CODE_RAW_ALIAS_SOURCE_FIELD)
-        if not has_valid_exact and not has_invalid:
-            # source fields present and all reference real entries, but none is an
-            # exact citeable lane -> grounded only on broad recall.
+        if not has_valid_exact:
+            # no exact lane at all (only broad recall, or all references invalid):
+            # the topic has nothing exact to ground it -> blocking.
             defects.append(CODE_BROAD_ONLY_SOURCE_FIELDS)
-        elif not has_valid_exact:
-            # all source fields were invalid references; INVALID already flagged but
-            # the topic still has no exact lane to ground it -> keep it blocking with
-            # the broad-only-source-fields signal so the count of "ungroundable"
-            # topics is explicit.
-            defects.append(CODE_BROAD_ONLY_SOURCE_FIELDS)
-    if not (set(acceptable) & EXACT_LANES):
+        elif not has_acceptable_exact and has_exact_in_acceptable:
+            # a valid exact source field exists, but its lane is not among the topic's
+            # acceptable_lanes[] (which DO list an exact lane), so Phase 3 would never
+            # count it -> lane/type mismatch (the live `testing` blocker).
+            defects.append(CODE_LANE_NOT_ACCEPTABLE)
+        elif has_acceptable_exact and not has_citeable_grounding:
+            # the lane-acceptable exact field(s) all resolve to handles the retrieval
+            # substrate cannot cite -> Phase 3 would retrieve nothing citeable (the
+            # live go.mod / Dockerfile blockers).
+            defects.append(CODE_SOURCE_NOT_CITEABLE)
+    if not has_exact_in_acceptable:
         defects.append(CODE_BROAD_ONLY_ACCEPTABLE_LANES)
 
-    if defects:
-        status = STATUS_INCOMPLETE
-    elif not required:
-        status = STATUS_OPTIONAL
-    else:
-        status = STATUS_OK
+    status = STATUS_INCOMPLETE if defects else STATUS_OK
     return TopicObligation(
         topic=topic, required=required, status=status, defects=defects,
         source_fields=source_fields, source_field_results=sf_results,
-        acceptable_lanes=acceptable, remediation=_remediation(topic, defects))
+        acceptable_lanes=acceptable,
+        remediation=_remediation(topic, defects, sf_results, acceptable))
 
 
 def evaluate_topic_obligations(document_plan: dict | None, sections: list, *,
-                               mode: str = MODE_ENHANCEMENT) -> ObligationReport:
+                               mode: str = MODE_ENHANCEMENT,
+                               substrate: CiteableSubstrate | None = None
+                               ) -> ObligationReport:
     """Evaluate every normalized required topic's evidence obligation completeness.
 
     Deterministic and read-only. In ``enhancement`` mode a required topic in a
     normal source-evidence section with any blocking defect makes the section (and
     the run) fail before Phase 3; ``baseline`` mode reports the same matrix without
     gating.
+
+    ``substrate`` is the optional :class:`~.substrate.CiteableSubstrate` view. When
+    provided, the citeable-source-availability check runs (an exact file/test source
+    field whose resolved path has no chunk coverage is blocking); when ``None`` that
+    check is skipped (report-only) and only the plan-only shape + lane/type checks
+    run.
 
     Raises ``ValueError`` for an unknown mode or a non-list ``sections`` (mirrors
     :func:`.validate.evaluate_plan_coverage`)."""
@@ -391,6 +524,7 @@ def evaluate_topic_obligations(document_plan: dict | None, sections: list, *,
         raise ValueError("sections must be a list of normalized section-plan dicts")
 
     enforced = mode == MODE_ENHANCEMENT
+    citeability_checked = substrate is not None and getattr(substrate, "available", False)
     section_rows: list = []
     diagnostics: list = []
     blocking_sids: list = []
@@ -402,7 +536,7 @@ def evaluate_topic_obligations(document_plan: dict | None, sections: list, *,
         topic_rows: list = []
         section_blocking = False
         for topic, ter, required in enumerate_section_topics(section):
-            row = _eval_topic(section, topic, ter, required, provenance)
+            row = _eval_topic(section, topic, ter, required, provenance, substrate)
             topic_rows.append(row)
             if row.status == STATUS_NOT_APPLICABLE:
                 not_applicable += 1
@@ -439,6 +573,9 @@ def evaluate_topic_obligations(document_plan: dict | None, sections: list, *,
         schema_version=TOPIC_OBLIGATIONS_SCHEMA_VERSION, mode=mode,
         status="fail" if enforced_blocking else "pass", enforced=enforced,
         failure_category=FAILURE_CATEGORY if enforced_blocking else None,
+        citeability_checked=citeability_checked,
+        citeable_path_count=(substrate.citeable_path_count if citeability_checked
+                             else 0),
         section_count=len(section_rows), required_topic_count=required_total,
         complete_count=complete, incomplete_count=incomplete,
         not_applicable_count=not_applicable,
@@ -466,9 +603,14 @@ class ObligationGate:
     def summary_lines(self) -> list:
         """Loud, actionable one-liners naming each blocking topic + remediation."""
         r = self.report
+        cite = (f"citeable-substrate viability CHECKED against "
+                f"{r.citeable_path_count} citeable path(s)" if r.citeability_checked
+                else "citeable-substrate viability NOT checked (no rag/chunks.jsonl "
+                     "corpus available) — lane/type + shape checks only")
         lines = [
             f"topic-obligation gate: mode={r.mode} "
             f"({'enforced' if r.enforced else 'report-only'})",
+            f"topic-obligation gate: {cite}",
             f"topic-obligation gate: {r.complete_count}/{r.required_topic_count} "
             f"required topic(s) carry a complete exact citeable evidence obligation "
             f"across {r.section_count} section(s)",
@@ -493,13 +635,17 @@ class ObligationGate:
 
 
 def gate_topic_obligations(document_plan: dict | None, sections: list, *,
-                           mode: str = MODE_ENHANCEMENT) -> ObligationGate:
+                           mode: str = MODE_ENHANCEMENT,
+                           substrate: CiteableSubstrate | None = None
+                           ) -> ObligationGate:
     """Evaluate ``sections`` and map the verdict to an :class:`ObligationGate`.
 
     In ``enhancement`` mode any blocking obligation defect yields
     ``passed == False`` / ``exit_code == 3``; ``baseline`` mode always passes
-    (report-only). It never mutates the plan."""
-    report = evaluate_topic_obligations(document_plan, sections, mode=mode)
+    (report-only). ``substrate`` enables the citeable-source-availability check (see
+    :func:`evaluate_topic_obligations`). It never mutates the plan."""
+    report = evaluate_topic_obligations(document_plan, sections, mode=mode,
+                                        substrate=substrate)
     passed = report.status == "pass"
     return ObligationGate(
         report=report, passed=passed,
@@ -520,12 +666,16 @@ def render_obligations_markdown(report: ObligationReport, *,
         f"- Required topics with a complete exact obligation: "
         f"{report.complete_count}/{report.required_topic_count}",
         f"- Sections: {report.section_count}",
+        f"- Citeable-substrate viability: "
+        + (f"**checked** ({report.citeable_path_count} citeable path(s))"
+           if report.citeability_checked
+           else "not checked (no rag/chunks.jsonl corpus; lane/type + shape only)"),
         "",
         "> Each normalized required topic in a normal source-evidence section must",
         "> carry a topic_evidence_requirements[] row with required:true, non-empty",
         "> source_fields[] referencing real retrieval_needs.* entries, at least one",
-        "> exact citeable lane (file_anchor/symbol_anchor/contract/test/query_pack),",
-        "> and acceptable_lanes[] that include an exact lane. Broad recall",
+        "> exact lane that is BOTH in acceptable_lanes[] AND citeable by the retrieval",
+        "> substrate (a file/test path with chunk coverage). Broad recall",
         "> (bm25/vector/graph_neighbors/search_hints) is supporting context only.",
         "",
     ]

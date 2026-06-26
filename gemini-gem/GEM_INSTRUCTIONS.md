@@ -228,15 +228,26 @@ Rules for `section-plans.jsonl`:
   resolves to a normalized lane, otherwise the topic fails the gate; never name a raw
   handle you did not also place in `evidence_needs`. `acceptable_lanes[]` must include
   at least one exact lane
-  (`file_anchor`/`symbol_anchor`/`contract`/`test`/`query_pack`). A coverage-enhanced
+  (`file_anchor`/`symbol_anchor`/`contract`/`test`/`query_pack`) **AND must contain
+  the lane of every exact `source_fields[]` entry** — a `files[]` field needs
+  `file_anchor`, `symbols[]` needs `symbol_anchor`, `contracts[]` needs `contract`,
+  `tests[]` needs `test`, `query_packs[]` needs `query_pack`. Pointing a source field
+  at `retrieval_needs.tests[0]` while `acceptable_lanes` is `["file_anchor"]` is a
+  lane/type mismatch the gate rejects. Each exact file/test source field must also be
+  **citeable**: it must resolve to a file the retrieval substrate has chunked. A path
+  that exists in the repo but has no chunk coverage (e.g. a tiny `go.mod`, or a
+  `Dockerfile` with no extracted content) yields no citeable evidence — ground the
+  topic on a file that has real content (e.g. `build.sh`,
+  `docs/develop/build_docker_image.mdx`, `README.md`) instead. A coverage-enhanced
   run runs a deterministic **Phase 2 gate** that fails loudly **before Phase 3** if
   any merged required topic lacks a matching object, points at a `retrieval_needs`
-  lane that does not exist, or is grounded only on broad recall
+  lane that does not exist, points at an exact lane not in its `acceptable_lanes[]`,
+  resolves to a file the substrate cannot cite, or is grounded only on broad recall
   (`bm25`/`vector`/`graph_neighbors`/`search_hints`); Phase 3 then maps each topic to
   citeable evidence IDs and broad recall can never make a topic sufficient. A topic
   with weak/missing exact evidence fails **before Phase 4**, so only require a topic
-  you can ground with exact handles; record an unavoidable gap in `known_gaps[]`
-  instead of over-requiring.
+  you can ground with exact, lane-matched, citeable handles; record an unavoidable gap
+  in `known_gaps[]` instead of over-requiring.
 - Exact lanes (`symbol_ids`, `file_anchors`, `contracts`, `tests`, `graph_nodes`)
   hold **only exact handles**. If you cannot name one, move the request to
   `search_hints[]` — do not put `retrieve: <query>`, globs, display labels, or

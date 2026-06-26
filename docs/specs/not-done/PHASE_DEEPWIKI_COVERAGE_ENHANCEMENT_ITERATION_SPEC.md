@@ -8,21 +8,28 @@ deterministic coverage-signal expansion, the Phase 2 enhancement-mode
 planned-coverage upstream-prevention gate, the Phase 3 evidenced-coverage gate,
 the Phase 4 enhancement-mode hierarchical writing + generated-coverage gate, the
 non-live hierarchical E2E + benchmark-only comparison, the Phase 2 required-topic
-evidence-obligation alignment gate, and the Phase 2 TER source-field
-canonicalization + enhancement-repair diagnostics are implemented and tested
-non-live. The latest user-approved live/billed RAGFlow retry at
+evidence-obligation alignment gate, the Phase 2 TER source-field
+canonicalization + enhancement-repair diagnostics, and the **Phase 2/3 TER
+evidence-alignment** slice (lane/type consistency + citeable-substrate viability)
+are implemented and tested non-live. The latest user-approved live/billed RAGFlow
+retry at
 `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-160914`
 ran against `f1fae66`: Phase 2 bounded repair succeeded, planned coverage passed
 `13/13`, and topic obligations passed `59/59`. Phase 3 retrieved `22/22` packets
 and `704` evidence items, then correctly failed before Phase 4 because evidenced
-coverage was `56/59` sufficient, `1` weak, and `2` missing. Blocking topics are
+coverage was `56/59` sufficient, `1` weak, and `2` missing. Blocking topics were
 Go build process (`go.mod` exact lane had no citeable evidence while `build.sh`
 evidence existed), Docker image build instructions (`Dockerfile` exact lane had no
 citeable evidence while `docs/develop/build_docker_image.mdx`/`README.md` evidence
 existed), and where to add new tests (TER used `retrieval_needs.tests[0]` but
-`acceptable_lanes[]` listed `file_anchor`). Pending next: non-live upstream Phase
-2/3 alignment so TER source fields are lane-type-consistent with
-`acceptable_lanes[]` and citeable by the retrieval substrate. No further live/billed
+`acceptable_lanes[]` listed `file_anchor`). The Phase 2 topic-obligation gate now
+catches all three classes BEFORE Phase 3: each required topic's valid exact source
+field lane must be in `acceptable_lanes[]`, and — when a `CiteableSubstrate` view of
+`rag/chunks.jsonl` is available — the resolved file/test handle must have citeable
+chunk coverage; `normalize-plan` and bounded `plan-repair --coverage-mode
+enhancement` both surface/feed the new
+`topic_evidence_requirement_lane_not_acceptable` /
+`topic_evidence_requirement_source_not_citeable` diagnostics. No further live/billed
 retry unless the user explicitly approves it.**
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
@@ -458,7 +465,55 @@ This slice is accepted when non-live artifacts/tests prove:
 - `git diff --check`, protected-spec diff check, focused tests, and the full suite
   pass with `uv run python -m pytest -q`.
 
-## Phase 2/3 TER Evidence-Alignment — next non-live slice
+## Phase 2/3 TER Evidence-Alignment — implemented non-live slice
+
+### Implemented (non-live)
+
+This slice is implemented and tested non-live. The shared Phase 2 topic-obligation
+gate (`coverage/obligations.py`, consumed by `normalize-plan` and bounded
+`plan-repair`) now enforces, in enhancement mode, two additional defect classes per
+required topic on top of the existing shape checks:
+
+- **Lane/type consistency** — for each valid exact `source_fields[]` entry, its lane
+  (`files → file_anchor`, `symbols → symbol_anchor`, `contracts → contract`,
+  `tests → test`, `query_packs → query_pack`) must be present in the TER's
+  `acceptable_lanes[]`. If no valid exact source field is both present and acceptable
+  (while `acceptable_lanes[]` does contain an exact lane), the topic is incomplete
+  with `topic_evidence_requirement_lane_not_acceptable`. This catches the live
+  `testing` blocker (`retrieval_needs.tests[0]` vs `acceptable_lanes:["file_anchor"]`).
+- **Citeable-substrate viability** — a new read-only `CiteableSubstrate`
+  (`coverage/substrate.py`) streams `rag/chunks.jsonl` and `rag/spans.jsonl` once
+  into the set of citeable repo paths. Citeability is lane-specific, mirroring what
+  the evidence lanes draw from: `file_anchor` cites a path via a chunk OR a span
+  (`evidence/lanes/files.py` emits `overlapping_spans` + `overlapping_chunks` +
+  `file_repr_chunks`; note `lanes/rag.py` always emits a `module_header` span for a
+  Python file even when the chunker produced no chunk), and `test` cites via a chunk
+  only (`tests.py` uses only `file_repr_chunks`). A lane-acceptable exact file/test
+  source field whose resolved path is not citeable on its lane is incomplete with
+  `topic_evidence_requirement_source_not_citeable`. This catches the live `go.mod` /
+  `Dockerfile` blockers (resolved in inventory, zero chunks and zero spans, since for
+  non-Python files spans are derived from chunks). `symbol_anchor` / `contract` /
+  `query_pack` citeability is left undecidable (tri-state `None`, treated as "not
+  proven non-citeable"), so those lanes never produce a false citeability failure.
+  When the corpus is absent or empty the citeability check is skipped (report-only);
+  the gate records `citeability_checked` either way.
+
+`normalize-plan --coverage-mode enhancement` builds the substrate from the bundle and
+passes it to the gate (exit `3` before Phase 3 on a lane/type or citeability defect;
+baseline unchanged). Bounded `plan-repair --coverage-mode enhancement` builds the
+substrate once and threads it into every enhancement-gate evaluation, so a repair
+that only fixes the older shape defects but still points a required topic at a
+non-citeable file or a lane-mismatched source field is **rejected**, its diagnostics
+fed into the next attempt, and after the hard cap it fails loudly. Phase 3 evidenced
+coverage and Phase 4 generated coverage are unchanged and remain strict — the fix is
+purely upstream prevention. Planner prompts (`plan.py`, `gemini-gem/GEM_INSTRUCTIONS.md`,
+`gemini-gem/KICKOFF_PROMPT.md`) now explain lane/type matching and the
+citeable-exact-handle requirement. Tests live in `tests/test_phase2_obligation_gate.py`
+(lane/type units, citeability units + substrate loader, integrated `normalize-plan`
+with a chunk corpus, and a live-style 3-blocker bounded-repair E2E using a fake
+client). No Vertex/Gemini/API/network; protected Phase 3 spec unchanged; validators
+unchanged or stricter; baseline non-breaking; full suite passes with
+`uv run python -m pytest -q`.
 
 ### Artifact and quality bar
 

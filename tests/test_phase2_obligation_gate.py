@@ -778,5 +778,457 @@ class EnhancementRepairTests(unittest.TestCase):
         self.assertEqual(report["attempts"], 0)
 
 
+# ---------------------------------------------------------------------------
+# Phase 2/3 TER evidence-alignment slice: a valid exact source field is not enough.
+# Its lane must be in acceptable_lanes[] (lane/type consistency), and — when a
+# citeable substrate is supplied — its resolved handle must actually be citeable.
+# Reproduces the 20260626-160914 live blockers WITHOUT bulky live artifacts.
+def _substrate(*paths):
+    # paths are chunked -> citeable on both the file_anchor and test lanes.
+    return cov.CiteableSubstrate(chunk_paths=frozenset(paths))
+
+
+class LaneTypeConsistencyTests(unittest.TestCase):
+    """A valid exact source field whose lane is not in acceptable_lanes[] is a
+    lane/type mismatch the producer gate must reject before Phase 3 — the live
+    `testing` blocker (tests[0] source field vs acceptable_lanes ["file_anchor"])."""
+
+    def _gate(self, sections, substrate=None):
+        return cov.gate_topic_obligations(None, sections, mode=cov.MODE_ENHANCEMENT,
+                                          substrate=substrate)
+
+    def test_tests_lane_with_file_anchor_only_is_blocking(self):
+        # The exact live `testing` shape: retrieval_needs.tests[0] (lane 'test') while
+        # acceptable_lanes is ['file_anchor']. Phase 3 would never count it.
+        sec = _section("testing", required_topics=["where to add new tests"],
+                       ters=[_ter("where to add new tests",
+                                  ["retrieval_needs.tests[0]"],
+                                  acceptable_lanes=["file_anchor"])],
+                       needs=_needs(tests=[{"path": "test/x_test.py"}]))
+        gate = self._gate([sec])
+        self.assertFalse(gate.passed)
+        self.assertEqual(gate.exit_code, cov.COVERAGE_GATE_FAIL_EXIT)
+        row = _topic_row(gate.report, "testing", "where to add new tests")
+        self.assertEqual(row.status, cov.obligations.STATUS_INCOMPLETE)
+        self.assertIn(cov.obligations.CODE_LANE_NOT_ACCEPTABLE, row.defects)
+        # NOT the broad-only-acceptable-lanes defect: file_anchor IS an exact lane,
+        # the problem is the source field's lane is not among the accepted ones.
+        self.assertNotIn(cov.obligations.CODE_BROAD_ONLY_ACCEPTABLE_LANES, row.defects)
+        self.assertIn("acceptable_lanes", row.remediation)
+
+    def test_tests_lane_with_test_acceptable_passes(self):
+        # acceptable_lanes ['test'] matches the tests[0] source field -> valid
+        # (no substrate -> citeability skipped, lane/type satisfied).
+        sec = _section("testing", required_topics=["where to add new tests"],
+                       ters=[_ter("where to add new tests",
+                                  ["retrieval_needs.tests[0]"],
+                                  acceptable_lanes=["test"])],
+                       needs=_needs(tests=[{"path": "test/x_test.py"}]))
+        gate = self._gate([sec])
+        self.assertTrue(gate.passed)
+        self.assertEqual(_topic_row(gate.report, "testing",
+                                    "where to add new tests").status,
+                         cov.obligations.STATUS_OK)
+
+    def test_one_lane_acceptable_field_satisfies_even_with_a_mismatched_sibling(self):
+        # A topic with both files[0] (acceptable) and tests[0] (not acceptable) is OK:
+        # files[0] grounds it; the mismatched sibling does not make it incomplete.
+        sec = _section("s", required_topics=["t"],
+                       ters=[_ter("t", ["retrieval_needs.tests[0]",
+                                        "retrieval_needs.files[0]"],
+                                  acceptable_lanes=["file_anchor"])],
+                       needs=_needs(tests=[{"path": "test/x_test.py"}],
+                                    files=[{"path": "a.py"}]))
+        self.assertTrue(self._gate([sec]).passed)
+
+
+class CiteableSubstrateViabilityTests(unittest.TestCase):
+    """A valid, lane-acceptable exact file/test source field whose resolved handle the
+    retrieval substrate cannot cite must fail before Phase 3 — the live go.mod /
+    Dockerfile blockers (resolved in inventory, zero chunks in rag/chunks.jsonl)."""
+
+    def _gate(self, sections, substrate=None):
+        return cov.gate_topic_obligations(None, sections, mode=cov.MODE_ENHANCEMENT,
+                                          substrate=substrate)
+
+    def test_nonciteable_file_field_blocks(self):
+        sec = _section("arch-go", required_topics=["go build process"],
+                       ters=[_ter("go build process", ["retrieval_needs.files[0]"],
+                                  acceptable_lanes=["file_anchor"])],
+                       needs=_needs(files=[{"path": "go.mod",
+                                            "resolution": "file_exists"}]))
+        gate = self._gate([sec], substrate=_substrate("build.sh", "README.md"))
+        self.assertFalse(gate.passed)
+        self.assertEqual(gate.exit_code, cov.COVERAGE_GATE_FAIL_EXIT)
+        row = _topic_row(gate.report, "arch-go", "go build process")
+        self.assertIn(cov.obligations.CODE_SOURCE_NOT_CITEABLE, row.defects)
+        self.assertIn("go.mod", row.remediation)
+        self.assertTrue(gate.report.citeability_checked)
+        self.assertEqual(gate.report.citeable_path_count, 2)
+
+    def test_citeable_file_field_passes(self):
+        sec = _section("ops", required_topics=["docker build"],
+                       ters=[_ter("docker build", ["retrieval_needs.files[0]"],
+                                  acceptable_lanes=["file_anchor"])],
+                       needs=_needs(files=[{"path": "README.md",
+                                            "resolution": "file_exists"}]))
+        gate = self._gate([sec], substrate=_substrate("README.md", "build.sh"))
+        self.assertTrue(gate.passed)
+        self.assertTrue(gate.report.citeability_checked)
+
+    def test_citeable_test_lane_passes_nonciteable_blocks(self):
+        good = _section("t", required_topics=["x"],
+                        ters=[_ter("x", ["retrieval_needs.tests[0]"],
+                                   acceptable_lanes=["test"])],
+                        needs=_needs(tests=[{"path": "test/x_test.py"}]))
+        self.assertTrue(self._gate([good],
+                                   substrate=_substrate("test/x_test.py")).passed)
+        # same shape, but the test file has no chunk coverage -> not citeable.
+        gate = self._gate([good], substrate=_substrate("other.py"))
+        self.assertFalse(gate.passed)
+        self.assertIn(cov.obligations.CODE_SOURCE_NOT_CITEABLE,
+                      _topic_row(gate.report, "t", "x").defects)
+
+    def test_no_substrate_skips_citeability_check(self):
+        # The go.mod shape WITHOUT a substrate: lane/type is fine, citeability is not
+        # checked, so the gate passes (report-only / non-breaking for no-corpus).
+        sec = _section("arch-go", required_topics=["go build process"],
+                       ters=[_ter("go build process", ["retrieval_needs.files[0]"],
+                                  acceptable_lanes=["file_anchor"])],
+                       needs=_needs(files=[{"path": "go.mod"}]))
+        gate = self._gate([sec], substrate=None)
+        self.assertTrue(gate.passed)
+        self.assertFalse(gate.report.citeability_checked)
+
+    def test_unavailable_substrate_skips_citeability_check(self):
+        sec = _section("arch-go", required_topics=["t"],
+                       ters=[_ter("t", ["retrieval_needs.files[0]"],
+                                  acceptable_lanes=["file_anchor"])],
+                       needs=_needs(files=[{"path": "go.mod"}]))
+        unavailable = cov.CiteableSubstrate(chunk_paths=frozenset(), available=False)
+        gate = self._gate([sec], substrate=unavailable)
+        self.assertTrue(gate.passed)
+        self.assertFalse(gate.report.citeability_checked)
+
+    def test_symbol_lane_citeability_is_undecided_and_never_blocks(self):
+        # symbol_anchor citeability is not decided by the path-backed substrate (a
+        # resolved symbol always yields at least its own span) -> never a false fail.
+        sec = _section("s", required_topics=["class behavior"],
+                       ters=[_ter("class behavior", ["retrieval_needs.symbols[0]"],
+                                  acceptable_lanes=["symbol_anchor"])],
+                       needs=_needs(symbols=[{"symbol_id": "mod.Worker",
+                                              "resolution": "exact"}]))
+        gate = self._gate([sec], substrate=_substrate("unrelated.py"))
+        self.assertTrue(gate.passed)
+
+    def test_span_only_python_file_is_citeable_for_file_anchor(self):
+        # A .py file with a module-header span but NO chunk is citeable via the file
+        # lane's overlapping_spans path, so the gate must NOT reject it (the file lane
+        # draws from spans AND chunks). chunk-only modelling would false-reject it.
+        sub = cov.CiteableSubstrate(chunk_paths=frozenset(),
+                                    span_paths=frozenset({"pkg/empty.py"}))
+        sec = _section("s", required_topics=["t"],
+                       ters=[_ter("t", ["retrieval_needs.files[0]"],
+                                  acceptable_lanes=["file_anchor"])],
+                       needs=_needs(files=[{"path": "pkg/empty.py"}]))
+        self.assertTrue(self._gate([sec], substrate=sub).passed)
+
+    def test_span_only_file_is_not_citeable_for_test_lane(self):
+        # The test lane draws only from file_repr_chunks (chunks), so a span-only file
+        # is NOT citeable there even though it would be on the file_anchor lane.
+        sub = cov.CiteableSubstrate(chunk_paths=frozenset(),
+                                    span_paths=frozenset({"test/x_test.py"}))
+        sec = _section("t", required_topics=["x"],
+                       ters=[_ter("x", ["retrieval_needs.tests[0]"],
+                                  acceptable_lanes=["test"])],
+                       needs=_needs(tests=[{"path": "test/x_test.py"}]))
+        gate = self._gate([sec], substrate=sub)
+        self.assertFalse(gate.passed)
+        self.assertIn(cov.obligations.CODE_SOURCE_NOT_CITEABLE,
+                      _topic_row(gate.report, "t", "x").defects)
+
+
+class CiteableSubstrateLoaderTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="cite_substrate_")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_loads_distinct_chunk_and_span_paths(self):
+        rag = os.path.join(self.tmp, "rag")
+        os.makedirs(rag)
+        with open(os.path.join(rag, "chunks.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({"chunk_id": "c0", "path": "a.py"}) + "\n")
+            f.write(json.dumps({"chunk_id": "c1", "path": "a.py"}) + "\n")  # dup path
+            f.write(json.dumps({"chunk_id": "c2", "path": "dir/b.go"}) + "\n")
+            f.write("not json, should be skipped\n")
+        with open(os.path.join(rag, "spans.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({"span_id": "s0", "path": "a.py"}) + "\n")
+            f.write(json.dumps({"span_id": "s1", "path": "pkg/header_only.py"}) + "\n")
+        sub = cov.load_citeable_substrate(self.tmp)
+        self.assertIsNotNone(sub)
+        self.assertTrue(sub.available)
+        self.assertEqual(sub.chunk_paths, frozenset({"a.py", "dir/b.go"}))
+        self.assertEqual(sub.span_paths, frozenset({"a.py", "pkg/header_only.py"}))
+        # file_anchor citeable via chunk OR span; test citeable via chunk only.
+        self.assertTrue(sub.cites_file("dir/b.go"))            # chunk
+        self.assertTrue(sub.cites_file("pkg/header_only.py"))  # span-only
+        self.assertFalse(sub.cites_file("go.mod"))             # neither
+        self.assertTrue(sub.cites_test("a.py"))                # chunk
+        self.assertFalse(sub.cites_test("pkg/header_only.py")) # span-only -> not test
+        self.assertEqual(sub.citeable_path_count, 3)           # a.py, dir/b.go, header
+
+    def test_empty_corpus_returns_none(self):
+        # chunks.jsonl present but empty (and no spans) -> None (defer to Phase 3's
+        # exit-2 empty-corpus input error; do not blame per-topic plan defects).
+        os.makedirs(os.path.join(self.tmp, "rag"))
+        open(os.path.join(self.tmp, "rag", "chunks.jsonl"), "w").close()
+        self.assertIsNone(cov.load_citeable_substrate(self.tmp))
+
+    def test_missing_corpus_returns_none(self):
+        self.assertIsNone(cov.load_citeable_substrate(self.tmp))
+
+
+# ---------------------------------------------------------------------------
+# Integrated: real `normalize-plan --coverage-mode enhancement` over a bundle that
+# carries a rag/chunks.jsonl corpus, so the citeable-source-availability check runs.
+def _write_chunks(bundle, paths):
+    rag = os.path.join(bundle, "rag")
+    os.makedirs(rag, exist_ok=True)
+    with open(os.path.join(rag, "chunks.jsonl"), "w", encoding="utf-8") as f:
+        for i, p in enumerate(paths):
+            f.write(json.dumps({"chunk_id": f"c{i}", "path": p,
+                                "range": {"start_line": 1, "end_line": 9}}) + "\n")
+
+
+class IntegratedCiteabilityGateTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="cite_gate_cmd_")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.bundle = os.path.join(self.tmp, "bundle")
+        self.plans = os.path.join(self.bundle, "plans")
+        inv = os.path.join(self.bundle, "inventory")
+        os.makedirs(inv)
+        # src/app.py is chunked (citeable); go.mod exists in inventory but is NOT
+        # chunked (the live go.mod / Dockerfile non-citeable case).
+        with open(os.path.join(inv, "files.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({"path": _TOPIC_FILE, "line_count": 200}) + "\n")
+            f.write(json.dumps({"path": "go.mod", "line_count": 5}) + "\n")
+
+    def _run(self, doc, plans, *, chunks):
+        _write_chunks(self.bundle, chunks)
+        raw = os.path.join(self.bundle, "phase2-gemini-response.md")
+        with open(raw, "w", encoding="utf-8") as f:
+            f.write(_raw_response(doc, plans))
+        args = SimpleNamespace(bundle=self.bundle, raw_response=raw, out_dir=None,
+                               strict=False, provider="test", coverage_mode="enhancement")
+        return normalize_plan_cmd.run(args)
+
+    def _obligations_gate(self):
+        return util.read_json(os.path.join(self.plans, "topic-obligations-gate.json"))
+
+    def test_citeable_plan_passes_with_citeability_checked(self):
+        doc, plans = _full_plans()                          # every topic uses src/app.py
+        rc = self._run(doc, plans, chunks=[_TOPIC_FILE])
+        self.assertEqual(rc, 0)
+        ob = self._obligations_gate()
+        self.assertTrue(ob["passed"])
+        self.assertTrue(ob["report"]["citeability_checked"])          # corpus present -> checked
+        self.assertEqual(ob["report"]["citeable_path_count"], 1)
+
+    def test_nonciteable_file_field_blocks_while_family_gate_passes(self):
+        # Point ONE family's required topics at go.mod (in inventory, NOT chunked).
+        doc, plans = _full_plans()
+        tq = next(p for p in plans if p["section_id"] == "task-queues")
+        tq["evidence_needs"]["file_anchors"] = ["go.mod"]
+        tq["topic_evidence_requirements"] = [
+            {"topic": t, "required": True,
+             "source_fields": ["retrieval_needs.files[0]"],
+             "acceptable_lanes": ["file_anchor"]} for t in tq["required_topics"]]
+        rc = self._run(doc, plans, chunks=[_TOPIC_FILE])    # go.mod absent from chunks
+        self.assertEqual(rc, cov.COVERAGE_GATE_FAIL_EXIT)
+        # family/planned-coverage gate still passes (labels/keywords intact)
+        self.assertTrue(util.read_json(
+            os.path.join(self.plans, "coverage-gate.json"))["passed"])
+        ob = self._obligations_gate()
+        self.assertFalse(ob["passed"])
+        self.assertTrue(ob["report"]["citeability_checked"])
+        self.assertIn("task-queues", ob["report"]["blocking_sections"])
+        codes = [c for d in ob["report"]["diagnostics"]
+                 if d["section_id"] == "task-queues" for c in d["codes"]]
+        self.assertIn(cov.obligations.CODE_SOURCE_NOT_CITEABLE, codes)
+
+    def test_no_corpus_skips_citeability_but_other_checks_run(self):
+        # No rag/chunks.jsonl -> citeability not checked (report-only); the go.mod
+        # field then passes (lane/type ok) instead of failing. Proves non-breaking.
+        doc, plans = _full_plans()
+        tq = next(p for p in plans if p["section_id"] == "task-queues")
+        tq["evidence_needs"]["file_anchors"] = ["go.mod"]
+        tq["topic_evidence_requirements"] = [
+            {"topic": t, "required": True,
+             "source_fields": ["retrieval_needs.files[0]"],
+             "acceptable_lanes": ["file_anchor"]} for t in tq["required_topics"]]
+        raw = os.path.join(self.bundle, "phase2-gemini-response.md")
+        with open(raw, "w", encoding="utf-8") as f:
+            f.write(_raw_response(doc, plans))              # NO _write_chunks call
+        args = SimpleNamespace(bundle=self.bundle, raw_response=raw, out_dir=None,
+                               strict=False, provider="test", coverage_mode="enhancement")
+        rc = normalize_plan_cmd.run(args)
+        self.assertEqual(rc, 0)
+        ob = self._obligations_gate()
+        self.assertTrue(ob["passed"])
+        self.assertFalse(ob["report"]["citeability_checked"])
+
+
+# ---------------------------------------------------------------------------
+# Live-style 20260626-160914 blockers through bounded plan-repair (fake client):
+# go.mod (non-citeable file), Dockerfile (non-citeable file), and a tests[0] source
+# field with acceptable_lanes ['file_anchor'] (lane/type mismatch). The bad plan
+# passes readiness + family coverage but fails the obligation/citeability gate; the
+# repaired plan points each topic at a lane-compatible, citeable exact source field.
+_TEST_FILE = "test/unit_test/test_x.py"
+
+
+def _ter_obj(t, fields, lanes):
+    return {"topic": t, "required": True, "source_fields": list(fields),
+            "acceptable_lanes": list(lanes)}
+
+
+def _retarget(plans, sid, evidence_needs, fields, lanes):
+    p = next(pl for pl in plans if pl["section_id"] == sid)
+    p["evidence_needs"] = evidence_needs
+    p["topic_evidence_requirements"] = [
+        _ter_obj(t, fields, lanes) for t in p["required_topics"]]
+
+
+def _blocker_plans():
+    """The 13-family plan with three families reproducing the live blockers. Passes
+    readiness + family coverage; fails the obligation gate (2x non-citeable file,
+    1x lane/type mismatch)."""
+    doc, plans = _full_plans()
+    _retarget(plans, "go-native",
+              {"search_hints": ["retrieve: go-native"], "file_anchors": ["go.mod"]},
+              ["retrieval_needs.files[0]"], ["file_anchor"])          # non-citeable
+    _retarget(plans, "build-cicd",
+              {"search_hints": ["retrieve: build-cicd"], "file_anchors": ["Dockerfile"]},
+              ["retrieval_needs.files[0]"], ["file_anchor"])          # non-citeable
+    _retarget(plans, "doc-pipeline",
+              {"search_hints": ["retrieve: doc-pipeline"], "tests": [_TEST_FILE]},
+              ["retrieval_needs.tests[0]"], ["file_anchor"])          # lane mismatch
+    return doc, plans
+
+
+def _fixed_plans():
+    """The same plan with the three blockers repaired to lane-compatible, citeable
+    exact source fields (build.sh / README.md are chunked; the test lane is accepted)."""
+    doc, plans = _full_plans()
+    _retarget(plans, "go-native",
+              {"search_hints": ["retrieve: go-native"], "file_anchors": ["build.sh"]},
+              ["retrieval_needs.files[0]"], ["file_anchor"])          # citeable file
+    _retarget(plans, "build-cicd",
+              {"search_hints": ["retrieve: build-cicd"], "file_anchors": ["README.md"]},
+              ["retrieval_needs.files[0]"], ["file_anchor"])          # citeable file
+    _retarget(plans, "doc-pipeline",
+              {"search_hints": ["retrieve: doc-pipeline"], "tests": [_TEST_FILE]},
+              ["retrieval_needs.tests[0]"], ["test"])                 # lane now matches
+    return doc, plans
+
+
+class EnhancementRepairCiteabilityTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="cite_repair_")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.bundle = os.path.join(self.tmp, "bundle")
+        self.out = os.path.join(self.bundle, "plans")
+        inv = os.path.join(self.bundle, "inventory")
+        tdir = os.path.join(self.bundle, "tests")
+        os.makedirs(inv)
+        os.makedirs(tdir)
+        # All referenced files resolve in inventory (so the bad plan passes readiness);
+        # only some are chunked (citeable). go.mod / Dockerfile are NOT chunked.
+        with open(os.path.join(inv, "files.jsonl"), "w", encoding="utf-8") as f:
+            for p in (_TOPIC_FILE, "go.mod", "Dockerfile", "build.sh", "README.md"):
+                f.write(json.dumps({"path": p, "line_count": 100}) + "\n")
+        with open(os.path.join(tdir, "test-files.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({"path": _TEST_FILE}) + "\n")
+        _write_chunks(self.bundle, [_TOPIC_FILE, "build.sh", "README.md", _TEST_FILE])
+
+    def _write_raw(self, text) -> str:
+        p = os.path.join(self.bundle, "phase2-gemini-response.md")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(text)
+        return p
+
+    def test_blockers_fail_pre_phase3_then_pass_after_repair(self):
+        bad = _raw_response(*_blocker_plans())
+        good = _raw_response(*_fixed_plans())
+        raw = self._write_raw(bad)
+        calls: list = []
+
+        def fake(system, user):
+            calls.append(user)
+            return bad if len(calls) == 1 else good
+
+        report = repair.repair_plan(self.bundle, raw, self.out, client_call=fake,
+                                    max_attempts=2, coverage_mode="enhancement")
+        self.assertTrue(report["repaired"])
+        self.assertEqual(report["attempts"], 2)             # attempt-1 rejected, 2 accepted
+        self.assertEqual(len(calls), 2)
+
+        # attempt-1 rejected on the obligation gate (citeability + lane), NOT readiness.
+        a1 = os.path.join(self.out, "repair", "attempt-1")
+        v1 = util.read_json(os.path.join(a1, "validation.json"))
+        self.assertFalse(v1["ok"])
+        self.assertTrue(any("topic-obligation gate FAIL" in p for p in v1["problems"]))
+        self.assertFalse(any("readiness still FAIL" in p for p in v1["problems"]))
+        # the exact lane/type + citeability diagnostics were fed to the next attempt.
+        fed1 = util.read_json(os.path.join(a1, "obligation-diagnostics-fed.json"))
+        codes = {c for d in fed1 for c in d["codes"]}
+        self.assertIn(cov.obligations.CODE_SOURCE_NOT_CITEABLE, codes)
+        self.assertIn(cov.obligations.CODE_LANE_NOT_ACCEPTABLE, codes)
+        blocked = {d["section_id"] for d in fed1}
+        self.assertEqual(blocked, {"go-native", "build-cicd", "doc-pipeline"})
+
+        # the accepted attempt records both gates passing on the repaired plan, with
+        # citeability actually checked against the chunk corpus.
+        gates = util.read_json(os.path.join(self.out, "repair", "attempt-2",
+                                            "enhancement-gates.json"))
+        self.assertTrue(gates["planned_coverage"]["passed"])
+        self.assertTrue(gates["topic_obligations"]["passed"])
+        self.assertTrue(gates["topic_obligations"]["report"]["citeability_checked"])
+        # the written plan really carries the citeable, lane-matched obligations.
+        rows = list(util.read_jsonl(os.path.join(self.out, "section-plans.jsonl")))
+        gn = next(r for r in rows if r["section_id"] == "go-native")
+        self.assertEqual(gn["retrieval_needs"]["files"][0]["path"], "build.sh")
+
+    def test_repair_rejects_old_style_repair_that_keeps_defects(self):
+        # The repair model keeps fixing only the shape but still points topics at
+        # non-citeable / lane-mismatched source fields -> rejected; fails loudly.
+        bad = _raw_response(*_blocker_plans())
+        raw = self._write_raw(bad)
+        with self.assertRaises(repair.RepairFailed):
+            repair.repair_plan(self.bundle, raw, self.out,
+                               client_call=lambda s, u: bad,
+                               max_attempts=2, coverage_mode="enhancement")
+        rep = open(os.path.join(self.out, "repair", "repair-report.md")).read()
+        self.assertIn("FAILED", rep)
+        v1 = util.read_json(os.path.join(self.out, "repair", "attempt-1",
+                                         "validation.json"))
+        self.assertTrue(any("topic-obligation gate FAIL" in p for p in v1["problems"]))
+
+    def test_baseline_repair_ignores_citeability(self):
+        # Non-breaking: in baseline mode the blocker plan passes readiness and is
+        # accepted with no repair (citeability/lane checks are enhancement-only).
+        bad = _raw_response(*_blocker_plans())
+        raw = self._write_raw(bad)
+
+        def boom(system, user):
+            raise AssertionError("baseline repair must not run for a readiness-pass plan")
+
+        report = repair.repair_plan(self.bundle, raw, self.out, client_call=boom,
+                                    coverage_mode="baseline")
+        self.assertFalse(report["repaired"])
+        self.assertEqual(report["attempts"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
