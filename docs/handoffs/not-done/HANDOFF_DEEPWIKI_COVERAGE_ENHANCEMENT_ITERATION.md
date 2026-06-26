@@ -527,12 +527,31 @@ missing (`bad_underspecified_normalized_plan`). Blocking topics:
 
 ### Remaining Milestone 2 work — active pending backlog
 
-Default remains **no live retry**. The next remaining work is non-live upstream
-Phase 2/3 alignment: harden topic obligations and/or repair diagnostics so TER source
-fields are lane-type-consistent with `acceptable_lanes[]` and exact source fields are
-citeable by the retrieval substrate before Phase 4 can ever be reached. Do not
-synthesize evidence, downgrade required topics, weaken validators, or rerun live
-without explicit user approval.
+Default remains **no live retry**. The next remaining work is the non-live **Phase
+2/3 TER evidence-alignment** slice now specified in the active spec. The target
+artifact is an enhancement-mode Phase 2/3 boundary where a TER source field cannot
+pass Phase 2 unless it is both lane-type-consistent with `acceptable_lanes[]` and
+citeable by the retrieval substrate that Phase 3 consumes.
+
+Required next-slice behavior:
+
+- `retrieval_needs.tests[0]` with `acceptable_lanes:["file_anchor"]` must fail before
+  Phase 3 with an actionable lane/type diagnostic; `acceptable_lanes:["test"]` should
+  remain valid when the test lane is citeable.
+- exact file source fields that resolve in inventory but have no citeable
+  `rag/chunks.jsonl`/retrieval-substrate coverage must fail before Phase 3 in
+  enhancement mode, or the deterministic retrieval substrate must be improved so they
+  are citeable.
+- bounded `plan-repair --coverage-mode enhancement` must audit/feed these diagnostics
+  and reject old-style repairs that still contain lane/type or non-citeable exact
+  source-field defects.
+- a fixture reproducing the three `20260626-160914` blockers must fail pre-Phase3
+  before repair and pass after fake-client repair points topics at lane-compatible,
+  citeable exact source fields.
+
+Do not synthesize evidence, downgrade required topics, weaken validators, add a
+generic healing loop, add `--force`/product `--section`, or rerun live without
+explicit user approval.
 
 ### Completed-slice acceptance summary — Phase 3 evidenced coverage
 

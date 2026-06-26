@@ -431,9 +431,9 @@ and injected/fake repair clients. The live run at
 `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-141745`
 is read-only diagnostic input only.
 
-### Acceptance — next slice
+### Acceptance — implemented slice
 
-Accept this slice only when non-live artifacts/tests prove:
+This slice is accepted when non-live artifacts/tests prove:
 
 - a TER source field authored as `evidence_needs.file_anchors[0]` normalizes to the
   correct `retrieval_needs.files[0]` when that raw file anchor resolves to the
@@ -457,6 +457,149 @@ Accept this slice only when non-live artifacts/tests prove:
   or generic healing/retry-until-green loop is added;
 - `git diff --check`, protected-spec diff check, focused tests, and the full suite
   pass with `uv run python -m pytest -q`.
+
+## Phase 2/3 TER Evidence-Alignment — next non-live slice
+
+### Artifact and quality bar
+
+Artifact being designed: an enhancement-mode Phase 2/3 alignment boundary that
+prevents a normalized plan from passing Phase 2 with TER source fields that Phase 3
+cannot turn into sufficient citeable evidence for required topics.
+
+A good artifact has four properties:
+
+1. A TER `source_fields[]` entry's normalized lane type is compatible with the TER's
+   `acceptable_lanes[]`; e.g. `retrieval_needs.tests[0]` cannot be treated as
+   sufficient when `acceptable_lanes[]` contains only `file_anchor`.
+2. A TER exact file/source field that passes Phase 2 is viable for citeable Phase 3
+   evidence: either the retrieval substrate can produce citeable evidence for that
+   exact source field, or Phase 2 fails with an actionable diagnostic before Phase 3.
+3. Bounded Step 1b repair diagnostics teach the LLM to replace non-citeable or
+   lane-incompatible source fields with real exact, citeable lanes; it must not
+   invent evidence or downgrade required topics.
+4. Phase 3 remains a strict consumer gate. It still fails on weak/missing required
+   topic evidence; the fix is upstream in Phase 2 planning/normalization/retrieval
+   substrate viability, not a Phase 3 healing loop.
+
+### Latest live failure being addressed
+
+Read-only diagnostic run:
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-160914`
+
+This run made progress: live Phase 2 bounded repair succeeded, planned coverage was
+`13/13`, topic obligations were `59/59`, and Phase 3 retrieved `22/22` packets with
+`704` evidence items. It then correctly failed before Phase 4 with evidenced coverage
+`56/59` sufficient, `1` weak, and `2` missing.
+
+Blocking examples to reproduce non-live:
+
+- `architecture-go-backend` / **Explain the build process for the Go components.**
+  mapped to `retrieval_needs.files[1]` (`go.mod`). `go.mod` existed in the inventory
+  but produced no citeable evidence in the packet; `build.sh` produced citeable
+  evidence but was not the topic's source field.
+- `ops-build-cicd` / **Explain how to build the RAGFlow Docker images locally.**
+  mapped to `retrieval_needs.files[0]` (`Dockerfile`). `Dockerfile` existed in the
+  inventory but produced no citeable evidence in the packet; `docs/develop/build_docker_image.mdx`
+  and `README.md` produced citeable build-image evidence but were not exact TER
+  source fields.
+- `testing` / **Explain where to add new tests for a new feature.** mapped to
+  `retrieval_needs.tests[0]`, while `acceptable_lanes[]` listed `file_anchor`; Phase
+  3 therefore treated the topic as weak even though the Phase 2 obligation gate had
+  marked it complete.
+
+### Failure classification
+
+- The `acceptable_lanes[]` / source-field lane mismatch is a deterministic Phase 2
+  obligation-contract defect. The producer-side obligation gate and the Phase 3
+  consumer must agree on lane semantics. Fix the shared Phase 2 gate/diagnostics so
+  this mismatch fails before Phase 3.
+- Exact file lanes that resolve in inventory but have no citeable retrieval coverage
+  are a Phase 2/Phase 1 retrieval-substrate viability defect. Do not make Phase 3
+  synthesize fallback evidence. Either make the deterministic retrieval substrate able
+  to cite those source files, or make Phase 2 fail loudly and feed repair the exact
+  non-citeable source-field diagnostics so it chooses a citeable exact source field.
+- If the bad source-field choice is LLM-authored, bounded Step 1b repair may re-prompt
+  with the deterministic diagnostics, but success still requires strict normalization,
+  planned coverage, topic obligations, and — where this slice adds a non-live viability
+  check — TER evidence viability. Generic retry-until-green is forbidden.
+
+### Required implementation contract
+
+The implementation should add a deterministic producer-side check, or strengthen the
+existing topic-obligation gate, so enhancement mode catches the live failure classes
+before Phase 3 when possible.
+
+Minimum required checks:
+
+1. **Lane/type consistency**: for each valid exact `source_fields[]` entry, the exact
+   lane implied by the field (`files → file_anchor`, `symbols → symbol_anchor`,
+   `contracts → contract`, `tests → test`, `query_packs → query_pack`) must be present
+   in `acceptable_lanes[]`. If no valid exact source field is both present and
+   acceptable, the topic is incomplete.
+2. **Citeable source availability**: for exact file/source fields, Phase 2 should be
+   able to identify whether the retrieval substrate can produce citeable evidence for
+   the referenced handle. At minimum, non-live fixtures must cover files that exist in
+   inventory but have no `rag/chunks.jsonl` coverage, and those TER source fields must
+   fail with an actionable diagnostic rather than passing Phase 2 and failing later in
+   Phase 3.
+3. **Repair diagnostics**: `plan-repair --coverage-mode enhancement` must include the
+   lane/type and citeable-availability diagnostics in its audited prompt and must not
+   accept a repair that only satisfies the older topic-obligation checks while still
+   containing non-citeable or lane-incompatible TER source fields.
+4. **Strict consumers preserved**: Phase 3 evidenced coverage and Phase 4 generated
+   coverage must remain strict. Do not add fallback evidence, fuzzy topic matching,
+   synthetic citations, `--force`, product `--section`, or post-hoc wiki/evidence
+   mutation.
+
+### Candidate diagnostics
+
+Names are not mandatory, but diagnostics should be machine-readable and actionable.
+Suggested codes:
+
+- `topic_evidence_requirement_lane_not_acceptable`: a source field points at an exact
+  lane not listed in `acceptable_lanes[]`.
+- `topic_evidence_requirement_no_acceptable_exact_source_field`: the TER has exact
+  fields, but none are both valid and acceptable.
+- `topic_evidence_requirement_source_not_citeable`: the source field resolves to an
+  exact handle that the retrieval substrate cannot cite.
+
+Diagnostics should name the section, topic, source field, normalized lane, referenced
+handle/path, why it is not sufficient, and the remediation: point the TER at an exact
+`retrieval_needs.*` lane that is both acceptable and citeable, or improve the
+retrieval substrate upstream.
+
+### Non-live implementation boundary
+
+This slice must be implemented and verified without Vertex, Gemini API, Gemini Gem
+live/manual production flows, or any billed provider. Use deterministic fixtures,
+existing read-only live artifacts, and injected/fake repair clients. The live run
+`20260626-160914` is diagnostic input only. Do not rerun live/billed RAGFlow until
+this non-live slice passes and the user explicitly approves a later retry.
+
+### Acceptance — next slice
+
+Accept this slice only when non-live artifacts/tests prove:
+
+- a TER using `retrieval_needs.tests[0]` with `acceptable_lanes:["file_anchor"]`
+  fails the Phase 2 enhancement obligation/viability gate before Phase 3 with an
+  actionable lane/type diagnostic;
+- a TER using `retrieval_needs.tests[0]` with `acceptable_lanes:["test"]` remains
+  valid when the referenced test lane is otherwise citeable;
+- an exact file field pointing at a file that exists in inventory but has no citeable
+  retrieval substrate coverage fails before Phase 3 in enhancement mode;
+- an exact file field pointing at a file with citeable chunk/evidence availability
+  passes the new viability check;
+- a live-style fixture for the three `20260626-160914` blockers fails pre-Phase3
+  before repair and passes after a fake-client bounded repair points the topics at
+  lane-compatible, citeable exact source fields;
+- `plan-repair --coverage-mode enhancement` audits the new diagnostics and rejects an
+  old-style repair that still has lane/type or non-citeable source-field defects;
+- baseline/default behavior remains non-breaking/report-only;
+- Phase 3 and Phase 4 validators remain strict; no synthetic evidence, benchmark-derived
+  evidence, silent downgrade, generic healing loop, `--force`, or product `--section`
+  mode is added;
+- `git diff --check`, protected-spec diff check, focused Phase 2/3/repair tests, and
+  the full suite pass with `uv run python -m pytest -q`.
 
 ## Phase 3 Evidence Sufficiency Contract — implemented non-live slice
 
