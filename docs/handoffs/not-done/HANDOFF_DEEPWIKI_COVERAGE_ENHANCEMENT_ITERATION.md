@@ -22,18 +22,17 @@ expansion, the Phase 2 enhancement-mode planned-coverage upstream-prevention gat
 gate (`retrieve-evidence --coverage-mode enhancement`), the Phase 4
 enhancement-mode hierarchical writing + generated-coverage gate
 (`write-wiki --coverage-mode enhancement`), the non-live hierarchical E2E +
-benchmark-only comparison, and the Phase 2 required-topic evidence-obligation
-alignment gate are implemented and tested non-live. A live/billed RAGFlow retry at
-`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-141745`
-against `35bdc18` failed closed before Phase 3: planned coverage passed 13/13, but
-the Phase 2 topic-obligation gate failed after bounded Step 1b repair (`0/46`
-complete required-topic obligations; 21 missing TER rows and 25 invalid/broad-only
-source-field mappings, commonly raw `evidence_needs.*` names where canonical
-`retrieval_needs.*` fields are expected). Phase 3 and Phase 4 did not run. The
-**Phase 2 TER source-field canonicalization + enhancement-repair diagnostics** slice
-is now implemented and tested non-live (see the implemented-slice section below).
-Pending next: explicit user approval for any further live/billed RAGFlow retry; no
-further live/billed retry unless the user explicitly approves it.**
+benchmark-only comparison, the Phase 2 required-topic evidence-obligation alignment
+gate, the Phase 2 TER source-field canonicalization + enhancement-repair diagnostics,
+and initial parse-ambiguity repair handling are implemented and tested non-live. The
+latest user-approved live/billed retry at
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-160914`
+passed Phase 2 after bounded repair (`13/13` planned coverage, `59/59` topic
+obligations), retrieved `22/22` Phase 3 packets with `704` evidence items, and then
+failed before Phase 4 because evidenced coverage was `56/59` sufficient, `1` weak,
+and `2` missing. Pending next: non-live upstream Phase 2/3 alignment so TER source
+fields are lane-type-consistent and citeable by the retrieval substrate; no further
+live/billed retry unless the user explicitly approves it.**
 
 ## Why this exists
 
@@ -499,12 +498,41 @@ section-identity enforcement after an initial parse failure. Verification: `git 
 --check`; protected Phase 3 spec unchanged; focused Phase 2 suites `117 passed`; full
 suite `453 passed, 1 skipped, 9 subtests passed`.
 
+### Live retry after parse-repair fix — Phase 2 passed, Phase 3 evidenced coverage failed before Phase 4
+
+A user-approved retry at
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-160914`
+ran against `f1fae66`. Phase 1 completed; live Phase 2 planning completed; strict
+normalization failed on unresolved/broad-only obligations, then bounded Step 1b repair
+ran once with `--coverage-mode enhancement` and was accepted. Final strict repaired
+normalization passed with `0` unresolved references, planned coverage `13/13`, and
+topic obligations `59/59` complete.
+
+Phase 3 retrieved `22/22` evidence packets and `704` evidence items, then correctly
+failed before Phase 4 with evidenced coverage `56/59` sufficient, `1` weak, and `2`
+missing (`bad_underspecified_normalized_plan`). Blocking topics:
+
+- `architecture-go-backend` / **Explain the build process for the Go components.** —
+  missing because the TER pointed at `retrieval_needs.files[1]` (`go.mod`), which
+  produced no citeable evidence. `build.sh` did produce evidence in the packet but was
+  not the topic's source field.
+- `ops-build-cicd` / **Explain how to build the RAGFlow Docker images locally.** —
+  missing because the TER pointed at `retrieval_needs.files[0]` (`Dockerfile`), which
+  produced no citeable evidence. Citeable build-image evidence was retrieved from
+  `docs/develop/build_docker_image.mdx` / `README.md` via broader retrieval but was
+  not an exact TER source field.
+- `testing` / **Explain where to add new tests for a new feature.** — weak because the
+  TER pointed at `retrieval_needs.tests[0]` while `acceptable_lanes[]` listed
+  `file_anchor`, so the lane/type contract did not yield sufficient exact support.
+
 ### Remaining Milestone 2 work — active pending backlog
 
-Default remains **no live retry**. The next remaining step is **explicit user
-approval for another billed Vertex/Gemini retry over the real RAGFlow repo** against
-the stricter Phase 2 obligation gate + canonicalization/repair + parse-repair fix.
-Do not run another live/billed retry without that explicit approval.
+Default remains **no live retry**. The next remaining work is non-live upstream
+Phase 2/3 alignment: harden topic obligations and/or repair diagnostics so TER source
+fields are lane-type-consistent with `acceptable_lanes[]` and exact source fields are
+citeable by the retrieval substrate before Phase 4 can ever be reached. Do not
+synthesize evidence, downgrade required topics, weaken validators, or rerun live
+without explicit user approval.
 
 ### Completed-slice acceptance summary — Phase 3 evidenced coverage
 

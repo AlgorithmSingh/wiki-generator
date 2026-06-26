@@ -10,21 +10,20 @@ the Phase 4 enhancement-mode hierarchical writing + generated-coverage gate, the
 non-live hierarchical E2E + benchmark-only comparison, the Phase 2 required-topic
 evidence-obligation alignment gate, and the Phase 2 TER source-field
 canonicalization + enhancement-repair diagnostics are implemented and tested
-non-live. A live/billed RAGFlow retry at
-`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-141745`
-failed closed before Phase 3 with planned coverage 13/13 but topic obligations
-`0/46`; the raw TER alias / old-readiness-only repair defect was fixed non-live at
-`41d422b`. A later user-approved retry at
-`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-154907`
-ran Phase 1 and live Phase 2 planning, then stopped before Phase 3: strict
-normalization refused a raw planner response with multiple JSONL fences, and Step
-1b repair crashed on that initial parse ambiguity before an audited repair attempt.
-That deterministic repair-path bug is now fixed non-live: initial raw-response
-`ParseError`s become bounded-repair diagnostics (`raw_planning_response_parse_error`),
-DocumentPlan identity is extracted only when unambiguous for 1:1 section checks,
-and normal parser acceptance remains fail-closed. Pending next: explicit user
-approval for any further live/billed RAGFlow retry. No further live/billed retry
-unless the user explicitly approves it.**
+non-live. The latest user-approved live/billed RAGFlow retry at
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-160914`
+ran against `f1fae66`: Phase 2 bounded repair succeeded, planned coverage passed
+`13/13`, and topic obligations passed `59/59`. Phase 3 retrieved `22/22` packets
+and `704` evidence items, then correctly failed before Phase 4 because evidenced
+coverage was `56/59` sufficient, `1` weak, and `2` missing. Blocking topics are
+Go build process (`go.mod` exact lane had no citeable evidence while `build.sh`
+evidence existed), Docker image build instructions (`Dockerfile` exact lane had no
+citeable evidence while `docs/develop/build_docker_image.mdx`/`README.md` evidence
+existed), and where to add new tests (TER used `retrieval_needs.tests[0]` but
+`acceptable_lanes[]` listed `file_anchor`). Pending next: non-live upstream Phase
+2/3 alignment so TER source fields are lane-type-consistent with
+`acceptable_lanes[]` and citeable by the retrieval substrate. No further live/billed
+retry unless the user explicitly approves it.**
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
 enhancement track. It consolidates the immediate malformed-citation validator
@@ -1555,32 +1554,37 @@ Completed foundation (continued):
 
 Pending active sequence:
 
-10. Fix the Phase 2 producer/normalizer/repair contract non-live so real RAGFlow
-    planning can satisfy the topic-obligation gate before Phase 3. The latest live
-    retry already consumed explicit approval and failed closed at
-    `plans/topic-obligations-gate.json`; do not perform another billed retry until
-    this upstream refinement passes non-live and the user explicitly approves.
+10. Fix the Phase 2/3 evidence-alignment contract non-live so TER source fields that
+    pass the Phase 2 topic-obligation gate are also lane-type-consistent and citeable
+    by the Phase 3 retrieval substrate. The latest live retry already consumed
+    explicit approval and failed closed at `evidence/evidenced-coverage.json` with
+    `56/59` sufficient, `1` weak, and `2` missing; do not perform another billed
+    retry until this upstream refinement passes non-live and the user explicitly
+    approves.
 
 ## Coding-agent prompt summary
 
 Milestone 1, the Milestone 2 foundation slices, the Phase 3 evidenced-coverage gate,
 the Phase 4 enhancement-mode hierarchical writing + generated-coverage gate, the
-non-live hierarchical E2E, and the Phase 2 topic-obligation gate are implemented and
-tested non-live. Future coding-agent work should keep validator behavior strict and
-proceed with the next concrete non-live slice: **make Phase 2 planning/normalization
-and bounded plan repair satisfy the topic-obligation gate for real RAGFlow-style
-plans**. Focus on deterministic canonicalization/rejection of raw
-`evidence_needs.*` TER source-field aliases and feeding `topic-obligations` diagnostics
-into bounded LLM repair; do not weaken the gate. Keep all
-citation/identifier/malformed-token/no-context/no-placeholder/no-truncation validators
-strict, keep the Phase 3 evidenced-coverage gate intact (weak/missing required
-evidence remains a pipeline failure before Phase 4 in enhancement mode), and keep the
-Phase 4 generated-coverage gate intact (an omitted/placeholder/out-of-scope/uncited
-evidenced sufficient required topic is a post-provider writing-validation failure; a
-missing/failed upstream gate is a pre-provider gate failure). Do not use fuzzy prose
-matching, synthetic evidence, silent downgrades, or retry-until-green loops. Do not
-call Vertex/Gemini or any live model for this next slice. Do not edit the historical
-generated wiki in place. Do not modify
-`docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. If a Milestone 2 slice is
-too large for one coding session, stop after a coherent non-live increment and report
-the remaining work clearly.
+non-live hierarchical E2E, the Phase 2 topic-obligation gate, TER source-field
+canonicalization, enhancement-mode plan repair, and initial parse-ambiguity repair
+handling are implemented and tested non-live. Future coding-agent work should keep
+validator behavior strict and proceed with the next concrete non-live slice: **make
+Phase 2 topic obligations align with Phase 3 citeable evidence for real
+RAGFlow-style plans**. Focus on deterministic diagnostics/repair guidance for exact
+source fields that point to non-citeable exact lanes (`go.mod`, `Dockerfile`) when a
+better citeable exact file is available, and for source-field lane type mismatches
+such as `retrieval_needs.tests[0]` with `acceptable_lanes:["file_anchor"]`. Do not
+weaken the Phase 2 gate; strengthen it or its diagnostics so these failures are
+caught before Phase 3 when possible. Keep all citation/identifier/malformed-token/
+no-context/no-placeholder/no-truncation validators strict, keep the Phase 3
+evidenced-coverage gate intact (weak/missing required evidence remains a pipeline
+failure before Phase 4 in enhancement mode), and keep the Phase 4 generated-coverage
+gate intact (an omitted/placeholder/out-of-scope/uncited evidenced sufficient required
+topic is a post-provider writing-validation failure; a missing/failed upstream gate is
+a pre-provider gate failure). Do not use fuzzy prose matching, synthetic evidence,
+silent downgrades, or retry-until-green loops. Do not call Vertex/Gemini or any live
+model for this next slice. Do not edit the historical generated wiki in place. Do not
+modify `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. If a Milestone 2
+slice is too large for one coding session, stop after a coherent non-live increment
+and report the remaining work clearly.
