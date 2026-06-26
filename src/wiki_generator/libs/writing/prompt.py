@@ -87,14 +87,14 @@ appears in cited EvidencePacket): `CONF_DIR="/ragflow/conf"`, \
 evidence item itself shows tokens like these, you may write only those exact \
 evidenced tokens; you must NOT write an expanded literal unless that exact \
 expanded string itself appears in a cited evidence item.
-- Never synthesize or normalize a route pattern: do not add or remove prefixes, \
-add or remove query parameters/trailing slashes, or convert placeholder syntax \
+- Never synthesize or normalize a route pattern: do not add or remove route \
+prefixes, version placeholders, base paths, query parameters, or trailing slashes; \
+do not convert placeholder syntax; and do not combine separate route fragments \
 unless that exact complete route string appears verbatim in one cited evidence \
-item. Forbidden instruction route examples (not evidence; never copy unless the \
-exact complete route appears in cited EvidencePacket): `/api`, `/api/v1`, \
-`/api/{api_version}`, `/{api_version}`, `<id>`, `{id}`, `:id`. For route evidence, \
+item. These instructions intentionally avoid literal forbidden route examples \
+because example route tokens can leak into generated output. For route evidence, \
 copy only `source.route` or `source.public_route` values verbatim; do not compose \
-a public route from a prefix and a contract route.
+a public route from a base path, prefix, version marker, or contract route.
 - When evidence is partial or split across items, prefer component-level \
 descriptions or exact quoted tokens over invented identifiers or routes. For \
 example, describe "the metadata filter translator component" or quote \

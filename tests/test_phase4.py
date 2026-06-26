@@ -323,13 +323,14 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         "must never be copied into the generated `markdown`",
         # route normalization/synthesis failures
         "Never synthesize or normalize a route pattern",
-        "Forbidden instruction route examples (not evidence; never copy unless the "
-        "exact complete route appears in cited EvidencePacket)",
-        "`/api/{api_version}`",
-        "`/{api_version}`",
+        "do not add or remove route prefixes, version placeholders, base paths",
+        "query parameters, or trailing slashes",
+        "do not convert placeholder syntax",
+        "do not combine separate route fragments",
         "unless that exact complete route string appears verbatim",
+        "intentionally avoid literal forbidden route examples",
         "copy only `source.route` or `source.public_route` values verbatim",
-        "do not compose a public route from a prefix",
+        "do not compose a public route from a base path, prefix, version marker",
         # fully-qualified identifier / import synthesis failures
         "Never synthesize fully-qualified names by joining",
         "Dotted class/member, object/member, module/member, and package/member notation",
@@ -355,6 +356,8 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         "validation independently parses JSON and checks citations",
     ):
         testcase.assertIn(needle, prompt)
+    for leaked_route in ("/api/{api_version}", "/{api_version}"):
+        testcase.assertNotIn(leaked_route, prompt)
 
 
 # ---------------------------------------------------------------------------
@@ -1235,6 +1238,13 @@ class SynthesizedIdentifierTests(unittest.TestCase):
         available = json.dumps({"source": {"route": "/datasets/<dataset_id>/documents"}})
         r = analyze_claims(f"Lists via `GET {route}`. [ev:x:0001]", available)
         self.assertIn(route, r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_api_version_route_prefix_synthesis_is_terminal_invented(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = json.dumps({"source": {"route": "/{api_version}"}})
+        r = analyze_claims("Uses `/api/{api_version}`. [ev:x:0001]", available)
+        self.assertIn("/api/{api_version}", r["invented_identifiers"])
         self.assertEqual(r["synthesized_identifiers"], [])
 
     def test_ambiguous_multi_target_expansion_is_terminal(self):
