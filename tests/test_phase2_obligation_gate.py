@@ -47,7 +47,7 @@ from wiki_generator.libs import coverage as cov  # noqa: E402
 from wiki_generator.libs import util  # noqa: E402
 from wiki_generator.libs.commands import normalize_plan as normalize_plan_cmd  # noqa: E402
 from wiki_generator.libs.evidence import evidenced_coverage as ec  # noqa: E402
-from wiki_generator.libs.plan_normalization import normalize, parse  # noqa: E402
+from wiki_generator.libs.plan_normalization import normalize, parse, repair  # noqa: E402
 from wiki_generator.libs.plan_normalization.lookups import Lookups  # noqa: E402
 
 _TOPIC_FILE = "src/app.py"
@@ -461,6 +461,321 @@ class IntegratedObligationGateTests(unittest.TestCase):
     def _read_report(self):
         with open(os.path.join(self.plans, "topic-obligations-report.md")) as f:
             return f.read()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 TER source-field canonicalization: a documented raw evidence_needs.*
+# alias is rewritten to canonical retrieval_needs.* form ONLY when the raw lane
+# item resolved to a concrete normalized lane item — using the raw-index →
+# normalized-index map built during need resolution, never a naïve same-index
+# rewrite and never a guess. This reproduces the live RAGFlow failure where the
+# planner/repair output used raw aliases the obligation gate could not read.
+class RawAliasCanonicalizationTests(unittest.TestCase):
+    def _lookups(self, files=(), symbols=()) -> Lookups:
+        lk = Lookups("/tmp/wiki-ter-canon-test")
+        lk.files = set(files)
+        # an exact symbol_id resolves via _by_id (resolution == "exact").
+        lk._by_id = {s: {"symbol_id": s, "name": s} for s in symbols}
+        return lk
+
+    def _normalize(self, section_plan, lk):
+        doc = {"repo": "demo", "sections": [{"id": section_plan["section_id"],
+                                             "title": section_plan.get("title", "S"),
+                                             "parent": None}]}
+        raw = parse.RawPlan(document_plan=doc, section_plans=[section_plan])
+        return normalize.normalize(raw, lk, "plans/raw.md", "test")
+
+    def _fields(self, section, topic):
+        ter = next(t for t in section["topic_evidence_requirements"]
+                   if t["topic"] == topic)
+        return ter["source_fields"]
+
+    def test_file_anchor_alias_canonicalizes_to_files(self):
+        lk = self._lookups(files=["api/svc.py"])
+        res = self._normalize({
+            "section_id": "svc", "title": "Service",
+            "required_topics": ["service lifecycle"],
+            "evidence_needs": {"file_anchors": ["api/svc.py"]},
+            "topic_evidence_requirements": [
+                {"topic": "service lifecycle", "required": True,
+                 "source_fields": ["evidence_needs.file_anchors[0]"],
+                 "acceptable_lanes": ["file_anchor"]}],
+        }, lk)
+        sec = res.sections[0]
+        self.assertEqual(self._fields(sec, "service lifecycle"),
+                         ["retrieval_needs.files[0]"])
+        gate = cov.gate_topic_obligations(res.document_plan, res.sections,
+                                          mode=cov.MODE_ENHANCEMENT)
+        self.assertTrue(gate.passed)
+
+    def test_symbol_ids_alias_canonicalizes_to_symbols(self):
+        lk = self._lookups(symbols=["mod.Worker"])
+        res = self._normalize({
+            "section_id": "svc", "title": "Service",
+            "required_topics": ["class behavior"],
+            "evidence_needs": {"symbol_ids": ["mod.Worker"]},
+            "topic_evidence_requirements": [
+                {"topic": "class behavior", "required": True,
+                 "source_fields": ["evidence_needs.symbol_ids[0]"],
+                 "acceptable_lanes": ["symbol_anchor"]}],
+        }, lk)
+        sec = res.sections[0]
+        self.assertEqual(self._fields(sec, "class behavior"),
+                         ["retrieval_needs.symbols[0]"])
+        gate = cov.gate_topic_obligations(res.document_plan, res.sections,
+                                          mode=cov.MODE_ENHANCEMENT)
+        self.assertTrue(gate.passed)
+
+    def test_pruned_raw_item_shifts_index_and_unresolved_left_invalid(self):
+        # file_anchors = [missing (unresolved), good (resolves)] -> normalized files[]
+        # holds ONLY good, at index 0. So raw file_anchors[1] must canonicalize to
+        # retrieval_needs.files[0] (NOT files[1]: the non-naïve remap follows the
+        # pruning), and raw file_anchors[0] (the pruned item) must be LEFT invalid.
+        lk = self._lookups(files=["good.py"])
+        res = self._normalize({
+            "section_id": "svc", "title": "Service",
+            "required_topics": ["good topic", "bad topic"],
+            "evidence_needs": {"file_anchors": ["missing.py", "good.py"]},
+            "topic_evidence_requirements": [
+                {"topic": "good topic", "required": True,
+                 "source_fields": ["evidence_needs.file_anchors[1]"],
+                 "acceptable_lanes": ["file_anchor"]},
+                {"topic": "bad topic", "required": True,
+                 "source_fields": ["evidence_needs.file_anchors[0]"],
+                 "acceptable_lanes": ["file_anchor"]}],
+        }, lk)
+        sec = res.sections[0]
+        self.assertEqual([f["path"] for f in sec["retrieval_needs"]["files"]],
+                         ["good.py"])
+        self.assertEqual(self._fields(sec, "good topic"),
+                         ["retrieval_needs.files[0]"])           # raw[1] -> norm[0]
+        self.assertEqual(self._fields(sec, "bad topic"),
+                         ["evidence_needs.file_anchors[0]"])     # left invalid, not guessed
+        gate = cov.gate_topic_obligations(res.document_plan, res.sections,
+                                          mode=cov.MODE_ENHANCEMENT)
+        self.assertFalse(gate.passed)
+        self.assertEqual(_topic_row(gate.report, "svc", "good topic").status,
+                         cov.obligations.STATUS_OK)
+        bad = _topic_row(gate.report, "svc", "bad topic")
+        self.assertEqual(bad.status, cov.obligations.STATUS_INCOMPLETE)
+        self.assertIn(cov.obligations.CODE_RAW_ALIAS_SOURCE_FIELD, bad.defects)
+        self.assertIn("raw planner alias", bad.remediation)
+
+    def test_broad_search_hint_alias_canonicalizes_but_stays_blocking(self):
+        lk = self._lookups()
+        res = self._normalize({
+            "section_id": "svc", "title": "Service",
+            "required_topics": ["broad topic"],
+            "evidence_needs": {"search_hints": ["retrieve: svc internals"]},
+            "topic_evidence_requirements": [
+                {"topic": "broad topic", "required": True,
+                 "source_fields": ["evidence_needs.search_hints[0]"],
+                 "acceptable_lanes": ["file_anchor"]}],
+        }, lk)
+        sec = res.sections[0]
+        # canonicalized to the BROAD canonical field — but a broad lane is never
+        # sufficient for a required topic, so it must still block.
+        self.assertEqual(self._fields(sec, "broad topic"),
+                         ["retrieval_needs.search_hints[0]"])
+        gate = cov.gate_topic_obligations(res.document_plan, res.sections,
+                                          mode=cov.MODE_ENHANCEMENT)
+        self.assertFalse(gate.passed)
+        row = _topic_row(gate.report, "svc", "broad topic")
+        self.assertIn(cov.obligations.CODE_BROAD_ONLY_SOURCE_FIELDS, row.defects)
+        self.assertNotIn(cov.obligations.CODE_INVALID_SOURCE_FIELD, row.defects)
+        self.assertNotIn(cov.obligations.CODE_RAW_ALIAS_SOURCE_FIELD, row.defects)
+
+    def test_live_style_raw_alias_plan_passes_after_canonicalization(self):
+        # The live failure shape: TERs authored entirely with raw evidence_needs.*
+        # aliases across lanes. Once each raw handle resolves exactly, Phase 2
+        # canonicalizes them (recorded as a traceable warning) and the gate passes.
+        lk = self._lookups(files=["api/svc.py"], symbols=["mod.Worker"])
+        res = self._normalize({
+            "section_id": "queues", "title": "Task Queues",
+            "required_topics": ["task workers", "queue lifecycle"],
+            "evidence_needs": {"file_anchors": ["api/svc.py"],
+                               "symbol_ids": ["mod.Worker"]},
+            "topic_evidence_requirements": [
+                {"topic": "task workers", "required": True,
+                 "source_fields": ["evidence_needs.symbol_ids[0]"],
+                 "acceptable_lanes": ["symbol_anchor"]},
+                {"topic": "queue lifecycle", "required": True,
+                 "source_fields": ["evidence_needs.file_anchors[0]"],
+                 "acceptable_lanes": ["file_anchor"]}],
+        }, lk)
+        sec = res.sections[0]
+        self.assertEqual(self._fields(sec, "task workers"),
+                         ["retrieval_needs.symbols[0]"])
+        self.assertEqual(self._fields(sec, "queue lifecycle"),
+                         ["retrieval_needs.files[0]"])
+        gate = cov.gate_topic_obligations(res.document_plan, res.sections,
+                                          mode=cov.MODE_ENHANCEMENT)
+        self.assertTrue(gate.passed)
+        self.assertTrue(any("canonicalized topic_evidence_requirements" in w
+                            for w in res.warnings))
+
+    def test_dual_key_authoring_is_ambiguous_and_left_invalid(self):
+        # evidence_needs authored BOTH file_anchors[] and files[] -> a raw file alias
+        # is ambiguous about which raw list it indexes. Phase 2 must NOT guess: it
+        # leaves the alias invalid so the gate fails loudly (rather than canonicalize
+        # against the wrong list and mask the defect).
+        lk = self._lookups(files=["a.py", "b.py"])
+        res = self._normalize({
+            "section_id": "svc", "title": "Service",
+            "required_topics": ["topic"],
+            "evidence_needs": {"file_anchors": ["a.py"], "files": ["b.py"]},
+            "topic_evidence_requirements": [
+                {"topic": "topic", "required": True,
+                 "source_fields": ["evidence_needs.file_anchors[0]"],
+                 "acceptable_lanes": ["file_anchor"]}],
+        }, lk)
+        sec = res.sections[0]
+        self.assertEqual(self._fields(sec, "topic"),
+                         ["evidence_needs.file_anchors[0]"])     # left invalid, not guessed
+        gate = cov.gate_topic_obligations(res.document_plan, res.sections,
+                                          mode=cov.MODE_ENHANCEMENT)
+        self.assertFalse(gate.passed)
+        row = _topic_row(gate.report, "svc", "topic")
+        self.assertIn(cov.obligations.CODE_RAW_ALIAS_SOURCE_FIELD, row.defects)
+        self.assertTrue(any("ambiguous" in w for w in res.warnings))
+
+    def test_already_canonical_and_bare_fields_are_unchanged(self):
+        # retrieval_needs.* keeps normalized-index semantics; a bare lane name is left
+        # verbatim (the gate reads it as a normalized index, as before). No spurious
+        # canonicalization warning is emitted for either.
+        lk = self._lookups(files=["api/svc.py"])
+        res = self._normalize({
+            "section_id": "svc", "title": "Service",
+            "required_topics": ["a", "b"],
+            "evidence_needs": {"file_anchors": ["api/svc.py"]},
+            "topic_evidence_requirements": [
+                {"topic": "a", "source_fields": ["retrieval_needs.files[0]"],
+                 "acceptable_lanes": ["file_anchor"]},
+                {"topic": "b", "source_fields": ["files[0]"],
+                 "acceptable_lanes": ["file_anchor"]}],
+        }, lk)
+        sec = res.sections[0]
+        self.assertEqual(self._fields(sec, "a"), ["retrieval_needs.files[0]"])
+        self.assertEqual(self._fields(sec, "b"), ["files[0]"])
+        self.assertFalse(any("canonicalized topic_evidence_requirements" in w
+                             for w in res.warnings))
+        gate = cov.gate_topic_obligations(res.document_plan, res.sections,
+                                          mode=cov.MODE_ENHANCEMENT)
+        self.assertTrue(gate.passed)
+
+
+# ---------------------------------------------------------------------------
+# Bounded plan-repair in ENHANCEMENT mode: success means readiness AND the strict
+# planned-coverage + topic-obligation gates pass. A repair that passes only the old
+# Phase-3 readiness but fails topic obligations is rejected, its diagnostics fed into
+# the next attempt, and after the cap it fails loudly. Gemini is injected (fake) — no
+# Vertex/Gemini/API/network. Reuses the 13-family obligation-complete fixture so the
+# planned-coverage gate is green and only the obligation gate is exercised.
+def _broken_plan_missing_one_ter():
+    """The 13-family plan with one topic-bearing section (task-queues) stripped of its
+    topic_evidence_requirements[] — passes readiness, fails the obligation gate."""
+    doc, plans = _full_plans()
+    tq = next(p for p in plans if p["section_id"] == "task-queues")
+    del tq["topic_evidence_requirements"]
+    return doc, plans
+
+
+class EnhancementRepairTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="obl_repair_")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.bundle = os.path.join(self.tmp, "bundle")
+        self.out = os.path.join(self.bundle, "plans")
+        inv = os.path.join(self.bundle, "inventory")
+        os.makedirs(inv)
+        with open(os.path.join(inv, "files.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({"path": _TOPIC_FILE, "line_count": 200}) + "\n")
+
+    def _write_raw(self, text) -> str:
+        p = os.path.join(self.bundle, "phase2-gemini-response.md")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(text)
+        return p
+
+    def test_rejects_old_readiness_only_repair_then_accepts(self):
+        broken_doc, broken_plans = _broken_plan_missing_one_ter()
+        full_doc, full_plans = _full_plans()
+        raw = self._write_raw(_raw_response(broken_doc, broken_plans))
+        bad_raw = _raw_response(broken_doc, broken_plans)   # passes readiness, fails obligations
+        good_raw = _raw_response(full_doc, full_plans)      # passes both gates
+        calls: list = []
+
+        def fake(system, user):
+            calls.append(user)
+            return bad_raw if len(calls) == 1 else good_raw
+
+        report = repair.repair_plan(self.bundle, raw, self.out, client_call=fake,
+                                    max_attempts=2, coverage_mode="enhancement")
+        self.assertTrue(report["repaired"])
+        self.assertEqual(report["attempts"], 2)            # attempt-1 rejected, attempt-2 accepted
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(report["coverage_mode"], "enhancement")
+
+        # attempt-1 was rejected on the topic-obligation gate (NOT readiness).
+        a1 = os.path.join(self.out, "repair", "attempt-1")
+        v1 = util.read_json(os.path.join(a1, "validation.json"))
+        self.assertFalse(v1["ok"])
+        self.assertTrue(any("topic-obligation gate FAIL" in p for p in v1["problems"]))
+        self.assertFalse(any("readiness still FAIL" in p for p in v1["problems"]))
+        # the exact topic-obligation diagnostics were fed to the model.
+        fed1 = util.read_json(os.path.join(a1, "obligation-diagnostics-fed.json"))
+        self.assertTrue(any(d["section_id"] == "task-queues" for d in fed1))
+        # attempt-2 was re-prompted WITH those diagnostics.
+        req2 = open(os.path.join(self.out, "repair", "attempt-2",
+                                 "repair-request.txt")).read()
+        self.assertIn("Topic-obligation gate failures to fix", req2)
+        self.assertIn("task-queues", req2)
+        # the accepted attempt records the final post-repair gate verdict (both pass).
+        gates = util.read_json(os.path.join(self.out, "repair", "attempt-2",
+                                            "enhancement-gates.json"))
+        self.assertTrue(gates["planned_coverage"]["passed"])
+        self.assertTrue(gates["topic_obligations"]["passed"])
+        # and the written plan really carries task-queues' restored obligation.
+        rows = list(util.read_jsonl(os.path.join(self.out, "section-plans.jsonl")))
+        tq = next(r for r in rows if r["section_id"] == "task-queues")
+        self.assertTrue(tq["topic_evidence_requirements"])
+
+    def test_accepts_in_one_attempt_when_gates_pass(self):
+        broken_doc, broken_plans = _broken_plan_missing_one_ter()
+        full_doc, full_plans = _full_plans()
+        raw = self._write_raw(_raw_response(broken_doc, broken_plans))
+        good_raw = _raw_response(full_doc, full_plans)
+
+        report = repair.repair_plan(self.bundle, raw, self.out,
+                                    client_call=lambda s, u: good_raw,
+                                    max_attempts=1, coverage_mode="enhancement")
+        self.assertTrue(report["repaired"])
+        self.assertEqual(report["attempts"], 1)
+
+    def test_fails_loudly_after_cap_when_obligations_never_pass(self):
+        broken_doc, broken_plans = _broken_plan_missing_one_ter()
+        raw = self._write_raw(_raw_response(broken_doc, broken_plans))
+        bad_raw = _raw_response(broken_doc, broken_plans)
+        with self.assertRaises(repair.RepairFailed):
+            repair.repair_plan(self.bundle, raw, self.out,
+                               client_call=lambda s, u: bad_raw,
+                               max_attempts=2, coverage_mode="enhancement")
+        rep = open(os.path.join(self.out, "repair", "repair-report.md")).read()
+        self.assertIn("FAILED", rep)
+
+    def test_baseline_mode_does_not_run_enhancement_gates(self):
+        # Non-breaking: a plan that passes readiness but fails obligations is accepted
+        # in baseline mode with NO repair (the client is never invoked).
+        broken_doc, broken_plans = _broken_plan_missing_one_ter()
+        raw = self._write_raw(_raw_response(broken_doc, broken_plans))
+
+        def boom(system, user):
+            raise AssertionError("baseline repair must not run for a readiness-pass plan")
+
+        report = repair.repair_plan(self.bundle, raw, self.out, client_call=boom,
+                                    coverage_mode="baseline")
+        self.assertFalse(report["repaired"])
+        self.assertEqual(report["attempts"], 0)
 
 
 if __name__ == "__main__":

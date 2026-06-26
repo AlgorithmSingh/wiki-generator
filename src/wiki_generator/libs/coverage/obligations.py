@@ -80,6 +80,7 @@ CODE_MISSING_TER = "required_topic_missing_evidence_requirement"
 CODE_NOT_REQUIRED = "topic_evidence_requirement_not_required"
 CODE_EMPTY_SOURCE_FIELDS = "topic_evidence_requirement_empty_source_fields"
 CODE_INVALID_SOURCE_FIELD = "topic_evidence_requirement_invalid_source_field"
+CODE_RAW_ALIAS_SOURCE_FIELD = "topic_evidence_requirement_raw_alias_source_field"
 CODE_BROAD_ONLY_SOURCE_FIELDS = "topic_evidence_requirement_broad_only_source_fields"
 CODE_BROAD_ONLY_ACCEPTABLE_LANES = "topic_evidence_requirement_broad_only_acceptable_lanes"
 
@@ -237,7 +238,12 @@ def _classify_source_field(section: dict, source_field: str) -> dict:
 
     ``valid`` means it references a real ``retrieval_needs.*`` entry; ``exact`` means
     that entry is a citeable exact lane. The two booleans drive every obligation
-    defect: a topic needs at least one ``valid and exact`` source field."""
+    defect: a topic needs at least one ``valid and exact`` source field.
+
+    A ``raw_alias`` is a leftover ``evidence_needs.*`` planner alias that Phase 2
+    normalization could NOT canonicalize to a normalized ``retrieval_needs.*`` lane
+    (the raw item was pruned/unresolved). It is never valid or exact — it carries a
+    dedicated, more actionable diagnostic than a generic invalid reference."""
     field_name, idx = parse_source_field(source_field)
     if field_name in EXACT_FIELD_LANES:
         lane, kind = EXACT_FIELD_LANES[field_name], "exact"
@@ -246,6 +252,10 @@ def _classify_source_field(section: dict, source_field: str) -> dict:
     elif field_name in BROAD_FIELD_LANES:
         lane, kind = BROAD_FIELD_LANES[field_name][0], "broad"
         valid = field_index_valid(section, field_name, idx)
+        exact = False
+    elif field_name.startswith("evidence_needs."):
+        lane, kind = None, "raw_alias"
+        valid = False
         exact = False
     else:
         lane, kind = None, "unknown"
@@ -273,6 +283,14 @@ def _remediation(topic: str, defects: list) -> str:
     if CODE_EMPTY_SOURCE_FIELDS in defects:
         return (f"give '{topic}' non-empty source_fields[] pointing at exact "
                 f"retrieval_needs.* lanes (files/symbols/contracts/tests/query_packs).")
+    if CODE_RAW_ALIAS_SOURCE_FIELD in defects:
+        return (f"a source_field for '{topic}' is a raw planner alias "
+                f"(evidence_needs.*) that Phase 2 could not canonicalize to an exact "
+                f"normalized retrieval_needs.* lane — the referenced raw evidence_needs "
+                f"item did not resolve to a normalized exact lane (it was "
+                f"pruned/unresolved during normalization). Point source_fields[] at a "
+                f"real retrieval_needs.* index, or fix evidence_needs so that item "
+                f"resolves to an exact handle (files/symbols/contracts/tests/query_packs).")
     if CODE_INVALID_SOURCE_FIELD in defects:
         return (f"a source_field for '{topic}' references a retrieval_needs.* entry "
                 f"that does not exist in the normalized plan; point it at a real "
@@ -316,6 +334,7 @@ def _eval_topic(section: dict, topic: str, ter: dict | None, required: bool,
             acceptable_lanes=acceptable)
 
     has_invalid = any(not r["valid"] for r in sf_results)
+    has_raw_alias = any(r["kind"] == "raw_alias" for r in sf_results)
     has_valid_exact = any(r["valid"] and r["exact"] for r in sf_results)
 
     defects: list = []
@@ -326,6 +345,10 @@ def _eval_topic(section: dict, topic: str, ter: dict | None, required: bool,
     else:
         if has_invalid:
             defects.append(CODE_INVALID_SOURCE_FIELD)
+        if has_raw_alias:
+            # a more specific subclass of "invalid": a raw evidence_needs.* alias that
+            # normalization could not canonicalize (the raw item did not survive).
+            defects.append(CODE_RAW_ALIAS_SOURCE_FIELD)
         if not has_valid_exact and not has_invalid:
             # source fields present and all reference real entries, but none is an
             # exact citeable lane -> grounded only on broad recall.

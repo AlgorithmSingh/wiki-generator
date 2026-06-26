@@ -160,8 +160,78 @@ def _str_list(*sources) -> list[str]:
 _TER_ACCEPTABLE_LANES = ("file_anchor", "symbol_anchor", "contract", "test",
                          "query_pack")
 
+# A TER source_field may be authored in canonical normalized form
+# (``retrieval_needs.<lane>[M]``) or as a raw planner alias that names a *raw*
+# ``evidence_needs.*`` lane by its raw index. The live RAGFlow run failed closed
+# because the planner/repair model wrote raw aliases (``evidence_needs.file_anchors[0]``)
+# that the obligation gate cannot read. Phase 2 may canonicalize a documented raw
+# alias ONLY when the raw lane item it names actually resolved to a concrete
+# normalized lane item — using the raw-index → normalized-index map built during
+# need resolution. It must NOT guess from topic text, prose, filenames, or the
+# benchmark. The exact aliases map to citeable lanes; the broad aliases map to
+# broad lanes that remain insufficient for a required topic.
+_TER_EXACT_ALIASES = {
+    "file_anchors": "files", "files": "files",
+    "symbol_ids": "symbols", "symbols": "symbols",
+    "contracts": "contracts", "tests": "tests",
+    "query_packs": "query_packs",
+}
+_TER_BROAD_ALIASES = {"search_hints": "search_hints", "graph_nodes": "graph_nodes"}
+_TER_SOURCE_FIELD_RE = re.compile(
+    r"^(retrieval_needs|evidence_needs)\.([a-z_]+)(?:\[(\d+)\])?$")
 
-def _topic_evidence_requirements(plan: dict) -> list[dict]:
+
+def _canonicalize_ter_source_field(source_field: str, lane_maps: dict,
+                                   section_id: str, topic: str,
+                                   warnings: list[str]) -> str:
+    """Canonicalize one raw ``evidence_needs.*`` TER source-field alias.
+
+    Deterministic and trace-preserving (spec "Source-field canonicalization
+    contract"):
+
+    - ``retrieval_needs.<lane>[M]`` and bare/odd forms are returned verbatim —
+      they already carry normalized-index semantics or will be rejected by the
+      obligation gate as authored.
+    - ``evidence_needs.<alias>[N]`` is rewritten to ``retrieval_needs.<lane>[M]``
+      ONLY when raw lane item ``N`` resolved to normalized lane item ``M`` (looked
+      up in ``lane_maps`` — the raw-index → normalized-index map built while
+      resolving the section's needs). ``M`` is the *resolved* index, so raw lane
+      pruning that shifted indices is followed exactly (raw ``[1]`` may become
+      normalized ``[0]``); it is never a naïve same-index rewrite.
+    - If raw item ``N`` was pruned / unresolved / routed elsewhere (``None`` in the
+      map) or is out of range, the raw alias is LEFT verbatim so the obligation
+      gate fails loudly with an actionable diagnostic. No guessing.
+    """
+    m = _TER_SOURCE_FIELD_RE.match(source_field)
+    if not m:
+        return source_field
+    namespace, field, idx_s = m.group(1), m.group(2), m.group(3)
+    if namespace == "retrieval_needs":
+        return source_field  # already canonical (normalized-index form)
+    canonical = _TER_EXACT_ALIASES.get(field) or _TER_BROAD_ALIASES.get(field)
+    if canonical is None or idx_s is None:
+        return source_field  # unknown raw lane / no index -> leave for the gate
+    raw_idx = int(idx_s)
+    lane_map = lane_maps.get(canonical) or []
+    norm_idx = lane_map[raw_idx] if 0 <= raw_idx < len(lane_map) else None
+    if norm_idx is None:
+        warnings.append(
+            f"[{section_id}] topic_evidence_requirements source_field "
+            f"{source_field!r} (topic {topic!r}) left INVALID: raw "
+            f"evidence_needs.{field}[{raw_idx}] did not resolve to a normalized "
+            f"retrieval_needs.{canonical} lane (pruned/unresolved/out-of-range); "
+            "not guessed — fix the planner evidence_needs or the source_field")
+        return source_field
+    canonical_sf = f"retrieval_needs.{canonical}[{norm_idx}]"
+    if canonical_sf != source_field:
+        warnings.append(
+            f"[{section_id}] canonicalized topic_evidence_requirements source_field "
+            f"{source_field!r} -> {canonical_sf!r} (topic {topic!r})")
+    return canonical_sf
+
+
+def _topic_evidence_requirements(plan: dict, lane_maps: dict, section_id: str,
+                                 warnings: list[str]) -> list[dict]:
     """Preserve the additive ``topic_evidence_requirements[]`` SectionPlan field.
 
     This is the deterministic bridge a coverage-enhanced plan provides from a
@@ -172,8 +242,11 @@ def _topic_evidence_requirements(plan: dict) -> list[dict]:
     normalization of what the planner authored:
 
     - keep items that are objects with a non-empty ``topic`` string;
-    - ``source_fields[]`` kept verbatim as authored (Phase 3 resolves them against
-      the normalized ``retrieval_needs.*`` entries and exact-request coverage);
+    - ``source_fields[]`` are stored in canonical ``retrieval_needs.*`` form: a
+      documented raw ``evidence_needs.*`` alias is canonicalized via ``lane_maps``
+      only when its raw lane item resolved to a concrete normalized lane item
+      (otherwise left verbatim for the obligation gate to reject — never guessed);
+      Phase 3 resolves them against the normalized ``retrieval_needs.*`` entries;
     - ``required`` defaults to ``True`` (the gate enforces required topics);
     - ``min_items`` is a positive int (default ``1``);
     - ``acceptable_lanes`` defaults to the exact lanes when absent/empty.
@@ -185,8 +258,10 @@ def _topic_evidence_requirements(plan: dict) -> list[dict]:
         topic = item.get("topic")
         if not isinstance(topic, str) or not topic.strip():
             continue
-        source_fields = [str(s).strip() for s in _as_list(item.get("source_fields"))
-                         if str(s).strip()]
+        source_fields = [
+            _canonicalize_ter_source_field(str(s).strip(), lane_maps, section_id,
+                                           topic.strip(), warnings)
+            for s in _as_list(item.get("source_fields")) if str(s).strip()]
         min_items = item.get("min_items")
         min_items = min_items if isinstance(min_items, int) and min_items >= 1 else 1
         lanes = [str(x).strip() for x in _as_list(item.get("acceptable_lanes"))
@@ -202,7 +277,7 @@ def _topic_evidence_requirements(plan: dict) -> list[dict]:
 
 
 def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
-                   unresolved: list[dict], warnings: list[str]) -> dict:
+                   unresolved: list[dict], warnings: list[str]):
     """Resolve a section's evidence needs into exact retrieval lanes.
 
     Readiness contract: an exact lane (``symbols``/``files``/``contracts``/
@@ -212,12 +287,26 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
     to ``search_hints[]`` (BM25/vector recall text). Planner-context docs
     (``derived/planning-*.md``) are routed to ``context_artifacts[]`` and never
     become citeable ``files`` evidence.
+
+    Returns ``(needs, lane_maps)``. ``lane_maps`` is the deterministic raw-index →
+    normalized-index map per canonical lane (``None`` when raw item ``N`` was
+    pruned/unresolved/routed): the trace a documented ``evidence_needs.<lane>[N]``
+    TER source-field alias is canonicalized through. It follows index shifts from
+    pruning exactly — it is never a naïve same-index assumption.
     """
     qpacks, symbols, files, contracts, tests, graph_nodes = [], [], [], [], [], []
     search_hints: list[dict] = []
     context_artifacts: list[dict] = []
     hint_seen: set[str] = set()
     ca_seen: set[str] = set()
+    # Per-lane raw-index → normalized-index trace (None == raw item did not survive
+    # into the exact/broad lane). query_pack/graph maps are completed after dedup.
+    qp_keys: list = []      # raw query_pack idx -> resolved canonical key | None
+    sym_norm: list = []     # raw symbol idx -> normalized symbols[] idx | None
+    file_norm: list = []    # raw file idx -> normalized files[] idx | None
+    con_norm: list = []     # raw contract idx -> normalized contracts[] idx | None
+    test_norm: list = []    # raw test idx -> normalized tests[] idx | None
+    gn_ids: list = []       # raw graph idx -> resolved node_id | None
 
     def add_hint(text, scope, reason, source_field=None, source_input=None) -> None:
         if text is None:
@@ -249,11 +338,13 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
         key = lk.resolve_query_pack(ref)
         if key:
             qpacks.append(key)
+            qp_keys.append(key)
         else:
             unresolved.append({"section_id": section_id, "type": "query_pack",
                                "input": q, "reason": "no_match", "candidates": []})
             warnings.append(f"[{section_id}] unresolved query pack: {ref!r}")
             add_hint(ref, ["queries"], "unknown query pack")
+            qp_keys.append(None)
 
     # --- symbols (exact symbol_id / unique alias only) ----------------------
     sym_in = ev.get("symbols")
@@ -265,6 +356,7 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
         if r.resolution in ("exact", "unique_alias"):
             symbols.append({"input": ref, "symbol_id": r.symbol_id,
                             "resolution": r.resolution, "candidates": r.candidates})
+            sym_norm.append(len(symbols) - 1)
         else:
             reason = "ambiguous" if r.resolution == "ambiguous" else "no_match"
             unresolved.append({"section_id": section_id, "type": "symbol",
@@ -272,6 +364,7 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
                                "candidates": r.candidates})
             warnings.append(f"[{section_id}] {r.resolution} symbol: {ref!r}")
             add_hint(ref, ["source"], f"unresolved symbol ({r.resolution})")
+            sym_norm.append(None)
 
     # --- files (real source files; digests -> context_artifacts) ------------
     files_in = ev.get("files")
@@ -288,12 +381,14 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
                                "candidates": []})
             warnings.append(
                 f"[{section_id}] planner-context doc moved out of files[]: {ref!r}")
+            file_norm.append(None)
             continue
         r = lk.resolve_file(str(ref))
         if r.resolution in ("file_exists", "unique_suffix"):
             files.append({"input": ref, "path": r.path, "anchor": r.anchor,
                           "anchor_confidence": r.anchor_confidence,
                           "resolution": r.resolution, "candidates": r.candidates})
+            file_norm.append(len(files) - 1)
             if r.anchor is not None and r.anchor_confidence in (
                     "file_only", "unresolved"):
                 add_hint(r.anchor, ["source"],
@@ -319,6 +414,7 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
                 warnings.append(
                     f"[{section_id}] non-source bundle artifact in files[]: {ref!r}")
                 add_hint(ref, ["source"], "non-source bundle artifact")
+            file_norm.append(None)
         elif r.resolution != "ambiguous" and lk.is_directory_like(ref):
             # Patch 1: a directory / trailing-slash / path-prefix reference is a
             # useful retrieval *neighbourhood* ("agent/component/"), not an exact
@@ -338,6 +434,7 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
             warnings.append(
                 f"[{section_id}] directory-like file anchor routed to "
                 f"search_hints[]: {ref!r}")
+            file_norm.append(None)
         else:
             reason = "ambiguous" if r.resolution == "ambiguous" else "no_match"
             unresolved.append({"section_id": section_id, "type": "file",
@@ -345,6 +442,7 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
                                "candidates": r.candidates})
             warnings.append(f"[{section_id}] {r.resolution} file: {ref!r}")
             add_hint(ref, ["source"], f"unresolved file ({r.resolution})")
+            file_norm.append(None)
 
     # --- contracts (exact METHOD /path only) --------------------------------
     for c in _as_list(ev.get("contracts")):
@@ -352,6 +450,7 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
         res = lk.resolve_contract(ref)
         if res["resolution"] == "exact":
             contracts.append(res)
+            con_norm.append(len(contracts) - 1)
         else:
             unresolved.append({"section_id": section_id, "type": "contract",
                                "input": ref, "reason": res["resolution"],
@@ -360,6 +459,7 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
                 f"[{section_id}] non-exact contract ({res['resolution']}): {ref!r}")
             add_hint(ref, ["source", "query_pack:web_routes"],
                      f"non-exact contract ({res['resolution']})")
+            con_norm.append(None)
 
     # --- tests (exact test file / unique suffix) ----------------------------
     for t in _as_list(ev.get("tests")):
@@ -367,6 +467,7 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
         res = lk.resolve_test(ref)
         if res["resolution"] in ("test_file", "unique_suffix", "file_exists"):
             tests.append(res)
+            test_norm.append(len(tests) - 1)
         else:
             unresolved.append({"section_id": section_id, "type": "test",
                                "input": ref, "reason": res["resolution"],
@@ -374,6 +475,7 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
             warnings.append(
                 f"[{section_id}] non-exact test ({res['resolution']}): {ref!r}")
             add_hint(ref, ["tests"], f"non-exact test ({res['resolution']})")
+            test_norm.append(None)
 
     # --- graph nodes (exact node_id only; display labels -> hints) ----------
     for g in _as_list(ev.get("graph_nodes")):
@@ -381,6 +483,7 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
         r = lk.resolve_graph_node(ref)
         if r.resolution in ("exact", "display_label", "unique_name"):
             graph_nodes.append(r.node_id)
+            gn_ids.append(r.node_id)
         else:
             unresolved.append({"section_id": section_id, "type": "graph",
                                "input": ref, "reason": r.resolution,
@@ -388,6 +491,7 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
             warnings.append(
                 f"[{section_id}] unresolved graph node ({r.resolution}): {ref!r}")
             add_hint(ref, ["graph"], f"unresolved graph node ({r.resolution})")
+            gn_ids.append(None)
 
     # --- planner-provided non-exact lanes (already correctly placed) --------
     for h in _as_list(ev.get("search_hints")):
@@ -410,16 +514,60 @@ def _resolve_needs(section_id: str, ev: dict, lk: Lookups,
         if cap is not None:
             add_context_artifact(cap, role)
 
-    return {
-        "query_packs": _dedup(qpacks),
+    final_qpacks = _dedup(qpacks)
+    final_graph = _dedup(graph_nodes)
+    needs = {
+        "query_packs": final_qpacks,
         "symbols": symbols,
         "files": files,
         "contracts": contracts,
         "tests": tests,
-        "graph_nodes": _dedup(graph_nodes),
+        "graph_nodes": final_graph,
         "search_hints": search_hints,
         "context_artifacts": context_artifacts,
     }
+
+    # Complete the dedup-affected maps (query_packs / graph_nodes collapse repeats,
+    # so a raw item maps to the index of its key/id in the final deduped lane), and
+    # the broad search_hints map (raw planner hints land last; match by stripped,
+    # casefolded text — the same dedup key add_hint uses).
+    qp_final_idx = {k: i for i, k in enumerate(final_qpacks)}
+    gn_final_idx = {n: i for i, n in enumerate(final_graph)}
+    hint_idx_by_cf: dict = {}
+    for i, entry in enumerate(search_hints):
+        hint_idx_by_cf.setdefault(str(entry.get("text", "")).strip().casefold(), i)
+    sh_norm: list = []
+    for h in _as_list(ev.get("search_hints")):
+        t = (h.get("text") or h.get("input")) if isinstance(h, dict) else h
+        sh_norm.append(hint_idx_by_cf.get(str(t).strip().casefold())
+                       if t is not None else None)
+    lane_maps = {
+        "query_packs": [qp_final_idx.get(k) if k else None for k in qp_keys],
+        "symbols": sym_norm,
+        "files": file_norm,
+        "contracts": con_norm,
+        "tests": test_norm,
+        "graph_nodes": [gn_final_idx.get(n) if n else None for n in gn_ids],
+        "search_hints": sh_norm,
+    }
+    # A lane authored under BOTH of its raw keys (files+file_anchors /
+    # symbols+symbol_ids) makes a raw-index TER alias ambiguous — which raw list does
+    # ``evidence_needs.file_anchors[N]`` index? Refuse to canonicalize that lane
+    # (``None`` map → every alias is left verbatim/invalid for the gate) rather than
+    # guess against the wrong list (spec: do not naively rewrite when meaning shifts).
+    if ev.get("files") is not None and ev.get("file_anchors") is not None:
+        lane_maps["files"] = None
+        warnings.append(
+            f"[{section_id}] evidence_needs authored BOTH files[] and file_anchors[]; "
+            "raw file source-field aliases are ambiguous and left uncanonicalized "
+            "(use a single key)")
+    if ev.get("symbols") is not None and ev.get("symbol_ids") is not None:
+        lane_maps["symbols"] = None
+        warnings.append(
+            f"[{section_id}] evidence_needs authored BOTH symbols[] and symbol_ids[]; "
+            "raw symbol source-field aliases are ambiguous and left uncanonicalized "
+            "(use a single key)")
+    return needs, lane_maps
 
 
 def _expected_types(needs: dict) -> list[str]:
@@ -453,7 +601,7 @@ def _build_section(nid: str, order: int, meta: dict | None, plan: dict | None,
     title = meta.get("title") or plan.get("title") or nid
     ev = plan.get("evidence_needs") or {}
     before = len(unresolved)
-    needs = _resolve_needs(nid, ev, lk, unresolved, warnings)
+    needs, lane_maps = _resolve_needs(nid, ev, lk, unresolved, warnings)
     section_warnings = sec_warnings + [
         f"{u['type']} {u['reason']}: {u['input']}" for u in unresolved[before:]]
 
@@ -492,7 +640,8 @@ def _build_section(nid: str, order: int, meta: dict | None, plan: dict | None,
         "rationale": meta.get("rationale"),
         "required_topics": _str_list(plan.get("coverage_requirements"),
                                      plan.get("required_topics")),
-        "topic_evidence_requirements": _topic_evidence_requirements(plan),
+        "topic_evidence_requirements": _topic_evidence_requirements(
+            plan, lane_maps, nid, warnings),
         "key_questions": _str_list(plan.get("key_questions")),
         "expected_sources": _str_list(plan.get("expected_sources"),
                                       plan.get("expected_source_handles")),

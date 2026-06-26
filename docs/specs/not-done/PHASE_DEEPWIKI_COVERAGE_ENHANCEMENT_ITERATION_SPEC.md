@@ -16,10 +16,17 @@ against `35bdc18`. It failed closed before Phase 3: planned coverage passed
 (`0/46` complete required-topic obligations; 21 missing TER rows and 25
 invalid/broad-only source-field mappings, commonly raw `evidence_needs.*` source
 field names where canonical `retrieval_needs.*` fields are expected). Phase 3 and
-Phase 4 did not run. Pending next: implement the Phase 2 TER source-field
-canonicalization and enhancement-repair diagnostics slice described below,
-non-live only; no further live/billed retry unless the user explicitly approves
-it after that slice passes.**
+Phase 4 did not run. The **Phase 2 TER source-field canonicalization and
+enhancement-repair diagnostics** slice described below is now implemented and
+tested non-live: Phase 2 normalization canonicalizes documented raw
+`evidence_needs.*` TER source-field aliases to canonical `retrieval_needs.*` form
+through a deterministic raw-index → normalized-index map (only when the raw item
+resolved; ambiguous/pruned cases are left invalid and fail loudly), and bounded
+Step 1b `plan-repair --coverage-mode enhancement` accepts a repair only when
+readiness AND the planned-coverage AND topic-obligation gates all pass, feeding the
+topic-obligation diagnostics into the next attempt and failing loudly after the cap.
+Pending next: explicit user approval for any further live/billed RAGFlow retry. No
+further live/billed retry unless the user explicitly approves it.**
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
 enhancement track. It consolidates the immediate malformed-citation validator
@@ -297,7 +304,51 @@ normalization failed before Phase 3 after bounded Step 1b repair:
   canonical `retrieval_needs.files[0]`, `retrieval_needs.symbols[0]`, and
   `retrieval_needs.query_packs[0]`.
 
-## Phase 2 TER Source-Field Canonicalization and Enhancement Repair Diagnostics — next implementation slice
+## Phase 2 TER Source-Field Canonicalization and Enhancement Repair Diagnostics — implemented non-live slice
+
+### Implemented (non-live)
+
+This slice is implemented and tested non-live:
+
+- `plan_normalization/normalize.py` now stores each
+  `topic_evidence_requirements[].source_fields[]` entry in canonical
+  `retrieval_needs.*` form. `_resolve_needs` returns a per-section, per-lane
+  raw-index → normalized-index map (`None` when a raw item was
+  pruned/unresolved/routed), built while resolving needs so it follows pruning index
+  shifts exactly. `_canonicalize_ter_source_field` rewrites a documented raw
+  `evidence_needs.<alias>[N]` to `retrieval_needs.<lane>[M]` ONLY when raw item `N`
+  resolved to normalized item `M`; otherwise it leaves the raw alias verbatim (the
+  gate then fails loudly) and records a traceable normalization warning. A lane
+  authored under BOTH raw keys (`files`+`file_anchors` / `symbols`+`symbol_ids`) is
+  ambiguous and is left uncanonicalized rather than guessed. Bare and already-canonical
+  `retrieval_needs.*` source fields are unchanged. No guessing from topic text, prose,
+  filenames, or the benchmark.
+- `coverage/obligations.py` adds a dedicated, more actionable diagnostic
+  (`topic_evidence_requirement_raw_alias_source_field`) for a leftover raw alias that
+  could not be canonicalized; raw aliases remain blocking (the gate is not weakened).
+- `plan_normalization/repair.py` + `plan-repair --coverage-mode enhancement` accept a
+  repair only when readiness AND the planned-coverage gate AND the topic-obligation
+  gate all pass. A repair that passes only old readiness but fails topic obligations is
+  rejected; the exact topic-obligation diagnostics are written to the audit
+  (`repair/attempt-N/obligation-diagnostics-fed.json`) and fed into the next attempt's
+  prompt; the final post-repair gate verdict is recorded
+  (`repair/attempt-N/enhancement-gates.json`); after the hard cap it fails loudly.
+  Baseline mode is unchanged (old readiness gate only).
+- Planner prompts (`plan.py`, `gemini-gem/GEM_INSTRUCTIONS.md`,
+  `gemini-gem/KICKOFF_PROMPT.md`) explain that raw `evidence_needs.*` aliases are
+  compatibility input canonicalized only when the exact raw handle resolves, and keep
+  asking for canonical `retrieval_needs.*` names and forbidding broad-only support.
+- `scripts/phase2_step1b_repair_plan.sh` exposes/passes `--coverage-mode`.
+- `tests/test_phase2_obligation_gate.py` proves raw file/symbol alias canonicalization,
+  the non-naïve pruned-index remap (raw `[1]`→normalized `[0]`) with the pruned item
+  left invalid, dual-key ambiguity left invalid, broad-alias canonicalization that
+  stays blocking, a live-style raw-alias plan passing after canonicalization, and
+  fake-client bounded enhancement repair (rejects old-readiness-only, feeds diagnostics
+  forward, accepts only on strict enhancement-gate pass, fails loudly after the cap,
+  baseline non-breaking). `tests/test_phase1.py` exercises the `_resolve_needs` tuple
+  return. No Vertex/Gemini/API/network; protected Phase 3 spec unchanged; validators
+  unchanged or stricter; baseline non-breaking; full suite passes with
+  `uv run python -m pytest -q`.
 
 ### Artifact and quality bar
 

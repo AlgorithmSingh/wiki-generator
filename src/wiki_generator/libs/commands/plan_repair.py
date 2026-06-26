@@ -45,7 +45,8 @@ def run(args: argparse.Namespace) -> int:
                 or os.environ.get("GOOGLE_CLOUD_LOCATION") or _repair.DEFAULT_LOCATION)
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 
-    log(f"plan-repair: {raw_path}")
+    coverage_mode = getattr(args, "coverage_mode", "baseline")
+    log(f"plan-repair: {raw_path} (coverage-mode: {coverage_mode})")
     try:
         report = _repair.repair_plan(
             bundle_dir, raw_path, out_dir,
@@ -55,6 +56,7 @@ def run(args: argparse.Namespace) -> int:
             model=getattr(args, "model", _repair.DEFAULT_MODEL),
             api_key=api_key,
             max_output_tokens=getattr(args, "max_output_tokens", 32768),
+            coverage_mode=coverage_mode,
         )
     except _repair.RepairUnavailable as e:
         log(f"plan-repair: repair REQUIRED but unavailable — {e}")
@@ -65,11 +67,13 @@ def run(args: argparse.Namespace) -> int:
         log(f"plan-repair: FAILED — {e}")
         return 1
 
+    verdict = ("readiness + enhancement gates PASS"
+               if coverage_mode == "enhancement" else "readiness PASS")
     if report["repaired"]:
         log(f"plan-repair: repaired in {report['attempts']} attempt(s) "
-            f"via {report.get('client_mode')} — readiness PASS")
+            f"via {report.get('client_mode')} — {verdict}")
         log(f"  audit: {os.path.join(out_dir, 'repair')}")
     else:
-        log("plan-repair: no repair needed — readiness already PASS")
+        log(f"plan-repair: no repair needed — {verdict}")
     log(f"  wrote plan artifacts: {report['out_dir']}")
     return 0

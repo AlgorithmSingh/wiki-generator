@@ -114,7 +114,13 @@ is the #1 cause of a failed run. source_fields[] must point at the EXACT normali
 retrieval lanes that will ground the topic, by index: e.g. "retrieval_needs.files[0]", \
 "retrieval_needs.symbols[1]", "retrieval_needs.contracts[0]", \
 "retrieval_needs.tests[0]", or "retrieval_needs.query_packs[0]" — the same \
-evidence_needs entries you filled above, not prose. acceptable_lanes[] must include \
+evidence_needs entries you filled above, not prose. Prefer these canonical \
+retrieval_needs.* names. Raw evidence_needs.* names (e.g. \
+"evidence_needs.file_anchors[0]", "evidence_needs.symbol_ids[0]") are accepted only \
+as compatibility input: Phase 2 canonicalizes them to retrieval_needs.* ONLY when \
+that exact raw handle resolves to a normalized lane, otherwise the topic fails the \
+gate — so never use a raw alias for a handle you did not also place in evidence_needs. \
+acceptable_lanes[] must include \
 at least one exact lane (file_anchor/symbol_anchor/contract/test/query_pack). This is \
 plain JSON, not a DSL. A coverage-enhanced run now runs a deterministic Phase 2 gate \
 that fails loudly BEFORE Phase 3 if any merged required topic lacks a matching object, \

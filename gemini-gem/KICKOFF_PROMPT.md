@@ -81,7 +81,10 @@ Constraints (repeat of the Gem rules, in case they aren't loaded):
   `retrieval_needs.symbols[0]`, `retrieval_needs.files[1]`,
   `retrieval_needs.contracts[0]`, `retrieval_needs.tests[0]`,
   `retrieval_needs.query_packs[0]`) that ground the topic, with `acceptable_lanes[]`
-  including at least one exact lane — plain JSON, not a query. A deterministic
+  including at least one exact lane — plain JSON, not a query. Prefer the canonical
+  `retrieval_needs.*` names; raw `evidence_needs.*` aliases are accepted only as
+  compatibility input that Phase 2 canonicalizes when the exact raw handle resolves,
+  so never name a raw handle you did not also place in `evidence_needs`. A deterministic
   **Phase 2 gate fails before Phase 3** if any merged required topic lacks a matching
   object, references a `retrieval_needs` lane that does not exist, or is grounded
   only on broad recall; Phase 3 then maps required topics to citeable evidence and

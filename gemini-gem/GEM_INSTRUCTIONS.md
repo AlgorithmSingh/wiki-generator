@@ -221,8 +221,13 @@ Rules for `section-plans.jsonl`:
   **exact** `retrieval_needs.*` lanes you filled, by index (e.g.
   `retrieval_needs.files[0]`, `retrieval_needs.symbols[1]`,
   `retrieval_needs.contracts[0]`, `retrieval_needs.tests[0]`,
-  `retrieval_needs.query_packs[0]`) — plain JSON, not a query — and
-  `acceptable_lanes[]` must include at least one exact lane
+  `retrieval_needs.query_packs[0]`) — plain JSON, not a query. Prefer these canonical
+  `retrieval_needs.*` names. Raw `evidence_needs.*` names (e.g.
+  `evidence_needs.file_anchors[0]`, `evidence_needs.symbol_ids[0]`) are accepted only
+  as compatibility input — Phase 2 canonicalizes them ONLY when that exact raw handle
+  resolves to a normalized lane, otherwise the topic fails the gate; never name a raw
+  handle you did not also place in `evidence_needs`. `acceptable_lanes[]` must include
+  at least one exact lane
   (`file_anchor`/`symbol_anchor`/`contract`/`test`/`query_pack`). A coverage-enhanced
   run runs a deterministic **Phase 2 gate** that fails loudly **before Phase 3** if
   any merged required topic lacks a matching object, points at a `retrieval_needs`

@@ -113,7 +113,8 @@ def _handles_text(bundle_dir: str) -> str:
 
 
 def build_repair_user(raw_response_text: str, targets: dict, handles: str,
-                      prior_problems: list[str] | None = None) -> str:
+                      prior_problems: list[str] | None = None,
+                      obligation_diagnostics: list | None = None) -> str:
     parts = [
         "Fix the planning artifacts below so the deterministic readiness gate "
         "passes. Return corrected `plans/document-plan.json` and "
@@ -124,6 +125,26 @@ def build_repair_user(raw_response_text: str, targets: dict, handles: str,
         json.dumps(targets, indent=2, sort_keys=True),
         "```",
     ]
+    if obligation_diagnostics:
+        parts += [
+            "",
+            "## Topic-obligation gate failures to fix (enhancement mode)",
+            "Each required topic below has NO complete exact citeable evidence "
+            "obligation. For each, add or fix its `topic_evidence_requirements[]` "
+            "row: `required:true`, and `source_fields[]` naming the EXACT normalized "
+            "lanes — `retrieval_needs.files[i]`, `retrieval_needs.symbols[i]`, "
+            "`retrieval_needs.contracts[i]`, `retrieval_needs.tests[i]`, or "
+            "`retrieval_needs.query_packs[i]` — that ground the topic, and make sure "
+            "the matching exact handle is actually present in that section's "
+            "`evidence_needs`. Do NOT invent evidence. Do NOT rely on broad recall "
+            "(`search_hints`/`graph_nodes`) — broad recall is never sufficient for a "
+            "required topic. Raw `evidence_needs.*` source-field names are normalized "
+            "by Phase 2 only when they resolve exactly; prefer canonical "
+            "`retrieval_needs.*` names.",
+            "```json",
+            json.dumps(obligation_diagnostics, indent=2, sort_keys=True),
+            "```",
+        ]
     if prior_problems:
         parts += ["",
                   "## Your previous attempt still failed validation — also fix:",
@@ -138,6 +159,48 @@ def build_repair_user(raw_response_text: str, targets: dict, handles: str,
         parts += ["", "## planning-handles.md (copy EXACT handles from here)",
                   "```text", handles.strip(), "```"]
     return "\n".join(parts)
+
+
+def _enhancement_gates(result: _normalize.Result):
+    """Run the Phase 2 enhancement gates over a normalized result.
+
+    Returns ``(problems, obligation_diagnostics, gate_dicts)``:
+
+    - ``problems`` — human-readable gate-failure strings; empty iff BOTH the
+      planned-coverage gate and the topic-obligation gate pass (i.e. the plan is
+      acceptable for enhancement-mode Phase 3);
+    - ``obligation_diagnostics`` — the per-topic remediation list fed back to the
+      repair model so it can fix exactly the underspecified required topics;
+    - ``gate_dicts`` — the machine-readable verdict recorded in the repair audit.
+
+    Read-only: it never edits/synthesizes/heals the plan. (Lazy import of the
+    coverage package mirrors ``writer._coverage_summary_md`` and avoids any import
+    cycle at module load.)"""
+    from .. import coverage as _coverage
+
+    document_plan, sections = result.document_plan, result.sections
+    cov_gate = _coverage.gate_plan_coverage(document_plan, sections,
+                                            mode=_coverage.MODE_ENHANCEMENT)
+    ob_gate = _coverage.gate_topic_obligations(document_plan, sections,
+                                               mode=_coverage.MODE_ENHANCEMENT)
+    problems: list[str] = []
+    if not cov_gate.passed:
+        missing = ", ".join(cov_gate.report.missing_mandatory) or "(unknown)"
+        problems.append("planned-coverage gate FAIL: missing mandatory topic "
+                        f"families: {missing}")
+    if not ob_gate.passed:
+        r = ob_gate.report
+        problems.append(
+            f"topic-obligation gate FAIL: {r.incomplete_count}/"
+            f"{r.required_topic_count} required topic(s) lack a complete exact "
+            "citeable evidence obligation; blocking sections: "
+            + (", ".join(r.blocking_sections) or "(none)"))
+    gate_dicts = {
+        "coverage_mode": _coverage.MODE_ENHANCEMENT,
+        "planned_coverage": cov_gate.to_dict(),
+        "topic_obligations": ob_gate.to_dict(),
+    }
+    return problems, list(ob_gate.report.diagnostics), gate_dicts
 
 
 def _section_ids_ok(orig: _normalize.Result, new: _normalize.Result,
@@ -207,15 +270,30 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
                 project: str | None = None, location: str | None = None,
                 model: str = DEFAULT_MODEL, api_key: str | None = None,
                 max_output_tokens: int = 32768, temperature: float = 0.1,
-                client_call=None) -> dict:
-    """Normalize ``raw_path``; if it is not Phase-3-ready, run bounded Gemini
-    repair until readiness passes, then write the canonical plan artifacts to
-    ``out_dir``. Raises :class:`RepairUnavailable` / :class:`RepairFailed` on loud
-    failure. ``client_call`` may be injected (a ``(system, user) -> text`` callable)
-    for testing; otherwise a Vertex/Gemini client is built on demand."""
+                coverage_mode: str = "baseline", client_call=None) -> dict:
+    """Normalize ``raw_path``; if it is not acceptable, run bounded Gemini repair
+    until it is, then write the canonical plan artifacts to ``out_dir``.
+
+    Acceptance depends on ``coverage_mode``:
+
+    - ``baseline`` (default, unchanged): the old Phase-3 readiness gate only.
+    - ``enhancement``: readiness **plus** the deterministic Phase 2 enhancement
+      gates (planned coverage + topic obligations). A repair that only passes the
+      old readiness but fails the topic-obligation gate is **rejected**; the exact
+      topic-obligation diagnostics are fed into the next attempt, and after the hard
+      cap it fails loudly. This closes the live-run failure where bounded repair
+      reported readiness PASS while strict enhancement normalization still failed
+      the topic-obligation gate.
+
+    Raises :class:`RepairUnavailable` / :class:`RepairFailed` on loud failure.
+    ``client_call`` may be injected (a ``(system, user) -> text`` callable) for
+    testing; otherwise a Vertex/Gemini client is built on demand."""
+    from .. import coverage as _coverage
+
     bundle_dir = os.path.abspath(os.path.expanduser(bundle_dir))
     out_dir = os.path.abspath(os.path.expanduser(out_dir))
     max_attempts = max(1, min(int(max_attempts), MAX_ATTEMPTS_HARD_CAP))
+    enhancement = coverage_mode == _coverage.MODE_ENHANCEMENT
 
     text = read_text(raw_path)
     if text is None:
@@ -223,10 +301,17 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
     lookups = Lookups.load(bundle_dir)
     result = _normalize_text(bundle_dir, text, lookups, provider)
 
+    # Acceptance: readiness AND (enhancement mode) the planned-coverage +
+    # topic-obligation enhancement gates. A plan that already passes readiness but
+    # fails an enhancement gate is NOT accepted — it requires bounded repair.
     if _writer.readiness_pass(result):
-        _writer.write_all(out_dir, result, strict=False, strict_pass=True)
-        return {"repaired": False, "attempts": 0, "readiness_pass": True,
-                "out_dir": out_dir}
+        gate_problems, _, gate_dicts = (
+            _enhancement_gates(result) if enhancement else ([], [], None))
+        if not gate_problems:
+            _writer.write_all(out_dir, result, strict=False, strict_pass=True)
+            return {"repaired": False, "attempts": 0, "readiness_pass": True,
+                    "coverage_mode": coverage_mode,
+                    "enhancement_gates": gate_dicts, "out_dir": out_dir}
 
     # Repair is required. Establish the client now so unavailability fails loudly
     # BEFORE we claim to have started repairing.
@@ -248,8 +333,15 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
 
     for attempt in range(1, max_attempts + 1):
         targets = repair_targets(result)
+        # Enhancement mode: feed the EXACT topic-obligation diagnostics for the
+        # current (residual) plan into the prompt so the model fixes the precise
+        # underspecified required topics (not merely the old readiness errors).
+        ob_diags_fed: list = []
+        if enhancement:
+            _, ob_diags_fed, _ = _enhancement_gates(result)
         user = build_repair_user(current_raw, targets, handles,
-                                 last_problems if attempt > 1 else None)
+                                 last_problems if attempt > 1 else None,
+                                 obligation_diagnostics=ob_diags_fed or None)
         adir = os.path.join(repair_dir, f"attempt-{attempt}")
         write_text(os.path.join(adir, "repair-request.txt"),
                    REPAIR_SYSTEM + "\n\n===== USER =====\n\n" + user)
@@ -257,6 +349,10 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
         write_text(os.path.join(adir, "raw-bad-artifacts.md"), current_raw)
         write_text(os.path.join(adir, "errors.json"),
                    json.dumps(targets, indent=2, sort_keys=True))
+        if enhancement:
+            # Audit: the topic-obligation diagnostics fed to the model this attempt.
+            write_text(os.path.join(adir, "obligation-diagnostics-fed.json"),
+                       json.dumps(ob_diags_fed, indent=2, sort_keys=True))
 
         try:
             response = client_call(REPAIR_SYSTEM, user)
@@ -269,6 +365,7 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
         write_text(os.path.join(adir, "repair-response.md"), response)
 
         problems: list[str] = []
+        gate_dicts = None
         new_result = None
         try:
             new_result = _normalize_text(bundle_dir, response, lookups, provider)
@@ -286,6 +383,13 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
                          for sid, errs in _writer._readiness_failures(new_result).items()
                          if errs}
                 problems.append(f"readiness still FAIL: {fails}")
+            # Enhancement mode: a repair that only passes old readiness but fails the
+            # planned-coverage / topic-obligation gates is REJECTED here (spec
+            # "Enhancement repair contract"). The strict post-repair gate verdict is
+            # recorded for the audit either way.
+            if enhancement:
+                gate_problems, _, gate_dicts = _enhancement_gates(new_result)
+                problems += gate_problems
             # diff/mapping artifact for review (spec acceptance #5).
             new_order = list(new_result.document_plan["section_order"])
             write_text(os.path.join(adir, "section-mapping.json"), json.dumps({
@@ -298,6 +402,10 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
                     if s.get("section_role") == "provenance"),
                 "diagnostic_only_removable": sorted(removable),
             }, indent=2))
+            if enhancement and gate_dicts is not None:
+                # Audit: the final post-repair enhancement-gate verdict this attempt.
+                write_text(os.path.join(adir, "enhancement-gates.json"),
+                           json.dumps(gate_dicts, indent=2, sort_keys=True))
 
         write_text(os.path.join(adir, "validation.json"),
                    json.dumps({"ok": not problems, "problems": problems}, indent=2))
@@ -309,6 +417,7 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
             write_text(os.path.join(adir, "accepted-response.md"), response)
             _write_repair_report(repair_dir, mode, attempt, audit, accepted=True)
             return {"repaired": True, "attempts": attempt, "readiness_pass": True,
+                    "coverage_mode": coverage_mode, "enhancement_gates": gate_dicts,
                     "out_dir": written["out_dir"], "client_mode": mode}
 
         last_problems = problems

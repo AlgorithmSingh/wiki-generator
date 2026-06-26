@@ -29,10 +29,11 @@ against `35bdc18` failed closed before Phase 3: planned coverage passed 13/13, b
 the Phase 2 topic-obligation gate failed after bounded Step 1b repair (`0/46`
 complete required-topic obligations; 21 missing TER rows and 25 invalid/broad-only
 source-field mappings, commonly raw `evidence_needs.*` names where canonical
-`retrieval_needs.*` fields are expected). Phase 3 and Phase 4 did not run. Pending
-next: implement the Phase 2 TER source-field canonicalization and enhancement
-repair diagnostics slice non-live; no further live/billed retry unless the user
-explicitly approves it after that slice passes.**
+`retrieval_needs.*` fields are expected). Phase 3 and Phase 4 did not run. The
+**Phase 2 TER source-field canonicalization + enhancement-repair diagnostics** slice
+is now implemented and tested non-live (see the implemented-slice section below).
+Pending next: explicit user approval for any further live/billed RAGFlow retry; no
+further live/billed retry unless the user explicitly approves it.**
 
 ## Why this exists
 
@@ -424,41 +425,63 @@ Run:
   `retrieval_needs.symbols[0]`, and `retrieval_needs.query_packs[0]`.
 - Phase 3 and Phase 4 did not run.
 
+### Milestone 2 — Phase 2 TER source-field canonicalization + enhancement repair (implemented, non-live)
+
+Implemented after the live retry exposed raw `evidence_needs.*` TER source-field
+aliases the topic-obligation gate could not read. The failed live run remains
+diagnostic input only.
+
+- `plan_normalization/normalize.py`: `_resolve_needs` now returns
+  `(needs, lane_maps)` where `lane_maps` is the deterministic per-lane raw-index →
+  normalized-index map (`None` for a pruned/unresolved/routed raw item), built while
+  resolving needs so it follows pruning index shifts exactly.
+  `_canonicalize_ter_source_field` rewrites a documented raw
+  `evidence_needs.<alias>[N]` to canonical `retrieval_needs.<lane>[M]` ONLY when raw
+  item `N` resolved to normalized item `M`; otherwise the raw alias is left verbatim
+  (the gate fails loudly) with a traceable normalization warning. Broad aliases
+  (`search_hints`/`graph_nodes`) canonicalize only to broad fields and stay
+  insufficient. A lane authored under BOTH raw keys
+  (`files`+`file_anchors` / `symbols`+`symbol_ids`) is ambiguous and is left
+  uncanonicalized rather than guessed. Bare/already-canonical fields are unchanged.
+- `coverage/obligations.py`: adds the dedicated, more actionable diagnostic
+  `topic_evidence_requirement_raw_alias_source_field` for a leftover raw alias; raw
+  aliases stay blocking (gate not weakened).
+- `plan_normalization/repair.py` + `plan-repair --coverage-mode enhancement`: repair
+  success now means readiness AND the planned-coverage gate AND the topic-obligation
+  gate all pass. A repair that passes only old readiness but fails topic obligations is
+  rejected; the exact topic-obligation diagnostics are written to the audit
+  (`repair/attempt-N/obligation-diagnostics-fed.json`) and fed into the next attempt's
+  prompt; the final post-repair verdict is recorded
+  (`repair/attempt-N/enhancement-gates.json`); after the hard cap it fails loudly.
+  Baseline mode is unchanged. `scripts/phase2_step1b_repair_plan.sh` exposes/passes
+  `--coverage-mode`.
+- Planner prompts (`plan.py`, `gemini-gem/GEM_INSTRUCTIONS.md`,
+  `gemini-gem/KICKOFF_PROMPT.md`) explain that raw `evidence_needs.*` aliases are
+  compatibility input canonicalized only when the exact raw handle resolves; canonical
+  `retrieval_needs.*` is preferred and broad-only support stays forbidden.
+- Tests: `tests/test_phase2_obligation_gate.py` adds raw file/symbol alias
+  canonicalization, the non-naïve pruned-index remap (raw `[1]`→normalized `[0]`) with
+  the pruned item left invalid, dual-key ambiguity left invalid, broad-alias
+  canonicalization that stays blocking, a live-style raw-alias plan that passes after
+  canonicalization, already-canonical/bare unchanged, and fake-client bounded
+  enhancement repair (reject old-readiness-only, feed diagnostics forward, accept only
+  on strict gate pass, fail loudly after cap, baseline non-breaking).
+  `tests/test_phase1.py` updated for the `_resolve_needs` tuple return.
+
+Verification (non-live): `git diff --check` clean; protected Phase 3 spec unchanged;
+`pytest -q tests/test_phase2_obligation_gate.py tests/test_phase2_enhancement_gate.py
+tests/test_phase2_readiness.py tests/test_phase2_coverage_planning.py
+tests/test_phase3_evidenced_coverage.py tests/test_phase4_generated_coverage.py
+tests/test_phase4.py`; full suite `450 passed, 1 skipped` (pre-existing faiss skip).
+No Vertex/Gemini/API/network; no historical wiki edits; validators unchanged or
+stricter; baseline non-breaking.
+
 ### Remaining Milestone 2 work — active pending backlog
 
-Current next implementation slice: **Phase 2 TER source-field canonicalization and
-enhancement repair diagnostics**, non-live only.
-
-Artifact/quality bar:
-
-- Normalized SectionPlans should store TER `source_fields[]` in canonical
-  `retrieval_needs.*` form.
-- The normalizer may canonicalize documented raw planner aliases such as
-  `evidence_needs.file_anchors[0]`, `evidence_needs.symbol_ids[0]`,
-  `evidence_needs.contracts[0]`, `evidence_needs.tests[0]`, and
-  `evidence_needs.query_packs[0]` only when the raw item resolved to a concrete
-  normalized exact lane. If raw pruning makes the mapping ambiguous, fail loudly;
-  do not guess.
-- Broad aliases (`evidence_needs.search_hints[]`, `evidence_needs.graph_nodes[]`)
-  must remain broad-only and insufficient for required topics.
-- Bounded Step 1b `plan-repair` must consume `topic-obligations-gate.json`
-  diagnostics in enhancement mode and must not declare success merely because old
-  Phase-3 readiness passes. Accepted repair output must pass strict enhancement
-  normalization, planned coverage, and topic obligations.
-
-Required non-live tests:
-
-- raw exact-lane alias canonicalization for files and symbols;
-- ambiguous/pruned raw-index alias rejection with actionable diagnostics;
-- broad alias remains blocking;
-- live-style fixture with all TER rows and raw aliases passes after canonicalization;
-- missing TER rows still fail;
-- fake-client bounded repair rejects old-readiness-only repairs and accepts only
-  strict enhancement-passing repairs;
-- baseline/default behavior remains non-breaking.
-
-Default remains **no live retry**. Do not run another live/billed retry without
-explicit user approval after this slice passes.
+Default remains **no live retry**. The only remaining step is **explicit user
+approval for a billed Vertex/Gemini retry over the real RAGFlow repo** against the
+stricter Phase 2 obligation gate + canonicalization/repair. Do not run another
+live/billed retry without that explicit approval.
 
 ### Completed-slice acceptance summary — Phase 3 evidenced coverage
 

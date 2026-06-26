@@ -195,6 +195,15 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Vertex location (default $GOOGLE_CLOUD_LOCATION or us-central1)")
     pr.add_argument("--max-output-tokens", dest="max_output_tokens", type=int,
                     default=32768, help="max output tokens (default 32768; not tiny)")
+    pr.add_argument("--coverage-mode", dest="coverage_mode", default="baseline",
+                    choices=("baseline", "enhancement"),
+                    help=("repair acceptance gate. baseline (default): the old "
+                          "Phase-3 readiness gate only. enhancement: accept a repair "
+                          "ONLY when readiness AND the deterministic planned-coverage "
+                          "+ topic-obligation enhancement gates all pass; a repair "
+                          "that passes old readiness but fails topic obligations is "
+                          "rejected, its diagnostics fed into the next attempt, and "
+                          "the run fails loudly after the cap."))
 
     re_ = sub.add_parser(
         "retrieve-evidence",

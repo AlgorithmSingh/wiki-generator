@@ -23,6 +23,7 @@ LOCATION="${GOOGLE_CLOUD_LOCATION:-us-central1}"
 MODEL="${MODEL:-gemini-2.5-pro}"
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-2}"
 MAX_OUTPUT_TOKENS="${MAX_OUTPUT_TOKENS:-}"
+COVERAGE_MODE="${COVERAGE_MODE:-}"
 
 usage() {
   cat <<'EOF'
@@ -44,6 +45,11 @@ Options:
   --model NAME             Vertex/Gemini model id (default: gemini-2.5-pro)
   --max-attempts N         bounded repair attempts (1 or 2; hard cap 2)
   --max-output-tokens N    max output tokens (default 32768; never use a tiny cap)
+  --coverage-mode MODE     baseline (default) | enhancement. enhancement accepts a
+                           repair ONLY when readiness AND the planned-coverage +
+                           topic-obligation enhancement gates all pass; a repair
+                           that passes old readiness but fails topic obligations is
+                           rejected and (within the cap) re-prompted with diagnostics
 EOF
   common_options_help
 }
@@ -68,6 +74,8 @@ while [[ $# -gt 0 ]]; do
       MAX_ATTEMPTS="${2:-}"; shift 2 ;;
     --max-output-tokens)
       MAX_OUTPUT_TOKENS="${2:-}"; shift 2 ;;
+    --coverage-mode)
+      COVERAGE_MODE="${2:-}"; shift 2 ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -112,6 +120,9 @@ if [[ -n "$LOCATION" ]]; then
 fi
 if [[ -n "$MAX_OUTPUT_TOKENS" ]]; then
   cmd+=(--max-output-tokens "$MAX_OUTPUT_TOKENS")
+fi
+if [[ -n "$COVERAGE_MODE" ]]; then
+  cmd+=(--coverage-mode "$COVERAGE_MODE")
 fi
 
 log "Phase 2 Step 1b: plan-repair"

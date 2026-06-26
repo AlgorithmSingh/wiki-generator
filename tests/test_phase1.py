@@ -737,7 +737,7 @@ class NormalizePlanUnitTests(unittest.TestCase):
               "graph_nodes": ["fastapi [Dependency]", "ghost [Dependency]"],
               "query_packs": ["web_routes", "bogus pack"]}
         unresolved, warnings = [], []
-        needs = N._resolve_needs("s", ev, lk, unresolved, warnings)
+        needs, _ = N._resolve_needs("s", ev, lk, unresolved, warnings)
         # exact lanes keep only resolvable handles
         self.assertEqual([s["symbol_id"] for s in needs["symbols"]], ["python m/F#"])
         self.assertEqual([f["path"] for f in needs["files"]], ["pkg/svc.py"])
@@ -771,7 +771,7 @@ class NormalizePlanUnitTests(unittest.TestCase):
         ev = {"context_artifacts": ["contracts/openapi.json",
                                     "derived/planning-digest.md"],
               "files": ["contracts/openapi.json"]}
-        needs = N._resolve_needs("s", ev, lk, [], [])
+        needs, _ = N._resolve_needs("s", ev, lk, [], [])
         ca = [c["path"] for c in needs["context_artifacts"]]
         self.assertIn("derived/planning-digest.md", ca)        # genuine digest kept
         self.assertNotIn("contracts/openapi.json", ca)         # evidence artifact dropped
@@ -795,7 +795,7 @@ class NormalizePlanUnitTests(unittest.TestCase):
         # the spec's SectionPlan example uses object-shaped contracts/tests
         ev = {"contracts": [{"method": "GET", "path": "/items"}],
               "tests": [{"path": "tests/test_svc.py", "function": "test_work"}]}
-        needs = N._resolve_needs("s", ev, lk, [], [])
+        needs, _ = N._resolve_needs("s", ev, lk, [], [])
         self.assertEqual([c["resolution"] for c in needs["contracts"]], ["exact"])
         self.assertEqual([t["resolution"] for t in needs["tests"]], ["test_file"])
         self.assertEqual(needs["tests"][0].get("function"), "test_work")
