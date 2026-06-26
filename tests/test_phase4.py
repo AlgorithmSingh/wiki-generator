@@ -330,8 +330,12 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         "unless that exact complete route string appears verbatim",
         "copy only `source.route` or `source.public_route` values verbatim",
         "do not compose a public route from a prefix",
-        # fully-qualified identifier synthesis failures
+        # fully-qualified identifier / import synthesis failures
         "Never synthesize fully-qualified names by joining",
+        "Do not transform import statements into dotted fully-qualified identifiers",
+        "`from package.module import Name` evidences only exact tokens present",
+        "it does NOT evidence `package.module.Name`",
+        "Instruction examples in this rule are not evidence",
         "Forbidden instruction identifier examples (not evidence; never copy unless "
         "the full exact token appears in cited EvidencePacket)",
         "`common.metadata_es_filter` plus `MetaFilterTranslator`",
@@ -1098,6 +1102,25 @@ class ValidatorUnitTests(TmpBundleMixin, unittest.TestCase):
         self.assertEqual(vd["status"], "fail")
         self.assertTrue(any("no_unused_manifest_citations" in f
                             for f in vd["failures"]))
+
+
+# ---------------------------------------------------------------------------
+class ImportQualifiedNameSynthesisTests(unittest.TestCase):
+    """Import statements do not evidence synthesized fully-qualified names."""
+
+    def test_from_import_does_not_support_synthesized_fqn(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = "from package.module import Name\n"
+        r = analyze_claims("Uses `package.module.Name`. [ev:x:0001]", available)
+        self.assertIn("package.module.Name", r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_exact_full_dotted_token_in_evidence_supports_fqn(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = "from package.module import Name\n# explicit token: package.module.Name\n"
+        r = analyze_claims("Uses `package.module.Name`. [ev:x:0001]", available)
+        self.assertEqual(r["invented_identifiers"], [])
+        self.assertEqual(r["synthesized_identifiers"], [])
 
 
 # ---------------------------------------------------------------------------

@@ -48,11 +48,18 @@ not support a fact, omit the fact.
 complete a partial path, or infer a module's full path. Use a path ONLY when that \
 exact string appears in a cited evidence item's `source` or excerpt — otherwise \
 refer to the component by the name the evidence actually provides.
-- Never synthesize fully-qualified names by joining module/package paths, file \
-stems, classes, functions, or methods into a dotted, slashed, or call identifier. \
-Forbidden instruction identifier examples (not evidence; never copy unless the \
-full exact token appears in cited EvidencePacket): `pkg/module.py`, `ClassName`, \
-`pkg.module.ClassName`, `common.metadata_es_filter`, `MetaFilterTranslator`, \
+- Never synthesize fully-qualified names by joining module/package paths, import \
+statements, file paths, package names, file stems, classes, functions, methods, \
+aliases, or symbols into a dotted, slashed, or call identifier. Do not transform \
+import statements into dotted fully-qualified identifiers: an instruction-example \
+line such as `from package.module import Name` evidences only exact tokens present \
+in that evidence item (for example, `package.module`, `Name`, and the import line \
+itself); it does NOT evidence `package.module.Name` unless that full exact dotted \
+token appears verbatim in one cited evidence item. Instruction examples in this \
+rule are not evidence. Forbidden instruction identifier examples (not evidence; \
+never copy unless the full exact token appears in cited EvidencePacket): \
+`pkg/module.py`, `ClassName`, `pkg.module.ClassName`, \
+`common.metadata_es_filter`, `MetaFilterTranslator`, \
 `common.metadata_es_filter.MetaFilterTranslator`, `module.function()`. Do not turn \
 separate evidence pieces like `pkg/module.py` plus `ClassName` into \
 `pkg.module.ClassName`, `common.metadata_es_filter` plus `MetaFilterTranslator` \
