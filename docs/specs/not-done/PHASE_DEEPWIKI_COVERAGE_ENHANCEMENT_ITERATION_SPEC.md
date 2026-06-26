@@ -7,26 +7,24 @@ taxonomy/validation, Phase 2 planning/PagePlan obligation preservation, Phase 1
 deterministic coverage-signal expansion, the Phase 2 enhancement-mode
 planned-coverage upstream-prevention gate, the Phase 3 evidenced-coverage gate,
 the Phase 4 enhancement-mode hierarchical writing + generated-coverage gate, the
-non-live hierarchical E2E + benchmark-only comparison, and the Phase 2
-required-topic evidence-obligation alignment gate are implemented and tested
-non-live. A live/billed RAGFlow retry was explicitly approved and attempted at
+non-live hierarchical E2E + benchmark-only comparison, the Phase 2 required-topic
+evidence-obligation alignment gate, and the Phase 2 TER source-field
+canonicalization + enhancement-repair diagnostics are implemented and tested
+non-live. A live/billed RAGFlow retry at
 `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260625-141745`
-against `35bdc18`. It failed closed before Phase 3: planned coverage passed
-13/13, but the Phase 2 topic-obligation gate failed after bounded Step 1b repair
-(`0/46` complete required-topic obligations; 21 missing TER rows and 25
-invalid/broad-only source-field mappings, commonly raw `evidence_needs.*` source
-field names where canonical `retrieval_needs.*` fields are expected). Phase 3 and
-Phase 4 did not run. The **Phase 2 TER source-field canonicalization and
-enhancement-repair diagnostics** slice described below is now implemented and
-tested non-live: Phase 2 normalization canonicalizes documented raw
-`evidence_needs.*` TER source-field aliases to canonical `retrieval_needs.*` form
-through a deterministic raw-index → normalized-index map (only when the raw item
-resolved; ambiguous/pruned cases are left invalid and fail loudly), and bounded
-Step 1b `plan-repair --coverage-mode enhancement` accepts a repair only when
-readiness AND the planned-coverage AND topic-obligation gates all pass, feeding the
-topic-obligation diagnostics into the next attempt and failing loudly after the cap.
-Pending next: explicit user approval for any further live/billed RAGFlow retry. No
-further live/billed retry unless the user explicitly approves it.**
+failed closed before Phase 3 with planned coverage 13/13 but topic obligations
+`0/46`; the raw TER alias / old-readiness-only repair defect was fixed non-live at
+`41d422b`. A later user-approved retry at
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-154907`
+ran Phase 1 and live Phase 2 planning, then stopped before Phase 3: strict
+normalization refused a raw planner response with multiple JSONL fences, and Step
+1b repair crashed on that initial parse ambiguity before an audited repair attempt.
+That deterministic repair-path bug is now fixed non-live: initial raw-response
+`ParseError`s become bounded-repair diagnostics (`raw_planning_response_parse_error`),
+DocumentPlan identity is extracted only when unambiguous for 1:1 section checks,
+and normal parser acceptance remains fail-closed. Pending next: explicit user
+approval for any further live/billed RAGFlow retry. No further live/billed retry
+unless the user explicitly approves it.**
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
 enhancement track. It consolidates the immediate malformed-citation validator

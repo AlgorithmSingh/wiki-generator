@@ -476,12 +476,35 @@ tests/test_phase4.py`; full suite `450 passed, 1 skipped` (pre-existing faiss sk
 No Vertex/Gemini/API/network; no historical wiki edits; validators unchanged or
 stricter; baseline non-breaking.
 
+### Live retry after Milestone 2 — failed before Phase 3, parse-repair bug fixed non-live
+
+A user-approved retry at
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-154907`
+ran against `1ec2fc6`. Phase 1 and live Phase 2 planning completed. Strict
+`normalize-plan --coverage-mode enhancement` failed with a deterministic parse
+ambiguity: the raw planner response contained multiple JSONL fences, so the parser
+refused to guess which block was `section-plans.jsonl`. Step 1b was correctly invoked
+with `--coverage-mode enhancement`, but `plan-repair` crashed on that initial
+`ParseError` before writing repair audit artifacts or making the bounded repair
+model call. Phase 3 and Phase 4 did not run.
+
+Non-live follow-up fix: `plan_normalization/repair.py` now catches an initial
+raw-response `ParseError`, extracts only the unambiguous DocumentPlan when possible
+for section-identity enforcement, feeds the parse failure as
+`raw_planning_response_parse_error` diagnostics into the bounded repair prompt, and
+keeps the strict parser fail-closed for normal acceptance. It still rejects repaired
+outputs that add/remove non-diagnostic sections. Regression coverage in
+`tests/test_phase2_readiness.py` exercises the exact multiple-JSONL-fence shape and
+section-identity enforcement after an initial parse failure. Verification: `git diff
+--check`; protected Phase 3 spec unchanged; focused Phase 2 suites `117 passed`; full
+suite `453 passed, 1 skipped, 9 subtests passed`.
+
 ### Remaining Milestone 2 work — active pending backlog
 
-Default remains **no live retry**. The only remaining step is **explicit user
-approval for a billed Vertex/Gemini retry over the real RAGFlow repo** against the
-stricter Phase 2 obligation gate + canonicalization/repair. Do not run another
-live/billed retry without that explicit approval.
+Default remains **no live retry**. The next remaining step is **explicit user
+approval for another billed Vertex/Gemini retry over the real RAGFlow repo** against
+the stricter Phase 2 obligation gate + canonicalization/repair + parse-repair fix.
+Do not run another live/billed retry without that explicit approval.
 
 ### Completed-slice acceptance summary — Phase 3 evidenced coverage
 

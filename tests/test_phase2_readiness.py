@@ -488,6 +488,68 @@ class BoundedRepairTests(unittest.TestCase):
                      "validation.json", "accepted-response.md"):
             self.assertTrue(os.path.exists(os.path.join(adir, name)), name)
 
+    def test_repair_handles_initial_ambiguous_jsonl_parse_error(self):
+        doc_sections = [{"id": "data-models", "title": "Data Models"}]
+        live_style_bad = (
+            "```json\n" + json.dumps({"repo": "x", "sections": doc_sections}) + "\n```\n"
+            "```jsonl\n```\n"
+            "```jsonl\n"
+            + json.dumps({"section_id": "data-models", "title": "Data Models",
+                          "evidence_needs": {}}) + "\n```\n")
+        raw = self._write_raw(live_style_bad)
+        fixed = _raw_response(
+            doc_sections,
+            [json.dumps({"section_id": "data-models", "title": "Data Models",
+                         "evidence_needs": {"file_anchors": ["api/db/db_models.py"]}})])
+        calls = []
+
+        def fake(system, user):
+            calls.append(user)
+            return fixed
+
+        report = repair.repair_plan(self.bundle, raw, self.out, client_call=fake)
+        self.assertTrue(report["repaired"])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("multiple JSONL blocks", calls[0])
+        self.assertIn("raw_planning_response_parse_error", open(
+            os.path.join(self.out, "repair", "attempt-1", "errors.json")).read())
+        self.assertIn("Status: PASS", self._readiness())
+
+    def test_repair_preserves_section_ids_after_initial_parse_error(self):
+        doc_sections = [{"id": "s", "title": "S"}]
+        live_style_bad = (
+            "```json\n" + json.dumps({"repo": "x", "sections": doc_sections}) + "\n```\n"
+            "```jsonl\n```\n"
+            "```jsonl\n" + json.dumps({"section_id": "s", "title": "S",
+                                            "evidence_needs": {}}) + "\n```\n")
+        raw = self._write_raw(live_style_bad)
+        added = _raw_response(
+            [{"id": "s", "title": "S"}, {"id": "invented", "title": "Invented"}],
+            [json.dumps({"section_id": "s", "title": "S",
+                         "evidence_needs": {"file_anchors": ["api/db/db_models.py"]}}),
+             json.dumps({"section_id": "invented", "title": "Invented",
+                         "evidence_needs": {"file_anchors": ["api/db/db_models.py"]}})])
+
+        def fake(system, user):
+            return added
+
+        with self.assertRaises(repair.RepairFailed):
+            repair.repair_plan(self.bundle, raw, self.out, client_call=fake,
+                               max_attempts=1)
+        self.assertIn("added sections", open(
+            os.path.join(self.out, "repair", "repair-report.md")).read())
+
+    def test_repair_rejects_initial_parse_error_without_document_plan(self):
+        raw = self._write_raw("```jsonl\n{}\n```\n")
+
+        def fake(system, user):
+            raise AssertionError("client must not be called without a DocumentPlan")
+
+        with self.assertRaises(repair.RepairFailed):
+            repair.repair_plan(self.bundle, raw, self.out, client_call=fake)
+        report = open(os.path.join(self.out, "repair", "repair-report.md")).read()
+        self.assertIn("unambiguous DocumentPlan", report)
+
     def test_repair_unavailable_fails_loudly(self):
         raw = self._write_raw(_raw_response(
             [{"id": "s", "title": "S"}],

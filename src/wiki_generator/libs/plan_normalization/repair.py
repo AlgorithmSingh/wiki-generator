@@ -91,6 +91,51 @@ def _normalize_text(bundle_dir: str, text: str, lookups: Lookups,
     return _normalize.normalize(raw, lookups, "plans/phase2-repair-input.md", provider)
 
 
+def _extract_document_plan_for_identity(text: str) -> dict | None:
+    """Best-effort extraction of only the DocumentPlan from a malformed raw
+    response so repair can still enforce 1:1 section identity. This does NOT pick
+    a SectionPlans block and therefore does not weaken the strict parser's
+    ambiguity checks."""
+    warnings: list[str] = []
+    try:
+        blocks = _parse._label_blocks(_parse._scan_blocks(text))  # type: ignore[attr-defined]
+        obj = _parse._pick_document_plan(blocks, warnings, text)  # type: ignore[attr-defined]
+    except ParseError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def _section_order_from_document_plan(document_plan: dict | None) -> list[str]:
+    if not isinstance(document_plan, dict):
+        return []
+    order: list[str] = []
+    for section in document_plan.get("sections") or []:
+        if isinstance(section, dict):
+            sid = section.get("id") or section.get("section_id")
+            if isinstance(sid, str) and sid:
+                order.append(sid)
+    return order
+
+
+def _parse_error_targets(message: str, document_plan: dict | None) -> dict:
+    return {
+        "sections": {},
+        "parse_diagnostics": [{
+            "severity": "failure",
+            "reason": "raw_planning_response_parse_error",
+            "message": message,
+            "remediation": (
+                "Return exactly one unambiguous `plans/document-plan.json` block "
+                "and exactly one unambiguous `plans/section-plans.jsonl` block. "
+                "Do not include extra JSONL/NDJSON fences, empty JSONL fences, "
+                "or alternate SectionPlans candidates."
+            ),
+        }],
+        "diagnostic_only_sections": [],
+        "document_plan_section_order": _section_order_from_document_plan(document_plan),
+    }
+
+
 def repair_targets(result: _normalize.Result) -> dict:
     """Serializable per-section readiness errors + parse diagnostics for the prompt."""
     failures = _writer._readiness_failures(result)
@@ -203,11 +248,13 @@ def _enhancement_gates(result: _normalize.Result):
     return problems, list(ob_gate.report.diagnostics), gate_dicts
 
 
-def _section_ids_ok(orig: _normalize.Result, new: _normalize.Result,
-                    removable: set[str]) -> list[str]:
+def _section_ids_ok_for_order(orig_order: list[str], new: _normalize.Result,
+                              removable: set[str]) -> list[str]:
     """Return a list of 1:1 section-id violations (empty == ok). A removable
     (diagnostic-only) section may be absent or converted; nothing may be added."""
-    orig_ids = set(orig.document_plan["section_order"])
+    if not orig_order:
+        return []
+    orig_ids = set(orig_order)
     new_ids = set(new.document_plan["section_order"])
     problems = []
     added = new_ids - orig_ids
@@ -299,12 +346,24 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
     if text is None:
         raise FileNotFoundError(f"raw response not readable: {raw_path}")
     lookups = Lookups.load(bundle_dir)
-    result = _normalize_text(bundle_dir, text, lookups, provider)
+    result: _normalize.Result | None
+    initial_parse_error: str | None = None
+    initial_document_plan: dict | None = None
+    try:
+        result = _normalize_text(bundle_dir, text, lookups, provider)
+    except ParseError as e:
+        # A malformed/ambiguous LLM-authored planning response is still a valid
+        # bounded-repair candidate. Keep the strict parser fail-closed for normal
+        # acceptance, but feed the exact parse failure into Step 1b instead of
+        # crashing before the audited repair attempt can run.
+        result = None
+        initial_parse_error = str(e)
+        initial_document_plan = _extract_document_plan_for_identity(text)
 
     # Acceptance: readiness AND (enhancement mode) the planned-coverage +
     # topic-obligation enhancement gates. A plan that already passes readiness but
     # fails an enhancement gate is NOT accepted — it requires bounded repair.
-    if _writer.readiness_pass(result):
+    if result is not None and _writer.readiness_pass(result):
         gate_problems, _, gate_dicts = (
             _enhancement_gates(result) if enhancement else ([], [], None))
         if not gate_problems:
@@ -312,6 +371,17 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
             return {"repaired": False, "attempts": 0, "readiness_pass": True,
                     "coverage_mode": coverage_mode,
                     "enhancement_gates": gate_dicts, "out_dir": out_dir}
+
+    # If even the DocumentPlan is ambiguous/missing, there is no safe section-ID
+    # identity baseline. Do not ask a model to choose or invent one.
+    if result is None and initial_document_plan is None:
+        repair_dir = os.path.join(out_dir, "repair")
+        problem = ("raw response did not contain an unambiguous DocumentPlan; "
+                   "cannot safely run bounded repair without a section identity baseline")
+        _write_repair_report(repair_dir, "not-started", 0,
+                             [{"attempt": 0, "ok": False, "problems": [problem]}],
+                             accepted=False)
+        raise RepairFailed(f"{problem}. See {repair_dir}/repair-report.md")
 
     # Repair is required. Establish the client now so unavailability fails loudly
     # BEFORE we claim to have started repairing.
@@ -322,22 +392,29 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
             max_output_tokens=max_output_tokens, temperature=temperature)
 
     repair_dir = os.path.join(out_dir, "repair")
-    orig_result = result  # section ids stay 1:1 with the ORIGINAL plan
-    removable = {sid for sid, errs in _writer._readiness_failures(orig_result).items()
-                 for e in errs if e.get("reason") == "diagnostic_only_user_section"}
-    orig_order = list(orig_result.document_plan["section_order"])
+    orig_result = result  # section ids stay 1:1 with the ORIGINAL plan when parsed
+    if orig_result is not None:
+        removable = {sid for sid, errs in _writer._readiness_failures(orig_result).items()
+                     for e in errs if e.get("reason") == "diagnostic_only_user_section"}
+        orig_order = list(orig_result.document_plan["section_order"])
+    else:
+        removable = set()
+        orig_order = _section_order_from_document_plan(initial_document_plan)
     handles = _handles_text(bundle_dir)
     audit: list[dict] = []
     last_problems: list[str] = []
     current_raw = text  # the verbatim artifact the model must repair (Patch 2 §4)
+    current_parse_error = initial_parse_error
 
     for attempt in range(1, max_attempts + 1):
-        targets = repair_targets(result)
+        targets = (repair_targets(result) if result is not None else
+                   _parse_error_targets(current_parse_error or "raw response did not parse",
+                                        initial_document_plan))
         # Enhancement mode: feed the EXACT topic-obligation diagnostics for the
         # current (residual) plan into the prompt so the model fixes the precise
         # underspecified required topics (not merely the old readiness errors).
         ob_diags_fed: list = []
-        if enhancement:
+        if enhancement and result is not None:
             _, ob_diags_fed, _ = _enhancement_gates(result)
         user = build_repair_user(current_raw, targets, handles,
                                  last_problems if attempt > 1 else None,
@@ -369,7 +446,9 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
         new_result = None
         try:
             new_result = _normalize_text(bundle_dir, response, lookups, provider)
+            current_parse_error = None
         except ParseError as e:
+            current_parse_error = str(e)
             problems.append(f"repaired response did not parse: {e}")
         if new_result is not None:
             parse_fail = [d for d in new_result.parse_diagnostics
@@ -377,7 +456,7 @@ def repair_plan(bundle_dir: str, raw_path: str, out_dir: str, *,
             if parse_fail:
                 problems.append(f"{len(parse_fail)} malformed JSONL row(s) remain "
                                 "after repair")
-            problems += _section_ids_ok(orig_result, new_result, removable)
+            problems += _section_ids_ok_for_order(orig_order, new_result, removable)
             if not _writer.readiness_pass(new_result):
                 fails = {sid: [e["reason"] for e in errs]
                          for sid, errs in _writer._readiness_failures(new_result).items()
