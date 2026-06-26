@@ -34,6 +34,12 @@ from the `evidence_id` field. Multiple citations are adjacent brackets, e.g. \
 - You may ONLY cite `evidence_id` values listed in `allowed_evidence_ids`. Never \
 invent an evidence id, never cite a file path or URL directly, never use \
 footnotes, and never cite `search_hints` or `context_artifacts`.
+- Instruction examples are NOT evidence. Any identifier, route, path, symbol, \
+citation id, config key, environment variable, dependency, or command shown in \
+these instructions or the response contract is a FORBIDDEN INSTRUCTION EXAMPLE \
+unless the exact token appears in the EvidencePacket and is cited. Such examples \
+must never be copied into the generated `markdown`, `used_evidence_ids`, or \
+`covered_topics[]` to make prose look precise.
 - Do NOT introduce any identifier (path, symbol, route, env var, command, \
 dependency, version) unless the full exact token appears verbatim in one cited \
 evidence item's excerpt, `source`, or `provenance` metadata. If the evidence does \
@@ -44,25 +50,32 @@ exact string appears in a cited evidence item's `source` or excerpt — otherwis
 refer to the component by the name the evidence actually provides.
 - Never synthesize fully-qualified names by joining module/package paths, file \
 stems, classes, functions, or methods into a dotted, slashed, or call identifier. \
-Do not turn separate evidence pieces like `pkg/module.py` plus `ClassName` into \
+Forbidden instruction identifier examples (not evidence; never copy unless the \
+full exact token appears in cited EvidencePacket): `pkg/module.py`, `ClassName`, \
+`pkg.module.ClassName`, `common.metadata_es_filter`, `MetaFilterTranslator`, \
+`common.metadata_es_filter.MetaFilterTranslator`, `module.function()`. Do not turn \
+separate evidence pieces like `pkg/module.py` plus `ClassName` into \
 `pkg.module.ClassName`, `common.metadata_es_filter` plus `MetaFilterTranslator` \
 into `common.metadata_es_filter.MetaFilterTranslator`, or a module plus function \
 into `module.function()`, unless that full exact token appears verbatim in one \
 cited evidence item.
 - Never expand or interpolate shell or environment variables. Copy identifiers \
-exactly; do not compute the result of a variable substitution. If evidence shows \
-`CONF_DIR="/ragflow/conf"` and `CONF_FILE="${CONF_DIR}/service_conf.yaml"`, you may \
-write `CONF_FILE`, `${CONF_FILE}`, or `${CONF_DIR}/service_conf.yaml` — those exact \
-tokens appear in evidence — but you must NOT write the expanded literal \
-`/ragflow/conf/service_conf.yaml` unless that exact expanded string itself appears \
-in a cited evidence item.
-- Never synthesize or normalize a route pattern: do not add or remove prefixes \
-(including `/api`, `/api/v1`, `/api/{api_version}`, or `/{api_version}`), add or \
-remove query parameters/trailing slashes, or convert placeholder syntax such as \
-`<id>`, `{id}`, or `:id` unless that exact complete route string appears verbatim \
-in one cited evidence item. For route evidence, copy only `source.route` or \
-`source.public_route` values verbatim; do not compose a public route from a prefix \
-and a contract route.
+exactly; do not compute the result of a variable substitution. Forbidden \
+instruction shell examples (not evidence; never copy unless the exact token \
+appears in cited EvidencePacket): `CONF_DIR="/ragflow/conf"`, \
+`CONF_FILE="${CONF_DIR}/service_conf.yaml"`, `CONF_FILE`, `${CONF_FILE}`, \
+`${CONF_DIR}/service_conf.yaml`, `/ragflow/conf/service_conf.yaml`. If a cited \
+evidence item itself shows tokens like these, you may write only those exact \
+evidenced tokens; you must NOT write an expanded literal unless that exact \
+expanded string itself appears in a cited evidence item.
+- Never synthesize or normalize a route pattern: do not add or remove prefixes, \
+add or remove query parameters/trailing slashes, or convert placeholder syntax \
+unless that exact complete route string appears verbatim in one cited evidence \
+item. Forbidden instruction route examples (not evidence; never copy unless the \
+exact complete route appears in cited EvidencePacket): `/api`, `/api/v1`, \
+`/api/{api_version}`, `/{api_version}`, `<id>`, `{id}`, `:id`. For route evidence, \
+copy only `source.route` or `source.public_route` values verbatim; do not compose \
+a public route from a prefix and a contract route.
 - When evidence is partial or split across items, prefer component-level \
 descriptions or exact quoted tokens over invented identifiers or routes. For \
 example, describe "the metadata filter translator component" or quote \
@@ -232,10 +245,11 @@ def build_rewrite_prompt(writing_packet, prior_raw: str, problems: list[str]) ->
             "One or more identifiers are shell-variable EXPANSIONS, not grounded "
             "identifiers: the expanded literal does not appear verbatim in cited "
             "evidence. Replace each flagged identifier with one of the exact "
-            "evidence tokens suggested above (e.g. a variable name like `CONF_FILE`, "
-            "`${CONF_FILE}`, or the raw `${CONF_DIR}/service_conf.yaml`), or omit "
-            "the claim entirely. Do NOT expand variables and do NOT justify the "
-            "expanded path.",
+            "evidence tokens suggested above, or omit the claim entirely. The "
+            "instruction examples `CONF_FILE`, `${CONF_FILE}`, and "
+            "`${CONF_DIR}/service_conf.yaml` are not evidence; use them only if "
+            "they were explicitly suggested above from the SAME cited evidence. "
+            "Do NOT expand variables and do NOT justify the expanded path.",
         ]
     extra += [
         "",

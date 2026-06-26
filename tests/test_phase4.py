@@ -316,8 +316,15 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         "raw unescaped newlines",
         "raw unescaped double quotes",
         "Return only the raw JSON object, with JSON-safe Markdown string escaping.",
+        # instruction-example leakage failures
+        "Instruction examples are NOT evidence",
+        "FORBIDDEN INSTRUCTION EXAMPLE",
+        "unless the exact token appears in the EvidencePacket and is cited",
+        "must never be copied into the generated `markdown`",
         # route normalization/synthesis failures
         "Never synthesize or normalize a route pattern",
+        "Forbidden instruction route examples (not evidence; never copy unless the "
+        "exact complete route appears in cited EvidencePacket)",
         "`/api/{api_version}`",
         "`/{api_version}`",
         "unless that exact complete route string appears verbatim",
@@ -325,6 +332,8 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         "do not compose a public route from a prefix",
         # fully-qualified identifier synthesis failures
         "Never synthesize fully-qualified names by joining",
+        "Forbidden instruction identifier examples (not evidence; never copy unless "
+        "the full exact token appears in cited EvidencePacket)",
         "`common.metadata_es_filter` plus `MetaFilterTranslator`",
         "`common.metadata_es_filter.MetaFilterTranslator`",
         "unless that full exact token appears verbatim",
