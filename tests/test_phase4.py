@@ -332,6 +332,11 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         "do not compose a public route from a prefix",
         # fully-qualified identifier / import synthesis failures
         "Never synthesize fully-qualified names by joining",
+        "Dotted class/member, object/member, module/member, and package/member notation",
+        "Separate tokens in the same cited item are not enough",
+        "a class token plus a method token does NOT evidence `ClassName.method_name`",
+        "refer to an evidenced method and evidenced class as separate cited tokens",
+        "never join them into a class-method dotted token unless",
         "Do not transform import statements into dotted fully-qualified identifiers",
         "`from package.module import Name` evidences only exact tokens present",
         "it does NOT evidence `package.module.Name`",
@@ -622,6 +627,22 @@ class WritingValidationTests(TmpBundleMixin, unittest.TestCase):
     def test_invented_path_is_rejected(self):
         root = self.fresh()
         md = ("## Service Layer\n\nThe handler is defined in `app/ghost_module.py`. "
+              "[ev:service:0001]\n")
+        with self.assertRaises(writing.WritingValidationFailure):
+            writing.run(opts_for(root),
+                        provider=self._provider(root, draft_json("service",
+                                                                 "Service Layer", md)))
+
+    def test_class_method_synthesis_is_rejected_when_tokens_are_separate(self):
+        root = self.fresh()
+        pkt_path = os.path.join(root, "evidence", "packets", "service.json")
+        pkt = json.load(open(pkt_path))
+        pkt["evidence"][0]["excerpt"] = (
+            "class RAGFlowClient:\n"
+            "    def login_user(self):\n"
+            "        return None\n")
+        util.write_json(pkt_path, pkt)
+        md = ("## Service Layer\n\nThe service calls `RAGFlowClient.login_user`. "
               "[ev:service:0001]\n")
         with self.assertRaises(writing.WritingValidationFailure):
             writing.run(opts_for(root),
@@ -1106,7 +1127,7 @@ class ValidatorUnitTests(TmpBundleMixin, unittest.TestCase):
 
 # ---------------------------------------------------------------------------
 class ImportQualifiedNameSynthesisTests(unittest.TestCase):
-    """Import statements do not evidence synthesized fully-qualified names."""
+    """Separate tokens do not evidence synthesized dotted names."""
 
     def test_from_import_does_not_support_synthesized_fqn(self):
         from wiki_generator.libs.writing.citations import analyze_claims
@@ -1119,6 +1140,29 @@ class ImportQualifiedNameSynthesisTests(unittest.TestCase):
         from wiki_generator.libs.writing.citations import analyze_claims
         available = "from package.module import Name\n# explicit token: package.module.Name\n"
         r = analyze_claims("Uses `package.module.Name`. [ev:x:0001]", available)
+        self.assertEqual(r["invented_identifiers"], [])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_class_method_tokens_do_not_support_synthesized_member(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = "class RAGFlowClient:\n    def login_user(self):\n        return None\n"
+        r = analyze_claims("Uses `RAGFlowClient.login_user`. [ev:x:0001]", available)
+        self.assertIn("RAGFlowClient.login_user", r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_exact_class_method_token_in_evidence_supports_member(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = ("class RAGFlowClient:\n    def login_user(self):\n        return None\n"
+                     "# explicit token: RAGFlowClient.login_user\n")
+        r = analyze_claims("Uses `RAGFlowClient.login_user`. [ev:x:0001]", available)
+        self.assertEqual(r["invented_identifiers"], [])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_separate_evidenced_tokens_written_separately_are_allowed(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = "class RAGFlowClient:\n    def login_user(self):\n        return None\n"
+        r = analyze_claims("Uses the `login_user` method on `RAGFlowClient`. "
+                           "[ev:x:0001]", available)
         self.assertEqual(r["invented_identifiers"], [])
         self.assertEqual(r["synthesized_identifiers"], [])
 

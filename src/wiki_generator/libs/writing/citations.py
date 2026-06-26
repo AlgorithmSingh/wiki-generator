@@ -26,7 +26,7 @@ from .schema import (
 # Repo-specific identifier shapes (high precision; see module docstring).
 _RE_PATH = re.compile(r"^/?[\w.+-]+(?:/[\w.+-]+)+$")          # has a slash
 _RE_PATH_EXT = re.compile(r"\.[A-Za-z0-9]{1,8}$")             # ends with an extension
-_RE_DOTTED = re.compile(r"^[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*){2,}$")  # a.b.c module
+_RE_DOTTED = re.compile(r"^[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*){1,}$")  # a.b or a.b.c
 _RE_ENV = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")     # ENV_VAR_NAME
 _RE_CALL = re.compile(r"^([A-Za-z_][\w.]*)\(\)?$")           # func() / a.b.func()
 _RE_ROUTE = re.compile(r"^/[\w/{}.:-]+$")                     # /agents, /v1/{id}
@@ -310,7 +310,11 @@ def _supported(kind: str, needle: str, available: str) -> bool:
         # the bare symbol name must appear (def name / name( / symbol_id name())
         return needle in available
     if kind == "dotted":
-        return needle in available or needle.replace(".", "/") in available
+        # Dotted class/member, object/member, module/member, package/member, and
+        # fully-qualified names are supported only by the exact dotted token in
+        # available evidence. Never let a slash path or separate class+method /
+        # module+symbol tokens ground a synthesized dotted identifier.
+        return needle in available
     if kind == "route":
         return needle in available
     if kind == "path":

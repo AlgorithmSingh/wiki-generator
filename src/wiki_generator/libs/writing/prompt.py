@@ -50,15 +50,27 @@ exact string appears in a cited evidence item's `source` or excerpt — otherwis
 refer to the component by the name the evidence actually provides.
 - Never synthesize fully-qualified names by joining module/package paths, import \
 statements, file paths, package names, file stems, classes, functions, methods, \
-aliases, or symbols into a dotted, slashed, or call identifier. Do not transform \
-import statements into dotted fully-qualified identifiers: an instruction-example \
-line such as `from package.module import Name` evidences only exact tokens present \
-in that evidence item (for example, `package.module`, `Name`, and the import line \
-itself); it does NOT evidence `package.module.Name` unless that full exact dotted \
-token appears verbatim in one cited evidence item. Instruction examples in this \
-rule are not evidence. Forbidden instruction identifier examples (not evidence; \
-never copy unless the full exact token appears in cited EvidencePacket): \
-`pkg/module.py`, `ClassName`, `pkg.module.ClassName`, \
+aliases, or symbols into a dotted, slashed, or call identifier. Dotted \
+class/member, object/member, module/member, and package/member notation is allowed \
+ONLY when that full dotted token appears verbatim in one cited evidence item. \
+Separate tokens in the same cited item are not enough: a class token plus a method \
+token does NOT evidence `ClassName.method_name`, an object token plus a member \
+token does NOT evidence `object.member`, and a module/package token plus a symbol \
+token does NOT evidence `module.symbol` or `package.symbol`, unless that full \
+dotted token appears verbatim in one cited evidence item. If the evidence supports \
+separate tokens but not a full dotted token, write the tokens separately; for \
+example, refer to an evidenced method and evidenced class as separate cited tokens, \
+but never join them into a class-method dotted token unless that full exact dotted \
+token appears verbatim in one cited evidence item. Do not transform import \
+statements into dotted fully-qualified identifiers: an \
+instruction-example line such as `from package.module import Name` evidences only \
+exact tokens present in that evidence item (for example, `package.module`, `Name`, \
+and the import line itself); it does NOT evidence `package.module.Name` unless \
+that full exact dotted token appears verbatim in one cited evidence item. \
+Instruction examples in this rule are not evidence. Forbidden instruction \
+identifier examples (not evidence; never copy unless the full exact token appears \
+in cited EvidencePacket): `pkg/module.py`, `ClassName`, `method_name`, \
+`ClassName.method_name`, `pkg.module.ClassName`, \
 `common.metadata_es_filter`, `MetaFilterTranslator`, \
 `common.metadata_es_filter.MetaFilterTranslator`, `module.function()`. Do not turn \
 separate evidence pieces like `pkg/module.py` plus `ClassName` into \
