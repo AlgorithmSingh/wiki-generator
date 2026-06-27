@@ -49,6 +49,14 @@ method/function name inside or near a class/object, describe it as a separate \
 token, e.g. "the `method` method in/inside/on `Class`", or quote the definition; \
 do NOT write `Class.method`, `Class._private`, `object.member`, etc. unless that \
 full dotted token appears verbatim in cited evidence.
+- Nested JSON/YAML/dict/object keys do NOT create dotted identifiers or field \
+paths. If evidence shows an object with key `data` containing key `graph`, write \
+safe prose such as "the `graph` field under the `data` object" or quote exact \
+JSON/YAML/object snippets; do NOT write `object.field`, `parent.child`, or any \
+dotted key path unless that exact dotted token appears verbatim in cited \
+evidence. This applies to API response examples, config maps, request bodies, \
+dict literals, and JSON/YAML snippets. Instruction examples in this object-key \
+rule are not evidence.
 - Import statements must be described in import syntax or as separate tokens. A \
 file path, directory, package context, or section context must never be used to \
 qualify an imported symbol/name. If evidence shows a file under a directory or \

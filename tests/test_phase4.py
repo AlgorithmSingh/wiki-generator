@@ -371,6 +371,15 @@ def _assert_phase4_prompt_contract(testcase, prompt: str, *,
         "method/function name inside or near a class/object",
         "the `method` method in/inside/on `Class`",
         "do NOT write `Class.method`, `Class._private`, `object.member`",
+        "Nested JSON/YAML/dict/object keys do NOT create dotted identifiers",
+        "field paths",
+        "object with key `data` containing key `graph`",
+        "the `graph` field under the `data` object",
+        "quote exact JSON/YAML/object snippets",
+        "do NOT write `object.field`, `parent.child`, or any dotted key path",
+        "This applies to API response examples, config maps, request bodies",
+        "dict literals, and JSON/YAML snippets",
+        "Instruction examples in this object-key rule are not evidence",
         "Import statements must be described in import syntax or as separate tokens",
         "file path, directory, package context, or section context must never be used",
         "qualify an imported symbol/name",
@@ -432,6 +441,7 @@ def _assert_phase4_prompt_contract(testcase, prompt: str, *,
     testcase.assertNotIn("quart_auth.AuthUser", prompt)
     testcase.assertNotIn("Parser._pdf", prompt)
     testcase.assertNotIn("agent.settings", prompt)
+    testcase.assertNotIn("data.graph", prompt)
     if expect_coverage:
         for needle in (
             "DeepWiki coverage enhancement — REQUIRED",
@@ -1353,6 +1363,37 @@ class ImportQualifiedNameSynthesisTests(unittest.TestCase):
                            "[ev:x:0001]", available)
         self.assertEqual(r["invented_identifiers"], [])
         self.assertEqual(r["synthesized_identifiers"], [])
+
+
+# ---------------------------------------------------------------------------
+class NestedObjectKeyIdentifierTests(unittest.TestCase):
+    """Nested object keys do not evidence synthesized dotted field paths."""
+
+    def test_nested_json_keys_do_not_support_dotted_field_path(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = json.dumps({
+            "evidence_id": "ev:http-api:0001",
+            "excerpt": {
+                "response": {
+                    "data": {"graph": {"nodes": [], "edges": []}}
+                }
+            },
+        }, indent=2)
+        self.assertIn('"data"', available)
+        self.assertIn('"graph"', available)
+        self.assertNotIn("data.graph", available)
+
+        r = analyze_claims("The response returns `data.graph`. [ev:http-api:0001]",
+                           available)
+        self.assertIn("data.graph", r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+        safe = analyze_claims(
+            "The response returns the `graph` field under the `data` object. "
+            "[ev:http-api:0001]",
+            available)
+        self.assertEqual(safe["invented_identifiers"], [])
+        self.assertEqual(safe["synthesized_identifiers"], [])
 
 
 # ---------------------------------------------------------------------------
