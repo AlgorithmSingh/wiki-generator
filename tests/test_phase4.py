@@ -304,7 +304,8 @@ def gated(root, **kw):
     return wbundle.load_and_gate(opts_for(root, **kw))
 
 
-def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
+def _assert_phase4_prompt_contract(testcase, prompt: str, *,
+                                   expect_coverage: bool = False) -> None:
     """Focused guardrails for the Phase 4 prompt failure classes."""
     for needle in (
         # strict JSON / escaping failures observed in generated drafts
@@ -418,6 +419,25 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         testcase.assertNotIn(leaked_route, prompt)
     testcase.assertNotIn("quart_auth.AuthUser", prompt)
     testcase.assertNotIn("Parser._pdf", prompt)
+    if expect_coverage:
+        for needle in (
+            "DeepWiki coverage enhancement — REQUIRED",
+            "drawn ONLY from that topic's supporting evidence_ids",
+            "Evidence scope distinction for required-topic coverage",
+            "`allowed_evidence_ids` is the section-wide citation allowlist",
+            "listed `supporting_evidence_ids` are the ONLY ids you may cite",
+            "paragraph/subsection/block whose purpose is to satisfy that topic",
+            "ONLY ids you may put in that topic's `covered_topics[].evidence_ids` row",
+            "Do NOT cite broader section evidence inside a required-topic coverage block",
+            "If broader allowed evidence is useful, discuss it elsewhere outside",
+            "do not include it in that topic's `covered_topics[].evidence_ids`",
+            "Using an id from `allowed_evidence_ids` is not enough for required-topic coverage",
+            "the id counts only if it is also listed in that topic's `supporting_evidence_ids`",
+            "inside that topic's coverage block",
+            "citing broader section evidence inside the topic block",
+            "declaring an id outside its supporting set fails validation",
+        ):
+            testcase.assertIn(needle, prompt)
 
 
 # ---------------------------------------------------------------------------
@@ -1042,6 +1062,32 @@ class UnitTests(unittest.TestCase):
             allowed_evidence_ids=["ev:service:0001"],
             data={"section_id": "service", "evidence": []})
         _assert_phase4_prompt_contract(self, build_section_prompt(wp))
+
+    def test_prompt_contract_distinguishes_section_allowed_from_topic_support(self):
+        from types import SimpleNamespace
+        from wiki_generator.libs.writing.prompt import build_section_prompt
+        topic = ("Describe the supported retrieval methods (e.g., vector search, "
+                 "keyword search, hybrid).")
+        supporting = [f"ev:retrieval-search:{i:04d}" for i in range(1, 9)]
+        wp = SimpleNamespace(
+            section_id="retrieval-search", title="Retrieval Search",
+            required_topics_coverage=[{"topic": topic, "is_obligation": True,
+                                       "supporting_evidence_ids": supporting}],
+            allowed_evidence_ids=supporting + ["ev:retrieval-search:0033",
+                                               "ev:retrieval-search:0037"],
+            data={"section_id": "retrieval-search", "evidence": [],
+                  "hierarchy": {"parent_section_id": None,
+                                "coverage_labels": ["retrieval"],
+                                "child_section_ids": []}})
+        prompt = build_section_prompt(wp)
+        _assert_phase4_prompt_contract(self, prompt, expect_coverage=True)
+        self.assertIn("- `ev:retrieval-search:0033`", prompt)
+        self.assertIn("- `ev:retrieval-search:0037`", prompt)
+        topic_line = next(line for line in prompt.splitlines()
+                          if line.startswith("- **Describe the supported retrieval"))
+        self.assertIn("`ev:retrieval-search:0008`", topic_line)
+        self.assertNotIn("`ev:retrieval-search:0033`", topic_line)
+        self.assertNotIn("`ev:retrieval-search:0037`", topic_line)
 
 
 # ---------------------------------------------------------------------------

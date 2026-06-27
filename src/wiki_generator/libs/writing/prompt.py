@@ -204,21 +204,39 @@ def _enhancement_block(wp) -> list[str]:
     lines.append("")
     if obligations:
         lines.append("You MUST explain each required topic below in its own non-empty "
-                     "paragraph/subsection with valid inline citations to the exact "
-                     "supporting evidence_ids listed, and declare it in "
+                     "paragraph/subsection with valid inline citations drawn ONLY "
+                     "from that topic's supporting evidence_ids, and declare it in "
                      "`covered_topics[]`:")
         lines.append("")
         for ob in obligations:
             ids = ", ".join(f"`{e}`" for e in ob.get("supporting_evidence_ids") or [])
             lines.append(f"- **{ob.get('topic')}** — cite from: {ids or '(none)'}")
         lines.append("")
+        lines.append("Evidence scope distinction for required-topic coverage:")
+        lines.append("- `allowed_evidence_ids` is the section-wide citation allowlist; "
+                     "those ids may support other section prose when relevant.")
+        lines.append("- For a required topic, its listed `supporting_evidence_ids` are "
+                     "the ONLY ids you may cite in the paragraph/subsection/block whose "
+                     "purpose is to satisfy that topic, and the ONLY ids you may put in "
+                     "that topic's `covered_topics[].evidence_ids` row.")
+        lines.append("- Do NOT cite broader section evidence inside a required-topic "
+                     "coverage block unless that id is also in that topic's "
+                     "supporting_evidence_ids.")
+        lines.append("- If broader allowed evidence is useful, discuss it elsewhere "
+                     "outside the required-topic coverage block, and do not include it "
+                     "in that topic's `covered_topics[].evidence_ids`.")
+        lines.append("- Using an id from `allowed_evidence_ids` is not enough for "
+                     "required-topic coverage; for that topic, the id counts only if "
+                     "it is also listed in that topic's `supporting_evidence_ids`.")
+        lines.append("")
         lines.append("For every required topic, add a `covered_topics[]` row with "
                      "`status: \"covered\"`, the `evidence_ids` you actually cited "
-                     "(each MUST be one of that topic's supporting evidence_ids), and "
-                     "a `markdown_anchor` equal to the GitHub heading slug where you "
-                     "explain it. Omitting a required topic, leaving an empty "
-                     "heading, or citing an id outside its supporting set fails "
-                     "validation.")
+                     "inside that topic's coverage block (each MUST be one of that "
+                     "topic's supporting evidence_ids), and a `markdown_anchor` equal "
+                     "to the GitHub heading slug where you explain it. Omitting a "
+                     "required topic, leaving an empty heading, citing broader section "
+                     "evidence inside the topic block, or declaring an id outside its "
+                     "supporting set fails validation.")
     else:
         lines.append("_This page has no evidenced required-topic obligations; return "
                      "an empty `covered_topics` list._")

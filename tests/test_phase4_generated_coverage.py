@@ -557,6 +557,19 @@ class GeneratedCoverageUnitTests(unittest.TestCase):
         self.assertEqual(r["rows"][0]["generated_status"], gencov.GEN_INVALID)
         self.assertTrue(any("outside its Phase 3 mapped" in f for f in r["failures"]))
 
+    def test_required_topic_rejects_allowed_but_unmapped_declared_id(self):
+        md = ("## S\n\n### Retrieval Methods\n\nThe retrieval methods topic uses "
+              "its mapped evidence [ev:s:0001], but also cites broader section "
+              "evidence. [ev:s:0002]\n")
+        r = self._eval(
+            [self._ob("retrieval methods", ["ev:s:0001"])],
+            [{"topic": "retrieval methods", "status": "covered",
+              "evidence_ids": ["ev:s:0001", "ev:s:0002"],
+              "markdown_anchor": "retrieval-methods"}], md)
+        self.assertEqual(r["rows"][0]["generated_status"], gencov.GEN_INVALID)
+        self.assertIn("ev:s:0002", r["rows"][0]["evidence_ids"])
+        self.assertTrue(any("outside its Phase 3 mapped" in f for f in r["failures"]))
+
     def test_unresolved_evidence_id_is_flagged(self):
         md = "## S\n\n### Redis\n\nText. [ev:s:0003]\n"
         r = self._eval(
