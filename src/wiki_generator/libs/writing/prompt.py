@@ -49,19 +49,28 @@ method/function name inside or near a class/object, describe it as a separate \
 token, e.g. "the `method` method in/inside/on `Class`", or quote the definition; \
 do NOT write `Class.method`, `Class._private`, `object.member`, etc. unless that \
 full dotted token appears verbatim in cited evidence.
-- Import statements must be described in import syntax or as separate tokens. If \
-evidence says a file imports a symbol/name from a package/module, write "imports \
-`Name` from `module`" or quote `from module import Name`; do NOT write \
-`module.Name`, `package.Name`, or any dotted package-symbol form unless that full \
-dotted token appears verbatim in cited evidence. Instruction examples in this \
-import rule are not evidence.
+- Import statements must be described in import syntax or as separate tokens. A \
+file path, directory, package context, or section context must never be used to \
+qualify an imported symbol/name. If evidence shows a file under a directory or \
+package/section context and separately shows `from X import Y` or `import Y`, do \
+NOT write `directory.Y`, `package.Y`, `section.Y`, or any dotted context-symbol \
+form unless that full dotted token appears verbatim in cited evidence. Instead, \
+say the file imports `Y` from `X`, say the file imports `Y`, or quote the exact \
+import line. If evidence says a file imports a symbol/name from a package/module, \
+write "imports `Name` from `module`" or quote `from module import Name`; do NOT \
+write `module.Name`, `package.Name`, or any dotted package-symbol form unless \
+that full dotted token appears verbatim in cited evidence. Instruction examples \
+in this import rule are not evidence.
 - Never synthesize or expand a file path: do not join a directory and a filename, \
 complete a partial path, or infer a module's full path. Use a path ONLY when that \
 exact string appears in a cited evidence item's `source` or excerpt — otherwise \
 refer to the component by the name the evidence actually provides.
 - Never synthesize fully-qualified names by joining module/package paths, import \
-statements, file paths, package names, file stems, classes, functions, methods, \
-aliases, or symbols into a dotted, slashed, or call identifier. Dotted \
+statements, file paths, file-path directories, package names, package context, \
+section context, file stems, classes, functions, methods, aliases, or symbols \
+into a dotted, slashed, or call identifier. A cited file path/source directory, \
+section id/title/label, or other surrounding context is not a namespace for an \
+imported symbol/name and must not qualify it. Dotted \
 class/member, object/member, module/member, and package/member notation is allowed \
 ONLY when that full dotted token appears verbatim in one cited evidence item. \
 Separate tokens in the same cited item are not enough: a class token plus a method \

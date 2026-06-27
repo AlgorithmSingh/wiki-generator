@@ -372,11 +372,23 @@ def _assert_phase4_prompt_contract(testcase, prompt: str, *,
         "the `method` method in/inside/on `Class`",
         "do NOT write `Class.method`, `Class._private`, `object.member`",
         "Import statements must be described in import syntax or as separate tokens",
+        "file path, directory, package context, or section context must never be used",
+        "qualify an imported symbol/name",
+        "If evidence shows a file under a directory or",
+        "package/section context and separately shows `from X import Y` or `import Y`",
+        "do NOT write `directory.Y`, `package.Y`, `section.Y`, or any dotted context-symbol",
+        "say the file imports `Y` from `X`",
+        "quote the exact import line",
         "imports `Name` from `module`",
         "quote `from module import Name`",
         "do NOT write `module.Name`, `package.Name`, or any dotted package-symbol form",
         "Instruction examples in this import rule are not evidence",
         "Never synthesize fully-qualified names by joining",
+        "file paths, file-path directories, package names, package context",
+        "section context, file stems, classes",
+        "A cited file path/source directory",
+        "surrounding context is not a namespace for an",
+        "imported symbol/name and must not qualify it",
         "Dotted class/member, object/member, module/member, and package/member notation",
         "Separate tokens in the same cited item are not enough",
         "a class token plus a method token does NOT evidence `ClassName.method_name`",
@@ -419,6 +431,7 @@ def _assert_phase4_prompt_contract(testcase, prompt: str, *,
         testcase.assertNotIn(leaked_route, prompt)
     testcase.assertNotIn("quart_auth.AuthUser", prompt)
     testcase.assertNotIn("Parser._pdf", prompt)
+    testcase.assertNotIn("agent.settings", prompt)
     if expect_coverage:
         for needle in (
             "DeepWiki coverage enhancement — REQUIRED",
@@ -1295,6 +1308,13 @@ class ImportQualifiedNameSynthesisTests(unittest.TestCase):
         available = "from quart_auth import AuthUser\n"
         r = analyze_claims("Uses `quart_auth.AuthUser`. [ev:x:0001]", available)
         self.assertIn("quart_auth.AuthUser", r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_file_path_context_does_not_support_imported_symbol_fqn(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = "path: agent/component/base.py\nfrom common import settings\n"
+        r = analyze_claims("Uses `agent.settings`. [ev:x:0001]", available)
+        self.assertIn("agent.settings", r["invented_identifiers"])
         self.assertEqual(r["synthesized_identifiers"], [])
 
     def test_exact_full_dotted_token_in_evidence_supports_fqn(self):
