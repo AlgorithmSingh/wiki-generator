@@ -102,7 +102,12 @@ expanded string itself appears in a cited evidence item.
 prefixes, version placeholders, base paths, query parameters, or trailing slashes; \
 do not convert placeholder syntax; and do not combine separate route fragments \
 unless that exact complete route string appears verbatim in one cited evidence \
-item. These instructions intentionally avoid literal forbidden route examples \
+item. High-salience route-template rule: Do not rewrite f-strings, code templates, \
+variables, or placeholders into simplified route patterns; do not drop qualifiers \
+such as `self.` or rename variables into brace placeholders. If only a template \
+or f-string is evidenced, either quote the exact evidenced template/token or \
+describe it in prose using separate exact tokens; do not invent a normalized route \
+pattern. These instructions intentionally avoid literal forbidden route examples \
 because example route tokens can leak into generated output. For route evidence, \
 copy only `source.route` or `source.public_route` values verbatim; do not compose \
 a public route from a base path, prefix, version marker, or contract route.

@@ -328,6 +328,15 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         "do not convert placeholder syntax",
         "do not combine separate route fragments",
         "unless that exact complete route string appears verbatim",
+        "High-salience route-template rule",
+        "Do not rewrite f-strings, code templates",
+        "variables, or placeholders into simplified route patterns",
+        "do not drop qualifiers such as `self.`",
+        "rename variables into brace placeholders",
+        "If only a template or f-string is evidenced",
+        "quote the exact evidenced template/token",
+        "describe it in prose using separate exact tokens",
+        "do not invent a normalized route pattern",
         "intentionally avoid literal forbidden route examples",
         "copy only `source.route` or `source.public_route` values verbatim",
         "do not compose a public route from a base path, prefix, version marker",
@@ -1268,6 +1277,13 @@ class SynthesizedIdentifierTests(unittest.TestCase):
     def test_api_version_route_prefix_synthesis_is_terminal_invented(self):
         from wiki_generator.libs.writing.citations import analyze_claims
         available = json.dumps({"source": {"route": "/{api_version}"}})
+        r = analyze_claims("Uses `/api/{api_version}`. [ev:x:0001]", available)
+        self.assertIn("/api/{api_version}", r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_fstring_api_version_template_does_not_support_normalized_route(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = 'return f"{self.host}:{self.port}/api/{self.api_version}"\n'
         r = analyze_claims("Uses `/api/{api_version}`. [ev:x:0001]", available)
         self.assertIn("/api/{api_version}", r["invented_identifiers"])
         self.assertEqual(r["synthesized_identifiers"], [])
