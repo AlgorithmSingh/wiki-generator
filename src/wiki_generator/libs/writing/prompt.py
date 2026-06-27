@@ -30,7 +30,7 @@ newlines, raw unescaped double quotes, or other control characters inside a JSON
 string. Do not wrap the object in markdown fences.
 - Cite with the EXACT inline syntax `[ev:<section_id>:<NNNN>]`, copied verbatim \
 from the `evidence_id` field. Multiple citations are adjacent brackets, e.g. \
-`... [ev:overview:0001][ev:overview:0004]`.
+`evidence-backed claim [ev:overview:0001][ev:overview:0004]`.
 - You may ONLY cite `evidence_id` values listed in `allowed_evidence_ids`. Never \
 invent an evidence id, never cite a file path or URL directly, never use \
 footnotes, and never cite `search_hints` or `context_artifacts`.
@@ -107,11 +107,17 @@ templates, variables, or template markers into simplified route patterns; do not
 drop qualifiers such as `self.` or rename variables into brace variables. If only \
 a template or f-string is evidenced, either quote the exact evidenced \
 template/token or describe it in prose using separate exact tokens; do not invent \
-a normalized route pattern. These instructions intentionally avoid literal \
-forbidden route examples because example route tokens can leak into generated \
-output. For route evidence, copy only `source.route` or `source.public_route` \
-values verbatim; do not compose a public route from a base path, prefix, version \
-marker, or contract route.
+a normalized route pattern. Never put ellipses (three dots or the single \
+ellipsis glyph) inside route, path, identifier, or inline-code tokens to \
+summarize multiple endpoints or names. Do not write a prefix followed by an \
+ellipsis as an abbreviated route/path/identifier unless that exact complete token \
+appears verbatim in one cited evidence item. To discuss a family of endpoints, \
+use prose such as "routes under the API prefix" or list exact cited routes \
+individually; do not invent a pseudo-route. These instructions intentionally \
+avoid literal forbidden route examples because example route tokens can leak into \
+generated output. For route evidence, copy only `source.route` or \
+`source.public_route` values verbatim; do not compose a public route from a base \
+path, prefix, version marker, or contract route.
 - When evidence is partial or split across items, prefer component-level \
 descriptions or exact quoted tokens over invented identifiers or routes. For \
 example, describe "the metadata filter translator component" or quote \

@@ -351,6 +351,17 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         "quote the exact evidenced template/token",
         "describe it in prose using separate exact tokens",
         "do not invent a normalized route pattern",
+        "Never put ellipses (three dots or the single",
+        "ellipsis glyph) inside route, path, identifier",
+        "or inline-code tokens to",
+        "summarize multiple endpoints or names",
+        "Do not write a prefix followed by an",
+        "ellipsis as an abbreviated route/path/identifier",
+        "unless that exact complete token appears verbatim in one cited evidence item",
+        "To discuss a family of endpoints",
+        "routes under the API prefix",
+        "list exact cited routes individually",
+        "do not invent a pseudo-route",
         "intentionally avoid literal forbidden route examples",
         "copy only `source.route` or `source.public_route` values verbatim",
         "do not compose a public route from a base path, prefix, version marker",
@@ -403,7 +414,7 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         "This subsection opens with cited body content before any later heading",
     ):
         testcase.assertIn(needle, prompt)
-    for leaked_route in ("/api/{api_version}", "/{api_version}"):
+    for leaked_route in ("/api/{api_version}", "/{api_version}", "/api/v1/..."):
         testcase.assertNotIn(leaked_route, prompt)
     testcase.assertNotIn("quart_auth.AuthUser", prompt)
     testcase.assertNotIn("Parser._pdf", prompt)
@@ -982,6 +993,22 @@ class UnitTests(unittest.TestCase):
         r2 = analyze_claims(f"Lists chunks with `GET {route}`. [ev:x:0001]",
                             '{"route": "/datasets/<dataset_id>/documents/<document_id>/chunks"}')
         self.assertIn(route, r2["invented_identifiers"])
+
+    def test_route_family_ellipsis_is_not_supported_by_exact_routes(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = "\n".join([
+            json.dumps({"source": {"public_route": "/api/v1/agents",
+                                     "route": "/agents"}}),
+            json.dumps({"source": {"public_route": "/api/v1/datasets",
+                                     "route": "/datasets"}}),
+        ])
+        exact = analyze_claims("Lists `GET /api/v1/agents`. [ev:x:0001]",
+                               available)
+        self.assertEqual(exact["invented_identifiers"], [])
+        r = analyze_claims("Summarizes `GET /api/v1/...`. [ev:x:0001]",
+                           available)
+        self.assertIn("/api/v1/...", r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
 
     def test_uncited_paragraph_detection(self):
         from wiki_generator.libs.writing.citations import analyze_claims
