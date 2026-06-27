@@ -121,6 +121,14 @@ needs careful phrasing. `low` (graph-context) evidence must never be the sole \
 support for a precise claim — pair it with stronger evidence or omit it.
 - No placeholders, TODO/TBD/FIXME, "needs citation", empty headings, apologies, \
 or meta commentary about yourself or these instructions.
+- No empty headings: every heading you emit MUST be followed by substantive \
+non-heading content before the next heading. Do not put one heading directly \
+after another heading, even with blank lines between them.
+- If the `markdown` starts with the section title heading, the next nonblank line \
+MUST be a substantive introductory paragraph, list item, or table row with an \
+inline citation; it MUST NOT be another heading.
+- Do NOT emit a decorative duplicate title heading with no body. A title heading \
+is allowed only when it is immediately followed by substantive cited content.
 - Write explanatory prose (paragraphs first, focused lists/tables only when the \
 evidence warrants). Do not dump citations as a bibliography; attach each citation \
 to the specific claim it supports.
@@ -134,9 +142,12 @@ def _response_contract(section_id: str, title: str, *, covered_topics=None) -> d
         "schema_version": SECTION_DRAFT_SCHEMA_VERSION,
         "section_id": section_id,
         "title": title,
-        "markdown": ("## " + title + "\n\n<the section body as GitHub-flavored "
-                     "Markdown, with inline [ev:...] citations on every "
-                     "repo-specific claim>"),
+        "markdown": ("## " + title + "\n\nThis introductory paragraph states "
+                     "an evidence-backed summary for the section before any "
+                     "subheading. [ev:" + section_id + ":0001]\n\n"
+                     "### Key Evidence\n\nThis subsection opens with cited body "
+                     "content before any later heading. "
+                     "[ev:" + section_id + ":0001]"),
         "used_evidence_ids": ["ev:" + section_id + ":0001"],
         "self_check": {
             "valid_json": True,
@@ -144,6 +155,7 @@ def _response_contract(section_id: str, title: str, *, covered_topics=None) -> d
             "no_uncited_repo_claims": True,
             "no_context_artifact_citations": True,
             "no_placeholders": True,
+            "no_empty_headings": True,
             "no_synthesized_identifiers": True,
             "no_synthesized_routes": True,
         },

@@ -368,10 +368,25 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         # response-contract self checks; downstream validation remains authoritative
         '"valid_json": true',
         '"json_strings_escaped": true',
+        '"no_empty_headings": true',
         '"no_synthesized_identifiers": true',
         '"no_synthesized_routes": true',
         "declarations only",
         "validation independently parses JSON and checks citations",
+        # empty-heading hardening for the live top-section failure mode
+        "No empty headings: every heading you emit MUST be followed by substantive",
+        "non-heading content before the next heading",
+        "Do not put one heading directly after another heading",
+        "even with blank lines between them",
+        "If the `markdown` starts with the section title heading",
+        "the next nonblank line MUST be a substantive introductory paragraph",
+        "list item, or table row with an inline citation",
+        "it MUST NOT be another heading",
+        "Do NOT emit a decorative duplicate title heading with no body",
+        "A title heading is allowed only when it is immediately followed",
+        "This introductory paragraph states an evidence-backed summary",
+        "subheading. [ev:",
+        "This subsection opens with cited body content before any later heading",
     ):
         testcase.assertIn(needle, prompt)
     for leaked_route in ("/api/{api_version}", "/{api_version}"):
@@ -708,6 +723,19 @@ class WritingValidationTests(TmpBundleMixin, unittest.TestCase):
                         provider=self._provider(root, draft_json("service",
                                                                  "Service Layer", md)))
 
+    def test_empty_top_title_heading_is_rejected(self):
+        root = self.fresh()
+        bad_overview = ("## Overview\n\n## What RAGFlow Is\n\n"
+                        "Demo is a Retrieval service. [ev:overview:0001]\n")
+        service = valid_markdown("service", "Service Layer",
+                                 ["ev:service:0001", "ev:service:0002"])
+        provider = FakeProvider({
+            "overview": draft_json("overview", "Overview", bad_overview),
+            "service": draft_json("service", "Service Layer", service),
+        })
+        with self.assertRaises(writing.WritingValidationFailure):
+            writing.run(opts_for(root), provider=provider)
+
     def test_truncation_finish_reason_fails(self):
         root = self.fresh()
         resp = SectionResponse(draft_json("service", "Service Layer",
@@ -883,6 +911,10 @@ class UnitTests(unittest.TestCase):
         empty = c.find_placeholders("## Empty\n\n## Next\n\nBody.")
         self.assertIn("empty heading: ## Empty", empty)
         self.assertNotIn("empty heading: ## Next", empty)
+        empty_top = c.find_placeholders(
+            "## Overview\n\n## What RAGFlow Is\n\nBody. [ev:overview:0001]")
+        self.assertIn("empty heading: ## Overview", empty_top)
+        self.assertNotIn("empty heading: ## What RAGFlow Is", empty_top)
         nested = ("### Utility Commands\n\n#### Password Reset\n\nReset passwords.\n\n"
                   "#### MCP Server Launcher\n\nLaunches the server.\n")
         self.assertFalse(c.find_placeholders(nested))
