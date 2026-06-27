@@ -99,18 +99,19 @@ evidence item itself shows tokens like these, you may write only those exact \
 evidenced tokens; you must NOT write an expanded literal unless that exact \
 expanded string itself appears in a cited evidence item.
 - Never synthesize or normalize a route pattern: do not add or remove route \
-prefixes, version placeholders, base paths, query parameters, or trailing slashes; \
-do not convert placeholder syntax; and do not combine separate route fragments \
-unless that exact complete route string appears verbatim in one cited evidence \
-item. High-salience route-template rule: Do not rewrite f-strings, code templates, \
-variables, or placeholders into simplified route patterns; do not drop qualifiers \
-such as `self.` or rename variables into brace placeholders. If only a template \
-or f-string is evidenced, either quote the exact evidenced template/token or \
-describe it in prose using separate exact tokens; do not invent a normalized route \
-pattern. These instructions intentionally avoid literal forbidden route examples \
-because example route tokens can leak into generated output. For route evidence, \
-copy only `source.route` or `source.public_route` values verbatim; do not compose \
-a public route from a base path, prefix, version marker, or contract route.
+prefixes, version markers, base paths, query parameters, or trailing slashes; do \
+not convert route-template marker syntax; and do not combine separate route \
+fragments unless that exact complete route string appears verbatim in one cited \
+evidence item. High-salience route-template rule: Do not rewrite f-strings, code \
+templates, variables, or template markers into simplified route patterns; do not \
+drop qualifiers such as `self.` or rename variables into brace variables. If only \
+a template or f-string is evidenced, either quote the exact evidenced \
+template/token or describe it in prose using separate exact tokens; do not invent \
+a normalized route pattern. These instructions intentionally avoid literal \
+forbidden route examples because example route tokens can leak into generated \
+output. For route evidence, copy only `source.route` or `source.public_route` \
+values verbatim; do not compose a public route from a base path, prefix, version \
+marker, or contract route.
 - When evidence is partial or split across items, prefer component-level \
 descriptions or exact quoted tokens over invented identifiers or routes. For \
 example, describe "the metadata filter translator component" or quote \
@@ -119,8 +120,17 @@ do not invent a longer qualified name to make prose look precise.
 - `exact`/`high` evidence supports definitive statements. `medium` evidence \
 needs careful phrasing. `low` (graph-context) evidence must never be the sole \
 support for a precise claim — pair it with stronger evidence or omit it.
-- No placeholders, TODO/TBD/FIXME, "needs citation", empty headings, apologies, \
-or meta commentary about yourself or these instructions.
+- The generated `markdown` MUST NOT contain validation-reserved filler words or \
+tokens: the literal word `placeholder` (any casing, including plural or compound \
+forms that contain that substring), `TODO`, `TBD`, `FIXME`, or the phrase `needs \
+citation`. These are terminal validation failures in headings, prose, lists, \
+tables, code fences, and inline code.
+- If evidence uses the literal validation-reserved word `placeholder` as a \
+code/comment concept, do NOT copy that word into `markdown`. Paraphrase with \
+precise safe wording such as no-op, stub, default, temporary body, route variable \
+marker, or template marker as appropriate, and cite the evidence.
+- No empty headings, apologies, or meta commentary about yourself or these \
+instructions.
 - No empty headings: every heading you emit MUST be followed by substantive \
 non-heading content before the next heading. Do not put one heading directly \
 after another heading, even with blank lines between them.

@@ -321,18 +321,32 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         "FORBIDDEN INSTRUCTION EXAMPLE",
         "unless the exact token appears in the EvidencePacket and is cited",
         "must never be copied into the generated `markdown`",
+        # reserved validation-token hardening
+        "validation-reserved filler words or tokens",
+        "the literal word `placeholder`",
+        "including plural or compound forms that contain that substring",
+        "`TODO`, `TBD`, `FIXME`",
+        "the phrase `needs citation`",
+        "terminal validation failures in headings, prose, lists",
+        "code fences, and inline code",
+        "If evidence uses the literal validation-reserved word `placeholder`",
+        "code/comment concept",
+        "do NOT copy that word into `markdown`",
+        "Paraphrase with precise safe wording such as no-op, stub, default",
+        "temporary body, route variable marker, or template marker",
+        "and cite the evidence",
         # route normalization/synthesis failures
         "Never synthesize or normalize a route pattern",
-        "do not add or remove route prefixes, version placeholders, base paths",
+        "do not add or remove route prefixes, version markers, base paths",
         "query parameters, or trailing slashes",
-        "do not convert placeholder syntax",
+        "do not convert route-template marker syntax",
         "do not combine separate route fragments",
         "unless that exact complete route string appears verbatim",
         "High-salience route-template rule",
         "Do not rewrite f-strings, code templates",
-        "variables, or placeholders into simplified route patterns",
+        "variables, or template markers into simplified route patterns",
         "do not drop qualifiers such as `self.`",
-        "rename variables into brace placeholders",
+        "rename variables into brace variables",
         "If only a template or f-string is evidenced",
         "quote the exact evidenced template/token",
         "describe it in prose using separate exact tokens",
@@ -705,6 +719,15 @@ class WritingValidationTests(TmpBundleMixin, unittest.TestCase):
                         provider=self._provider(root, draft_json("service",
                                                                  "Service Layer", md)))
 
+    def test_placeholder_handling_phrase_is_rejected(self):
+        root = self.fresh()
+        md = ("## Service Layer\n\nThe implementation covers placeholder handling. "
+              "[ev:service:0001]\n")
+        with self.assertRaises(writing.WritingValidationFailure):
+            writing.run(opts_for(root),
+                        provider=self._provider(root, draft_json("service",
+                                                                 "Service Layer", md)))
+
     def test_parent_heading_with_child_subsections_is_allowed(self):
         root = self.fresh()
         md = ("## Service Layer\n\n### Utility Commands\n\n#### Password Reset\n\n"
@@ -907,6 +930,9 @@ class UnitTests(unittest.TestCase):
         from wiki_generator.libs.writing import citations as c
         self.assertTrue(c.find_placeholders("TODO: fix"))
         self.assertTrue(c.find_placeholders("TBD: fill in later"))
+        self.assertIn(
+            "placeholder",
+            c.find_placeholders("This sentence mentions placeholder handling."))
         self.assertTrue(c.find_placeholders("I cannot determine this."))
         empty = c.find_placeholders("## Empty\n\n## Next\n\nBody.")
         self.assertIn("empty heading: ## Empty", empty)
