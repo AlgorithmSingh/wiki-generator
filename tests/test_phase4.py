@@ -332,6 +332,10 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         "copy only `source.route` or `source.public_route` values verbatim",
         "do not compose a public route from a base path, prefix, version marker",
         # fully-qualified identifier / import synthesis failures
+        "Class/object ownership does not create dotted identifiers",
+        "method/function name inside or near a class/object",
+        "the `method` method in/inside/on `Class`",
+        "do NOT write `Class.method`, `Class._private`, `object.member`",
         "Import statements must be described in import syntax or as separate tokens",
         "imports `Name` from `module`",
         "quote `from module import Name`",
@@ -364,6 +368,7 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
     for leaked_route in ("/api/{api_version}", "/{api_version}"):
         testcase.assertNotIn(leaked_route, prompt)
     testcase.assertNotIn("quart_auth.AuthUser", prompt)
+    testcase.assertNotIn("Parser._pdf", prompt)
 
 
 # ---------------------------------------------------------------------------
@@ -1164,6 +1169,13 @@ class ImportQualifiedNameSynthesisTests(unittest.TestCase):
         available = "class RAGFlowClient:\n    def login_user(self):\n        return None\n"
         r = analyze_claims("Uses `RAGFlowClient.login_user`. [ev:x:0001]", available)
         self.assertIn("RAGFlowClient.login_user", r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_parser_private_method_tokens_do_not_support_known_dotted_failure(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = "class Parser(object):\n    def _pdf(self, fnm):\n        return None\n"
+        r = analyze_claims("Uses `Parser._pdf`. [ev:x:0001]", available)
+        self.assertIn("Parser._pdf", r["invented_identifiers"])
         self.assertEqual(r["synthesized_identifiers"], [])
 
     def test_exact_class_method_token_in_evidence_supports_member(self):

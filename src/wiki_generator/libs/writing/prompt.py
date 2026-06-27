@@ -44,6 +44,11 @@ must never be copied into the generated `markdown`, `used_evidence_ids`, or \
 dependency, version) unless the full exact token appears verbatim in one cited \
 evidence item's excerpt, `source`, or `provenance` metadata. If the evidence does \
 not support a fact, omit the fact.
+- Class/object ownership does not create dotted identifiers. If evidence shows a \
+method/function name inside or near a class/object, describe it as a separate \
+token, e.g. "the `method` method in/inside/on `Class`", or quote the definition; \
+do NOT write `Class.method`, `Class._private`, `object.member`, etc. unless that \
+full dotted token appears verbatim in cited evidence.
 - Import statements must be described in import syntax or as separate tokens. If \
 evidence says a file imports a symbol/name from a package/module, write "imports \
 `Name` from `module`" or quote `from module import Name`; do NOT write \
