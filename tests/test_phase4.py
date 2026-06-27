@@ -366,6 +366,16 @@ def _assert_phase4_prompt_contract(testcase, prompt: str, *,
         "intentionally avoid literal forbidden route examples",
         "copy only `source.route` or `source.public_route` values verbatim",
         "do not compose a public route from a base path, prefix, version marker",
+        "ONE-SHOT route grounding example",
+        "client setting/base-builder tokens such as `api_version`",
+        "`api_base`, and `non_api_base`",
+        "code that builds API bases from those variables",
+        "do NOT turn that into a normalized route or a version-placeholder route",
+        "quote the exact evidenced code/template tokens",
+        "the client stores an `api_version` setting and builds the base URL in code",
+        "list exact cited public routes or prefixes only when those strings appear verbatim",
+        "generic slash route pattern made from a root or API prefix plus a brace-wrapped",
+        "invented route template, not grounded evidence",
         # fully-qualified identifier / import synthesis failures
         "Class/object ownership does not create dotted identifiers",
         "method/function name inside or near a class/object",
@@ -1479,6 +1489,36 @@ class SynthesizedIdentifierTests(unittest.TestCase):
         r = analyze_claims("Uses `/api/{api_version}`. [ev:x:0001]", available)
         self.assertIn("/api/{api_version}", r["invented_identifiers"])
         self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_architecture_api_base_evidence_does_not_support_version_placeholder_routes(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = "\n".join([
+            'self.api_version = "v1"',
+            'api_base = f"{self.host}/api/{self.api_version}"',
+            'non_api_base = f"{self.host}/{self.api_version}"',
+            json.dumps({"source": {"version_prefix": "/v1",
+                                     "api_prefix": "/api/v1"}}),
+        ])
+        for evidenced in ("api_version", "api_base", "non_api_base",
+                          "/v1", "/api/v1"):
+            self.assertIn(evidenced, available)
+        self.assertNotIn("/{api_version}", available)
+        self.assertNotIn("/api/{api_version}", available)
+
+        exact = analyze_claims("Mentions exact prefixes `/v1` and `/api/v1`. "
+                               "[ev:architecture:0001]", available)
+        self.assertEqual(exact["invented_identifiers"], [])
+        self.assertEqual(exact["synthesized_identifiers"], [])
+
+        root_placeholder = analyze_claims("Uses `/{api_version}`. "
+                                          "[ev:architecture:0001]", available)
+        self.assertIn("/{api_version}", root_placeholder["invented_identifiers"])
+        self.assertEqual(root_placeholder["synthesized_identifiers"], [])
+
+        api_placeholder = analyze_claims("Uses `/api/{api_version}`. "
+                                         "[ev:architecture:0001]", available)
+        self.assertIn("/api/{api_version}", api_placeholder["invented_identifiers"])
+        self.assertEqual(api_placeholder["synthesized_identifiers"], [])
 
     def test_ambiguous_multi_target_expansion_is_terminal(self):
         from wiki_generator.libs.writing.citations import analyze_claims

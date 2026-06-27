@@ -135,6 +135,16 @@ avoid literal forbidden route examples because example route tokens can leak int
 generated output. For route evidence, copy only `source.route` or \
 `source.public_route` values verbatim; do not compose a public route from a base \
 path, prefix, version marker, or contract route.
+- ONE-SHOT route grounding example (instruction example, not evidence): if an \
+evidence item shows client setting/base-builder tokens such as `api_version`, \
+`api_base`, and `non_api_base`, plus code that builds API bases from those \
+variables, do NOT turn that into a normalized route or a version-placeholder \
+route. GOOD: quote the exact evidenced code/template tokens, or write prose such \
+as "the client stores an `api_version` setting and builds the base URL in code" \
+with the actual evidence citation. GOOD: list exact cited public routes or \
+prefixes only when those strings appear verbatim in the cited evidence. BAD: a \
+generic slash route pattern made from a root or API prefix plus a brace-wrapped \
+version variable; that is an invented route template, not grounded evidence.
 - When evidence is partial or split across items, prefer component-level \
 descriptions or exact quoted tokens over invented identifiers or routes. For \
 example, describe "the metadata filter translator component" or quote \
