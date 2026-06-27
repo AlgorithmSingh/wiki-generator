@@ -332,6 +332,11 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         "copy only `source.route` or `source.public_route` values verbatim",
         "do not compose a public route from a base path, prefix, version marker",
         # fully-qualified identifier / import synthesis failures
+        "Import statements must be described in import syntax or as separate tokens",
+        "imports `Name` from `module`",
+        "quote `from module import Name`",
+        "do NOT write `module.Name`, `package.Name`, or any dotted package-symbol form",
+        "Instruction examples in this import rule are not evidence",
         "Never synthesize fully-qualified names by joining",
         "Dotted class/member, object/member, module/member, and package/member notation",
         "Separate tokens in the same cited item are not enough",
@@ -358,6 +363,7 @@ def _assert_phase4_prompt_contract(testcase, prompt: str) -> None:
         testcase.assertIn(needle, prompt)
     for leaked_route in ("/api/{api_version}", "/{api_version}"):
         testcase.assertNotIn(leaked_route, prompt)
+    testcase.assertNotIn("quart_auth.AuthUser", prompt)
 
 
 # ---------------------------------------------------------------------------
@@ -1137,6 +1143,13 @@ class ImportQualifiedNameSynthesisTests(unittest.TestCase):
         available = "from package.module import Name\n"
         r = analyze_claims("Uses `package.module.Name`. [ev:x:0001]", available)
         self.assertIn("package.module.Name", r["invented_identifiers"])
+        self.assertEqual(r["synthesized_identifiers"], [])
+
+    def test_quart_auth_import_does_not_support_synthesized_package_symbol(self):
+        from wiki_generator.libs.writing.citations import analyze_claims
+        available = "from quart_auth import AuthUser\n"
+        r = analyze_claims("Uses `quart_auth.AuthUser`. [ev:x:0001]", available)
+        self.assertIn("quart_auth.AuthUser", r["invented_identifiers"])
         self.assertEqual(r["synthesized_identifiers"], [])
 
     def test_exact_full_dotted_token_in_evidence_supports_fqn(self):

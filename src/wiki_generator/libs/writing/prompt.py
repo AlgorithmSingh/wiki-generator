@@ -44,6 +44,12 @@ must never be copied into the generated `markdown`, `used_evidence_ids`, or \
 dependency, version) unless the full exact token appears verbatim in one cited \
 evidence item's excerpt, `source`, or `provenance` metadata. If the evidence does \
 not support a fact, omit the fact.
+- Import statements must be described in import syntax or as separate tokens. If \
+evidence says a file imports a symbol/name from a package/module, write "imports \
+`Name` from `module`" or quote `from module import Name`; do NOT write \
+`module.Name`, `package.Name`, or any dotted package-symbol form unless that full \
+dotted token appears verbatim in cited evidence. Instruction examples in this \
+import rule are not evidence.
 - Never synthesize or expand a file path: do not join a directory and a filename, \
 complete a partial path, or infer a module's full path. Use a path ONLY when that \
 exact string appears in a cited evidence item's `source` or excerpt — otherwise \
