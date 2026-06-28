@@ -150,6 +150,11 @@ _METHOD_PATH_RE = re.compile(
 _ENV_RE = re.compile(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b")
 # A relative path with a slash and a file extension (pkg/svc.py, docker/entrypoint.sh).
 _REL_PATH_RE = re.compile(r"\b[\w.+-]+(?:/[\w.+-]+)+\.[A-Za-z0-9]{1,8}\b")
+# A relative directory token with trailing slash, common in repo maps (`api/`,
+# `rag/`, `web/`, `pkg/api/`). This lets the grounded writer select the exact
+# directory token from directory-map evidence instead of falling back to an
+# unrelated bare package token such as `api` from an import.
+_REL_DIR_RE = re.compile(r"(?<![\w./:-])[\w.+-]+(?:/[\w.+-]+)*/")
 
 
 def _ext(token: str) -> str | None:
@@ -254,6 +259,10 @@ def _excerpt_candidates(excerpt: str) -> list:
         out.append((tok, _classify_slash_token(tok), "excerpt:slash_token"))
     for m in _REL_PATH_RE.finditer(excerpt):
         out.append((m.group(0), K_FILE_PATH, "excerpt:rel_path"))
+    for m in _REL_DIR_RE.finditer(excerpt):
+        tok = m.group(0)
+        if tok not in {"http:/", "https:/"}:
+            out.append((tok, K_FILE_PATH, "excerpt:rel_dir"))
     for m in _ENV_RE.finditer(excerpt):
         out.append((m.group(0), K_ENV_VAR, "excerpt:env_var"))
 

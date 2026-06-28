@@ -117,6 +117,16 @@ class TokenBankTests(unittest.TestCase):
         self.assertNotIn("quart_auth.AuthUser", toks)
         self.assertNotIn("Parser._pdf", toks)
 
+    def test_directory_map_tokens_include_trailing_slash(self):
+        b = FakeBundle([
+            ev("ev:svc:0001", "svc", {"path": "AGENTS.md"},
+               "- `api/`: Backend API server.\n- `rag/`: Core RAG logic.\n")])
+        bank = tb.build_token_bank(b, "svc")
+        kinds = {t.token: t.kind for t in bank.tokens}
+        self.assertEqual(kinds.get("api/"), tb.K_FILE_PATH)
+        self.assertEqual(kinds.get("rag/"), tb.K_FILE_PATH)
+        self.assertEqual(tb.verify_bank_grounding(b, bank), [])
+
     def test_stable_ids_byte_identical_on_rerun(self):
         b = self._bundle()
         a1 = json.dumps(tb.build_token_bank(b, "svc").to_dict(), sort_keys=True)
