@@ -305,6 +305,14 @@ def _candidate_identifiers(span: str) -> list[tuple[str, str]]:
     return []
 
 
+def candidate_identifiers(span: str) -> list:
+    """Public wrapper around :func:`_candidate_identifiers`: the repo-specific
+    identifier candidates ``[(kind, needle)]`` (path/dotted/env/call/route/method)
+    in one inline-code span. Reused by the grounded claim-plan validator so the
+    plan-time and post-render notions of a "terminal technical token" agree."""
+    return _candidate_identifiers(span)
+
+
 def _supported(kind: str, needle: str, available: str) -> bool:
     if kind == "call":
         # the bare symbol name must appear (def name / name( / symbol_id name())

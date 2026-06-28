@@ -16,6 +16,7 @@ import os
 from dataclasses import dataclass, field
 
 from . import assemble
+from . import claim_plan as cp
 from .bundle import load_and_gate
 from .errors import (
     BadInputArtifact,
@@ -24,11 +25,13 @@ from .errors import (
     ProviderFailure,
     WritingValidationFailure,
 )
+from .grounded import generate_grounded_section, section_obligations
 from .options import WritingOptions
 from .packet import build_writing_packet
 from .parse import parse_section_response
 from .prompt import build_rewrite_prompt, build_section_prompt
 from .provider import build_provider
+from .token_bank import build_token_bank
 from .validate import validate_document, validate_section_draft
 
 __all__ = [
@@ -98,11 +101,26 @@ def run(options: WritingOptions, *, provider=None) -> WritingResult:
     if risk:
         warnings.append(risk)
 
-    # 2. build packets + write the exact prompts BEFORE any model call
+    # 2. build packets + write the exact prompts BEFORE any model call. In grounded
+    # mode the per-section prompt asks for a claim plan (not Markdown), and the
+    # deterministic token bank is built and audited up front.
+    grounded = options.grounded_claim_plan
     prompts_dir = options.prompt_out or os.path.join(
         options.out_dir, "audit", "prompts")
     packets = {sid: build_writing_packet(bundle, sid) for sid in bundle.section_order}
-    prompts = {sid: build_section_prompt(packets[sid]) for sid in bundle.section_order}
+    token_banks: dict = {}
+    obligations_by_sid: dict = {}
+    if grounded:
+        for sid in bundle.section_order:
+            token_banks[sid] = build_token_bank(bundle, sid)
+            obligations_by_sid[sid] = section_obligations(bundle, sid)
+            assemble.write_token_bank(options.out_dir, sid, token_banks[sid])
+        prompts = {sid: cp.build_claim_plan_prompt(
+            packets[sid], token_banks[sid], obligations=obligations_by_sid[sid])
+            for sid in bundle.section_order}
+    else:
+        prompts = {sid: build_section_prompt(packets[sid])
+                   for sid in bundle.section_order}
     prompt_paths = {sid: assemble.write_prompt(prompts_dir, sid, prompts[sid])
                     for sid in bundle.section_order}
 
@@ -129,42 +147,51 @@ def run(options: WritingOptions, *, provider=None) -> WritingResult:
     generated: list = []
     for sid in bundle.section_order:
         wp = packets[sid]
-        resp = provider.generate(sid, prompts[sid])
-        if resp.raw_text is None:
-            raise ProviderFailure(
-                f"section {sid!r}: provider returned no usable text "
-                f"(finish_reason={resp.finish_reason}; {resp.error}); "
-                f"mode={getattr(provider, 'mode', options.provider)}")
-        draft, note = parse_section_response(resp.raw_text)
-        gen_meta = {"provider_mode": getattr(provider, "mode", options.provider),
-                    "model": getattr(provider, "model", None),
-                    "finish_reason": resp.finish_reason, "usage": resp.usage,
-                    "parse_note": note, "provider_detail": resp.provider_detail}
-        raw_path, _ = assemble.write_response_audit(
-            options.out_dir, sid, raw_text=resp.raw_text, parsed=draft,
-            generation_meta=gen_meta)
-        validation = validate_section_draft(
-            section_id=sid, draft=draft, parse_note=note,
-            finish_reason=resp.finish_reason, bundle=bundle)
-
-        attempts = 0
-        while (validation.status == "rewrite" and rewrite_enabled
-               and attempts < options.max_rewrite_attempts):
-            attempts += 1
-            rprompt = build_rewrite_prompt(wp, resp.raw_text,
-                                           validation.rewriteable_problems)
-            resp = provider.generate(sid, rprompt)
-            assemble.write_rewrite_audit(
-                options.out_dir, sid, attempts, prompt=rprompt,
-                raw_text=resp.raw_text, problems=validation.rewriteable_problems)
+        grounded_meta = None
+        if grounded:
+            # grounded: claim-plan -> deterministic plan validation (bounded audited
+            # re-prompt) -> deterministic render -> SAME strict section validator.
+            validation, raw_path, attempts, grounded_meta = generate_grounded_section(
+                options, provider, bundle, wp, plan_prompt=prompts[sid],
+                token_bank=token_banks[sid], obligations=obligations_by_sid[sid],
+                out_dir=options.out_dir)
+        else:
+            resp = provider.generate(sid, prompts[sid])
             if resp.raw_text is None:
                 raise ProviderFailure(
-                    f"section {sid!r} rewrite {attempts}: provider returned no text "
-                    f"({resp.error})")
+                    f"section {sid!r}: provider returned no usable text "
+                    f"(finish_reason={resp.finish_reason}; {resp.error}); "
+                    f"mode={getattr(provider, 'mode', options.provider)}")
             draft, note = parse_section_response(resp.raw_text)
+            gen_meta = {"provider_mode": getattr(provider, "mode", options.provider),
+                        "model": getattr(provider, "model", None),
+                        "finish_reason": resp.finish_reason, "usage": resp.usage,
+                        "parse_note": note, "provider_detail": resp.provider_detail}
+            raw_path, _ = assemble.write_response_audit(
+                options.out_dir, sid, raw_text=resp.raw_text, parsed=draft,
+                generation_meta=gen_meta)
             validation = validate_section_draft(
                 section_id=sid, draft=draft, parse_note=note,
                 finish_reason=resp.finish_reason, bundle=bundle)
+
+            attempts = 0
+            while (validation.status == "rewrite" and rewrite_enabled
+                   and attempts < options.max_rewrite_attempts):
+                attempts += 1
+                rprompt = build_rewrite_prompt(wp, resp.raw_text,
+                                               validation.rewriteable_problems)
+                resp = provider.generate(sid, rprompt)
+                assemble.write_rewrite_audit(
+                    options.out_dir, sid, attempts, prompt=rprompt,
+                    raw_text=resp.raw_text, problems=validation.rewriteable_problems)
+                if resp.raw_text is None:
+                    raise ProviderFailure(
+                        f"section {sid!r} rewrite {attempts}: provider returned no "
+                        f"text ({resp.error})")
+                draft, note = parse_section_response(resp.raw_text)
+                validation = validate_section_draft(
+                    section_id=sid, draft=draft, parse_note=note,
+                    finish_reason=resp.finish_reason, bundle=bundle)
 
         if validation.status != "pass":
             assemble.write_failure_report(
@@ -177,10 +204,13 @@ def run(options: WritingOptions, *, provider=None) -> WritingResult:
 
         section_file = assemble.write_section_markdown(
             options.out_dir, wp.order, sid, validation.markdown)
-        generated.append(assemble.generated_section_record(
+        record = assemble.generated_section_record(
             bundle, options, writing_packet=wp, validation=validation,
             prompt_path=prompt_paths[sid], raw_path=raw_path,
-            section_file=section_file, attempts=attempts))
+            section_file=section_file, attempts=attempts)
+        if grounded_meta is not None:
+            record["grounded"] = grounded_meta
+        generated.append(record)
 
     # 5. assemble document + manifest + metadata + validation + reports
     manifest = assemble.build_citation_manifest(bundle, generated)

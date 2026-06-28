@@ -286,6 +286,17 @@ def build_parser() -> argparse.ArgumentParser:
                           "every evidenced sufficient required topic is generated with "
                           "valid mapped citations (else exit 5). Never re-runs Phase "
                           "2/3 or synthesizes evidence."))
+    ww.add_argument("--grounded-claim-plan", dest="grounded_claim_plan",
+                    action="store_true",
+                    help=("opt-in grounded generation: ask the model for a structured "
+                          "claim/token plan (terminal technical strings referenced "
+                          "only by token-bank id), validate it deterministically, and "
+                          "render the Markdown from accepted skeletons + exact token "
+                          "substitutions — preventing invented identifiers/routes/"
+                          "paths upstream. Bounded audited re-prompt only for an "
+                          "invalid plan; the rendered output passes the same strict "
+                          "validators. Composes with --coverage-mode. Default: off "
+                          "(freeform)."))
     ww.add_argument("--project", default=None,
                     help="GCP project for vertex (default $GOOGLE_CLOUD_PROJECT)")
     ww.add_argument("--location", default=None,

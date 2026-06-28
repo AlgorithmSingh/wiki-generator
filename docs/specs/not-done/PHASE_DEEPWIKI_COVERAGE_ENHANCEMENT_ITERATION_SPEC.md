@@ -20,7 +20,65 @@ correctly stopped before Phase 3 (`45/58` complete). Bounded live repair attempt
 improved the plan to `53/58` complete but was rejected by the same strict gate;
 attempt 2 hit `RemoteProtocolError: Server disconnected without sending a response`.
 Phase 3 and Phase 4 did not run. No further live/billed retry unless the user
-explicitly approves it.**
+explicitly approves it. The Phase 4 claim/token planning and grounded rendering
+slice is now implemented and tested non-live as the opt-in
+`write-wiki --grounded-claim-plan` path (deterministic per-section token bank →
+LLM-authored claim plan → deterministic plan validation → deterministic
+token-substitution render → the same strict writing/generated-coverage validators).
+Active next non-live slice: a grounded `--coverage-mode enhancement` CLI E2E.**
+
+## Phase 4 Grounded Claim/Token Planning and Rendering — implemented non-live slice
+
+The recurring Phase 4 failure mode was the writer transforming evidence into
+convenient-but-ungrounded shorthand — `from quart_auth import AuthUser` →
+`quart_auth.AuthUser`, `class Parser` + `def _pdf` → `Parser._pdf`, f-string route
+bases → `/api/{api_version}`, nested JSON keys → `data.graph`, exact route families →
+`/api/v1/...` — and the prior fix (accreting one-shot prompt examples) did not scale.
+This slice prevents the invention upstream instead of chasing it.
+
+Artifact: an opt-in `write-wiki --grounded-claim-plan` two-stage path:
+
+1. **Token bank (`libs/writing/token_bank.py`).** A deterministic per-section bank of
+   the exact terminal technical tokens (routes, file paths, imports, module/class/
+   function/method names, env vars, commands, JSON pointers, package names,
+   literals) extracted from that section's validated EvidencePacket items. Each entry
+   has a stable `tok:<section_id>:NNNN` id, exact string, kind, evidence ids, and
+   per-evidence provenance. Invariant: every token is a **verbatim** substring of the
+   excerpt or serialized source/provenance of one of its evidence ids. A composite is
+   banked only when the exact composite appears verbatim — an import yields the module
+   and the name separately, never their dotted join.
+2. **Claim plan (`libs/writing/claim_plan.py`).** Plain JSON `phase4-claim-plan-v1`
+   (not a DSL): claims with `claim_id`, `claim_kind`, `evidence_ids[]`, `token_ids[]`,
+   optional `required_topic`, `intent`, and a `skeleton` that references terminal
+   strings only by `{{tok:...}}` placeholder and contains no inline citations.
+3. **Deterministic plan validation.** Rejects, before any Markdown is rendered:
+   unknown/duplicate claim ids, invalid claim kind, uncited claims, evidence outside
+   the section allowlist, unknown token ids, broken token↔evidence linkage,
+   undeclared/unknown placeholders, **free-typed terminal technical tokens** in a
+   skeleton, inline citations in a skeleton, and (enhancement) an unplanned required
+   topic. Actionable diagnostics; never mutates the plan.
+4. **Deterministic rendering.** Substitutes each placeholder with the backtick-wrapped
+   exact bank string and appends citations from the claim's evidence ids, so accepted
+   technical strings come only from deterministic substitution. Enhancement mode
+   derives a `covered_topics[]` declaration that passes the generated-coverage
+   evaluator.
+5. **Same strict validators.** The rendered draft is re-validated by the unchanged
+   `validate_section_draft` / `validate_document`; a strict-validator failure on
+   grounded output is a deterministic defect (raised, not re-prompted).
+
+Failure policy: a bounded, audited re-prompt (capped by `--max-rewrite-attempts`,
+exact machine-checked plan diagnostics fed forward) is allowed only for the
+LLM-authored claim plan — no retry-until-green, no post-hoc patching of Markdown,
+identifiers, routes, citations, or coverage declarations, and no validator weakening.
+Audit artifacts (`wiki/audit/token-banks/`, `wiki/audit/plans/`, claim-plan
+prompts/responses, re-prompts) are persisted. Baseline/freeform remains the default
+and is non-breaking. Proven non-live by `tests/test_phase4_grounded.py` (token
+extraction + verbatim invariant, the full plan-validation matrix, the six
+composite-synthesis regressions rejected-unless-verbatim, deterministic rendering
+through the strict validator, enhancement covered-topics derivation, and a
+fake-provider write-wiki E2E with bounded re-prompt + fail-closed). Remaining: a
+grounded `--coverage-mode enhancement` CLI E2E, and — only with explicit user
+approval — a billed live retry.
 
 This is the single canonical iteration spec for the DeepWiki-informed coverage
 enhancement track. It consolidates the immediate malformed-citation validator
@@ -1544,18 +1602,215 @@ generated 13/13 covered, whole-document writing-validation pass, nested hierarch
 prose copied; never citeable evidence. Run path (outside the repo, not committed):
 `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/non-live-hierarchical-runs/20260624-nonlive/`.
 
+### Active pending slice — Phase 4 claim/token planning and grounded rendering
+
+This is the next approved non-live implementation slice. It is an upstream
+prevention change inside Phase 4 `write-wiki`, not a new top-level pipeline phase
+and not a runtime healing loop.
+
+Current top-level pipeline remains:
+
+```text
+Phase 1: decompose -> condense -> digest -> bundle -> build-retrieval
+Phase 2: plan -> optional bounded plan-repair -> normalize-plan
+Phase 3: retrieve-evidence
+Phase 4: write-wiki
+```
+
+The Phase 4 internals should move from one-shot prompt hardening toward this
+artifact flow:
+
+```text
+Phase 4 write-wiki
+  4A derive allowed token bank from each WritingPacket/EvidencePacket
+  4B ask the LLM for a structured claim/token plan with token references/placeholders
+  4C deterministically validate that plan
+  4D render accepted markdown with deterministic token substitution
+  4E run the existing final writing/generated-coverage validation and assembly
+```
+
+#### Why this slice exists
+
+Temporary Phase 4 Pi-worker hardening showed that short one-shot examples can fix
+individual failure classes but do not scale. For example, the one-shot route
+example in commit `3eb72b6` removed the prior invented route tokens
+`/{api_version}` and `/api/{api_version}` from the next fresh temp run:
+
+```text
+/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260627-153414-phase4-temp-pi-gpt54-3eb72b6
+```
+
+That same run then failed on another synthesized token:
+
+```text
+HttpClient.request
+```
+
+The general failure class is that the writer converts evidence into convenient
+technical shorthand that is not verbatim evidence: import-to-FQN synthesis,
+class/member dotted names, route templates, nested JSON paths, file/path expansion,
+and route-family ellipses. Validators are correctly rejecting these. The scalable
+fix is to make unsupported terminal technical tokens unrepresentable in the normal
+Phase 4 path.
+
+Supporting research artifact:
+
+```text
+/Users/ankitsingh/Documents/deep-wiki/.deep-research-phase4-grounded-generation-strategy/synthesis.md
+```
+
+#### Target artifact
+
+The target implementation artifact is a Phase 4 **GroundedSectionDraft** flow: each
+generated section is backed by a deterministic token bank plus an LLM-authored
+claim/token plan that is validated before accepted markdown is rendered.
+
+A good output is still a readable DeepWiki-style `GeneratedSection`, but the final
+accepted path must not depend on the model freely typing terminal technical strings.
+The model may write prose intent/skeleton text and token placeholders/references;
+deterministic code must substitute exact token strings from the validated token
+bank. Identifiers, routes, paths, imports, JSON paths/keys, env vars, commands,
+package names, and qualified names are terminal technical claims and must either:
+
+1. appear as exact tokens in cited evidence or citeable metadata;
+2. be emitted by a trusted deterministic alias/token table with provenance; or
+3. be omitted / expressed as prose without creating a new terminal token.
+
+#### Required behavior
+
+1. **Deterministic token bank**
+   - Build a per-section token bank from the existing Phase 4 WritingPacket and
+     EvidencePacket data. This can happen inside Phase 4; do not modify
+     `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md` for this slice.
+   - Each token entry should include a stable token id, exact string, token kind,
+     supporting evidence id(s), and source/provenance metadata sufficient for audit.
+   - Token kinds should cover at least routes/public routes, file paths, imports,
+     module/class/function/method names, env vars, command names, JSON keys/paths
+     when exact, package names, and code/config literal prefixes.
+   - Composite tokens such as `Parser._pdf`, `quart_auth.AuthUser`,
+     `HttpClient.request`, `/api/{api_version}`, `data.graph`, or `/api/v1/...`
+     are allowed only when that exact composite appears in the token bank with
+     provenance. Otherwise the validated plan must use separate exact token
+     references or ordinary prose that does not introduce the composite token.
+   - Persist token-bank audit artifacts under `wiki/audit/` or `wiki/metadata/` so
+     validation failures can be inspected without reading model prompts.
+
+2. **Structured claim/token plan before accepted markdown**
+   - Add a simple JSON artifact, not a custom DSL, for the LLM-authored claim plan.
+     A claim should identify its claim kind, cited evidence ids, selected token ids,
+     and a short prose intent/skeleton that uses token ids/placeholders for terminal
+     technical strings instead of spelling those strings freely.
+   - The claim plan must not be considered grounded merely because it is JSON. It
+     is grounded only after deterministic validation.
+   - The plan prompt must teach the writer to select token ids or omit technical
+     shorthand; it should not rely on an ever-growing list of negative examples.
+
+3. **Deterministic plan validation**
+   - Fail the plan before accepted markdown is rendered if it references unknown
+     evidence ids, unknown token ids, token ids not supported by the cited evidence, required topics without
+     claim coverage, or free-form terminal technical tokens outside the approved
+     token references.
+   - Fail closed on ambiguous compositions. If `HttpClient` and `request` are
+     separately evidenced but `HttpClient.request` is absent from the token bank,
+     the dotted token must be rejected.
+   - Validation diagnostics must name exact claim ids, token ids/strings, evidence
+     ids, and remediation. They should create executable upstream work, not mutate
+     final output.
+
+4. **Markdown rendering from accepted plan**
+   - The final section markdown should be rendered from accepted claims, prose
+     skeletons, and exact token-bank references. Terminal technical strings should
+     be inserted deterministically from validated token ids/placeholders, not copied
+     from unconstrained model prose.
+   - If any implementation path still asks the model to draft prose, that prose is
+     not the accepted artifact until deterministic validation confirms that every
+     terminal technical string is either an approved token substitution or exact
+     cited evidence. Do not treat a prompt-included allowed list alone as sufficient.
+   - The existing final Phase 4 validators remain mandatory and independent:
+     citations, unsupported/synthesized identifiers, malformed evidence-like tokens,
+     placeholder/filler text, empty headings, generated coverage, and context-only
+     evidence rules must still run and stay strict.
+   - This slice should preserve current baseline/default behavior unless a test
+     explicitly exercises the new claim/token planning mode.
+
+5. **Artifacts and auditability**
+   - Store claim plan prompts/responses/parsed JSON/validation diagnostics in the
+     existing Phase 4 audit tree or a clearly named subdirectory.
+   - Make failure modes readable in `PHASE4_RUN_REPORT.md` or related validation
+     reports.
+   - Do not hand-edit generated responses or historical run artifacts.
+
+#### Failure and repair policy
+
+This design must not reintroduce a generic healing loop.
+
+- Deterministic failures in token extraction, plan validation, rendering, or final
+  validators must be fixed upstream in code, schema, prompt contract, or tests.
+- LLM-authored claim plans may use at most a narrow, audited, capped re-prompt if
+  implemented. The prompt must include the exact machine-checkable validation
+  error and must fail loudly after the cap. No retry-until-green.
+- Bounded LLM re-prompting is allowed only for LLM-authored artifacts. It is not
+  allowed to compensate for a bad deterministic token bank, bad renderer, weak
+  validator, or missing Phase 3 evidence.
+- Final draft repair must not silently patch identifiers, routes, paths, citations,
+  claims, or generated coverage declarations.
+
+#### Non-goals
+
+- No live/billed Vertex/Gemini/API calls for this slice.
+- No use of `ragflow-deepwiki.md` as citeable evidence.
+- No weakening citation, identifier, route/path, placeholder, malformed-token, or
+  generated-coverage validators.
+- No changes to the protected Phase 3 evidence retrieval spec.
+- No broad provider rewrite or provider-specific schema dependency in the first
+  slice. Provider-native JSON/schema/enum constraints can be future work.
+- No custom mini-language beyond a small JSON schema and simple token references.
+
+#### Acceptance criteria
+
+A non-live implementation is acceptable when:
+
+- token-bank extraction is deterministic, audited, and covered by tests for exact
+  imports, class/function/method names, routes/public routes, file paths, env vars,
+  JSON keys/paths, and command/package-like tokens;
+- tests prove composite synthesis is rejected unless the exact composite token is
+  present: `quart_auth.AuthUser`, `Parser._pdf`, `HttpClient.request`,
+  `/api/{api_version}`, `data.graph`, and route-family ellipses;
+- a fake-provider or fixture-backed Phase 4 test demonstrates claim-plan creation,
+  deterministic plan validation, deterministic token substitution/rendering from the
+  accepted plan, and final existing writing validation;
+- invalid claim plans fail before accepted markdown is rendered, with actionable
+  diagnostics and no output mutation;
+- baseline/default Phase 4 fixtures remain non-breaking unless the new mode is
+  explicitly enabled;
+- `git diff --exit-code -- docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`
+  passes;
+- focused Phase 4 tests and the existing generated-coverage tests pass.
+
+Required verification commands:
+
+```bash
+git diff --check
+git diff --exit-code -- docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md
+uv run python -m pytest -q tests/test_phase4.py tests/test_phase4_generated_coverage.py
+```
+
 ### Remaining Milestone 2 work — active pending backlog
 
-1. **No unapproved live retry.** The latest approved live run stopped in Phase 2 at
+1. **Implement Phase 4 claim/token planning non-live.** This is the current next
+   slice. It should make terminal technical-token invention harder by construction,
+   not by accumulating more one-off prompt examples.
+2. **No unapproved live retry.** The latest approved live run stopped in Phase 2 at
    `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-try-f9ad424`.
    Request explicit user approval before any further billed Vertex/Gemini call over
    the real RAGFlow repo. Default remains **no live retry**.
-2. **Earliest current blockers.** Repair attempt 1 still had five deterministic TER
-   defects after improving the plan to `53/58` complete; repair attempt 2 failed with
-   external `RemoteProtocolError: Server disconnected without sending a response`.
-   If continuing live, prefer a bounded repair-only continuation from the existing
-   run directory; if changing code/prompts, keep the fix upstream and preserve all
-   Phase 2/3/4 strict gates.
+3. **Earlier live blockers remain diagnostic.** Repair attempt 1 still had five
+   deterministic TER defects after improving the plan to `53/58` complete; repair
+   attempt 2 failed with external `RemoteProtocolError: Server disconnected without
+   sending a response`. Those remain upstream Phase 2/3 diagnostics, but the current
+   implementation launch targets Phase 4 claim/token planning because the temp
+   Phase 4 harness exposed recurring model-synthesized terminal tokens even on a
+   green Phase 1-3 bundle.
 
 ### Completed-slice acceptance — Phase 2 enhancement-mode planned-coverage upstream prevention
 
@@ -1749,37 +2004,49 @@ Completed foundation (continued):
 
 Pending active sequence:
 
-10. Fix the Phase 2/3 evidence-alignment contract non-live so TER source fields that
-    pass the Phase 2 topic-obligation gate are also lane-type-consistent and citeable
-    by the Phase 3 retrieval substrate. The latest live retry already consumed
-    explicit approval and failed closed at `evidence/evidenced-coverage.json` with
-    `56/59` sufficient, `1` weak, and `2` missing; do not perform another billed
-    retry until this upstream refinement passes non-live and the user explicitly
-    approves.
+10. Implement the Phase 4 claim/token planning and grounded-rendering slice above.
+    This is a non-live upstream-prevention change inside `write-wiki`: derive exact
+    token banks from existing WritingPackets/EvidencePackets, ask the LLM for a
+    structured claim/token plan with token placeholders/references, validate it before
+    accepted markdown is rendered, and keep final writing/generated-coverage validators
+    strict. Do not perform live/billed
+    calls, do not edit historical generated outputs, and do not modify the protected
+    Phase 3 spec.
+11. After the Phase 4 claim/token planning foundation is implemented and tested,
+    revisit the Phase 2/3 evidence-alignment live diagnostics if needed. Any further
+    live retry already requires explicit user approval; the latest live retry
+    consumed approval and stopped before Phase 4.
 
 ## Coding-agent prompt summary
 
 Milestone 1, the Milestone 2 foundation slices, the Phase 3 evidenced-coverage gate,
 the Phase 4 enhancement-mode hierarchical writing + generated-coverage gate, the
 non-live hierarchical E2E, the Phase 2 topic-obligation gate, TER source-field
-canonicalization, enhancement-mode plan repair, and initial parse-ambiguity repair
-handling are implemented and tested non-live. Future coding-agent work should keep
-validator behavior strict and proceed with the next concrete non-live slice: **make
-Phase 2 topic obligations align with Phase 3 citeable evidence for real
-RAGFlow-style plans**. Focus on deterministic diagnostics/repair guidance for exact
-source fields that point to non-citeable exact lanes (`go.mod`, `Dockerfile`) when a
-better citeable exact file is available, and for source-field lane type mismatches
-such as `retrieval_needs.tests[0]` with `acceptable_lanes:["file_anchor"]`. Do not
-weaken the Phase 2 gate; strengthen it or its diagnostics so these failures are
-caught before Phase 3 when possible. Keep all citation/identifier/malformed-token/
-no-context/no-placeholder/no-truncation validators strict, keep the Phase 3
-evidenced-coverage gate intact (weak/missing required evidence remains a pipeline
-failure before Phase 4 in enhancement mode), and keep the Phase 4 generated-coverage
-gate intact (an omitted/placeholder/out-of-scope/uncited evidenced sufficient required
-topic is a post-provider writing-validation failure; a missing/failed upstream gate is
-a pre-provider gate failure). Do not use fuzzy prose matching, synthetic evidence,
-silent downgrades, or retry-until-green loops. Do not call Vertex/Gemini or any live
-model for this next slice. Do not edit the historical generated wiki in place. Do not
-modify `docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. If a Milestone 2
-slice is too large for one coding session, stop after a coherent non-live increment
-and report the remaining work clearly.
+canonicalization, enhancement-mode plan repair, initial parse-ambiguity repair
+handling, and the current one-shot Phase 4 prompt hardening are implemented and
+tested non-live. Future coding-agent work should keep validator behavior strict and
+proceed with the next concrete non-live slice: **Phase 4 claim/token planning and
+grounded rendering**.
+
+Implement this inside `write-wiki` without changing the top-level Phase 1-4
+pipeline: derive a deterministic token bank from each WritingPacket/EvidencePacket,
+ask the LLM for a structured claim/token plan with token placeholders/references,
+validate that plan before accepted markdown is rendered, and render final markdown
+with deterministic token substitution from the validated token bank. The goal is to
+make invented terminal technical tokens unrepresentable in the normal path, not to
+keep adding one-shot negative examples forever.
+
+Keep all citation/identifier/malformed-token/no-context/no-placeholder/no-truncation
+validators strict, keep the Phase 3 evidenced-coverage gate intact (weak/missing
+required evidence remains a pipeline failure before Phase 4 in enhancement mode), and
+keep the Phase 4 generated-coverage gate intact (an omitted/placeholder/out-of-scope/
+uncited evidenced sufficient required topic is a post-provider writing-validation
+failure; a missing/failed upstream gate is a pre-provider gate failure). Do not use
+fuzzy prose matching, synthetic evidence, silent downgrades, output patching, or
+retry-until-green loops. Bounded LLM re-prompting is allowed only for LLM-authored
+claim plans, with exact diagnostics, audit artifacts, a hard cap, and strict final
+validation. Do not call Vertex/Gemini or any live/billed model for this next slice.
+Do not edit historical generated wiki artifacts in place. Do not modify
+`docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`. If this slice is too large
+for one coding session, stop after a coherent non-live increment and report the
+remaining work clearly.

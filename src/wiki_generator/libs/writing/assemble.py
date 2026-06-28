@@ -98,6 +98,27 @@ def write_rewrite_audit(out_dir: str, section_id: str, attempt: int, *,
     util.write_json(os.path.join(base, "problems.json"), {"problems": problems})
 
 
+def write_token_bank(out_dir: str, section_id: str, token_bank) -> str:
+    """Persist a section's deterministic token bank for audit (grounded mode)."""
+    path = _audit_dir(out_dir, "token-banks", f"{section_id}.json")
+    util.write_json(path, token_bank.to_dict())
+    return path
+
+
+def write_plan_validation_audit(out_dir: str, section_id: str, plan_validation) -> str:
+    """Persist the deterministic claim-plan validation verdict (grounded mode):
+    pass/fail, machine-checked violations, warnings, and the accepted claims."""
+    path = _audit_dir(out_dir, "plans", f"{section_id}.plan-validation.json")
+    util.write_json(path, {
+        "section_id": section_id,
+        "ok": plan_validation.ok,
+        "violations": plan_validation.violations,
+        "warnings": plan_validation.warnings,
+        "accepted_claims": plan_validation.claims,
+    })
+    return path
+
+
 # --- section markdown ---------------------------------------------------------
 def section_filename(order: int, section_id: str) -> str:
     return f"{int(order):03d}-{section_id}.md"
@@ -291,6 +312,7 @@ def write_generated_metadata(out_dir: str, bundle, options, generated: list,
         "provider_mode": options.provider,
         "model": options.model_for_metadata,
         "coverage_mode": options.coverage_mode,
+        "grounded_claim_plan": bool(getattr(options, "grounded_claim_plan", False)),
         "status": validation_doc["status"],
     }
     # DeepWiki coverage enhancement: reference the generated-coverage artifacts and

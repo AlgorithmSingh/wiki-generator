@@ -71,6 +71,8 @@ def build_options(args: argparse.Namespace) -> WritingOptions:
     # source of truth and an older arg namespace remains non-breaking.
     if getattr(args, "coverage_mode", None) is not None:
         kwargs["coverage_mode"] = args.coverage_mode
+    if getattr(args, "grounded_claim_plan", False):
+        kwargs["grounded_claim_plan"] = True
     return WritingOptions(**kwargs)
 
 

@@ -34,7 +34,11 @@ correctly stopped before Phase 3 (`45/58` complete). Bounded live repair attempt
 improved the plan to `53/58` complete but was rejected by the same strict gate;
 attempt 2 hit `RemoteProtocolError: Server disconnected without sending a response`.
 Phase 3 and Phase 4 did not run. No further live/billed retry unless the user
-explicitly approves it.**
+explicitly approves it. The Phase 4 grounded claim/token planning + rendering slice
+(opt-in `write-wiki --grounded-claim-plan`: deterministic per-section token bank →
+LLM claim plan → deterministic plan validation → deterministic token-substitution
+render → same strict validators) is now implemented and tested non-live. Active next
+non-live slice: a grounded `--coverage-mode enhancement` CLI E2E.**
 
 ## Why this exists
 
@@ -597,14 +601,102 @@ Bounded live Step 1b repair then ran with `--max-attempts 2`:
 - the run stopped at `phase2-plan-repair-live-vertex` exit `1` and wrote
   `LIVE_RAGFLOW_ENHANCEMENT_RESULT.md`.
 
+### Milestone 2 — Phase 4 grounded claim/token planning + rendering (implemented, non-live)
+
+Implemented as the opt-in `write-wiki --grounded-claim-plan` path. This is a
+non-live upstream-prevention change inside `write-wiki` — not a new top-level pipeline
+phase, not a generic healing loop — that makes terminal technical-token invention
+structurally unrepresentable in the grounded path instead of chasing it with
+accreting one-shot prompt examples.
+
+- **`libs/writing/token_bank.py` (new).** Deterministic per-section token bank built
+  from the section's validated EvidencePacket items. Each `TokenEntry` has a stable
+  `tok:<section_id>:NNNN` id, the exact `token`, a `kind` (route/http_method/
+  file_path/json_pointer/env_var/command/module/package/import/symbol/literal),
+  `evidence_ids[]`, and per-evidence `provenance[]` (the field/extractor it came
+  from). The load-bearing invariant is **verbatim grounding**: every token is a
+  verbatim substring of the excerpt or serialized source/provenance of one of its
+  evidence ids (`verify_bank_grounding` enforces it in tests). Composites
+  (`quart_auth.AuthUser`, `Parser._pdf`, `/api/{api_version}`, `data.graph`,
+  `/api/v1/...`) are banked ONLY when the exact composite appears verbatim — an
+  import line yields `quart_auth` + `AuthUser` separately, never the dotted join.
+- **`libs/writing/claim_plan.py` (new).** Plain-JSON `phase4-claim-plan-v1` schema
+  (no DSL): `claims[]` with `claim_id`, `claim_kind`, `evidence_ids[]`, `token_ids[]`,
+  optional `required_topic`, `intent`, and a `skeleton` that references terminal
+  strings only by `{{tok:...:NNNN}}` placeholder and carries NO inline `[ev:...]`
+  citations. `validate_claim_plan` deterministically rejects (with actionable,
+  machine-checked diagnostics, never mutating the plan): unknown/duplicate claim ids,
+  invalid claim kind, uncited claims, evidence outside the section allowlist, unknown
+  token ids, broken token↔evidence linkage, undeclared/unknown placeholders,
+  **free-typed terminal technical tokens** in a skeleton (the composite-synthesis
+  defense), inline citations in a skeleton, and (enhancement) an unplanned required
+  topic or a required-topic claim that cites none of the topic's mapped evidence.
+  `render_section` then renders Markdown deterministically: each `{{token_id}}` →
+  the backtick-wrapped exact bank string, with citations appended by the renderer
+  from `evidence_ids` — so accepted technical strings come only from deterministic
+  substitution, never model free-text. In enhancement mode it renders each required
+  topic under its own `###` heading and derives a `covered_topics[]` declaration that
+  passes the existing generated-coverage evaluator.
+- **`libs/writing/grounded.py` (new) + orchestrator wiring.** When
+  `--grounded-claim-plan` is set, `writing.run` builds + audits the token bank per
+  section, prompts for a claim plan (not Markdown), validates it, runs at most
+  `--max-rewrite-attempts` bounded *audited* re-prompts (LLM-authored-plan-only,
+  exact diagnostics fed forward — no retry-until-green), renders the section, then
+  feeds the rendered draft through the **same** strict `validate_section_draft` /
+  `validate_document` validators unchanged. A rendered section that fails the strict
+  validator is treated as a deterministic token-bank/render defect (raised, not
+  re-prompted, not patched). Baseline/freeform is the default and is untouched.
+- **Audit artifacts.** `wiki/audit/token-banks/<sid>.json`,
+  `wiki/audit/plans/<sid>.plan-validation.json` (verdict + violations + accepted
+  claims), the claim-plan prompt under `wiki/audit/prompts/<sid>.md`, raw/parsed plan
+  responses under `wiki/audit/responses/`, and re-prompt audits under
+  `wiki/audit/rewrites/`. `generated-document.json` records `grounded_claim_plan`;
+  generated-section rows carry a `grounded` block (token/claim counts, attempts).
+- **Surfaces.** `WritingOptions.grounded_claim_plan` (+ `is_grounded`), the
+  `write-wiki --grounded-claim-plan` CLI flag, and the command-wrapper pass-through.
+  A reusable `citations.candidate_identifiers` wrapper keeps the plan-time and
+  post-render notions of a "terminal technical token" identical.
+- **Tests — `tests/test_phase4_grounded.py` (new, 27 tests + 12 subtests).** Token
+  extraction + kinds + the verbatim invariant + stable-id rerun + composite-only-when-
+  verbatim; full claim-plan validation matrix; the six required composite-synthesis
+  regressions (`quart_auth.AuthUser`, `Parser._pdf`, `HttpClient.request`,
+  `/api/{api_version}`, `data.graph`, `/api/v1/...`) rejected on split evidence and
+  accepted on verbatim evidence; deterministic rendering passes the existing strict
+  section validator; enhancement covered-topics derivation passes the generated
+  coverage evaluator; and a fake-provider write-wiki E2E (grounded run writes all
+  outputs + audit, records the grounded block, is byte-identical on rerun, fails
+  closed on a free-typed composite, and recovers via a bounded re-prompt).
+
+Work log (this slice): files changed — new `libs/writing/token_bank.py`,
+`libs/writing/claim_plan.py`, `libs/writing/grounded.py`, new
+`tests/test_phase4_grounded.py`; edited `libs/writing/{__init__,options,schema,
+assemble,citations}.py`, `libs/commands/write_wiki.py`, `cli.py`, plus this handoff,
+the active spec, and `docs/README.md`. Verification (non-live): `git diff --check`
+clean; `git diff --exit-code -- docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`
+unchanged; `pytest -q tests/test_phase4.py tests/test_phase4_generated_coverage.py`
+→ 139 passed; `pytest -q tests/test_phase4_grounded.py` → 27 passed, 12 subtests;
+full suite `519 passed, 1 skipped, 21 subtests` (pre-existing faiss skip). No
+Vertex/Gemini/API/network; no historical wiki edits; protected Phase 3 spec
+untouched; existing validators unchanged or stricter; baseline non-breaking.
+
+Risks / remaining work: grounded mode is opt-in and NOT wired into the default
+Phase 4 path. The fake-provider E2E exercises the orchestrator in **baseline**
+coverage mode; enhancement-mode covered-topics derivation is proven at the unit
+level (renderer + generated-coverage evaluator) but not yet through a full grounded
+`--coverage-mode enhancement` CLI E2E. Token extraction is intentionally
+permissive-but-verbatim (it may bank extra grounded tokens, e.g. partial filename
+variants); the safety property is "never invent", not "minimal set". A future slice
+should add the enhancement-mode grounded CLI E2E and, only with explicit user
+approval, a billed live retry.
+
 ### Remaining Milestone 2 work — active pending backlog
 
-Default remains **no live retry**. Earliest current blockers are the five deterministic
-repaired-plan TER defects from attempt 1 plus the external Vertex transport failure on
-attempt 2. A further repair-only continuation or fresh live retry is a billed action
-and requires explicit user approval. Do not synthesize evidence, downgrade required
-topics, weaken validators, add a generic healing loop, add `--force`/product
-`--section`, or rerun live without explicit user approval.
+Default remains **no live retry**. Earlier live Phase 2/3 blockers remain diagnostic:
+the five deterministic repaired-plan TER defects from attempt 1 plus the external
+Vertex transport failure on attempt 2. A further repair-only continuation or fresh
+live retry is a billed action and requires explicit user approval. Do not synthesize
+evidence, downgrade required topics, weaken validators, add a generic healing loop,
+add `--force`/product `--section`, or rerun live without explicit user approval.
 
 ### Completed-slice acceptance summary — Phase 3 evidenced coverage
 

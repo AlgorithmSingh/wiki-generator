@@ -76,6 +76,14 @@ class WritingOptions:
     # DeepWiki coverage enhancement (opt-in; default non-breaking baseline)
     coverage_mode: str = COVERAGE_MODE_BASELINE
 
+    # Grounded claim/token planning (opt-in; default off / freeform). When set,
+    # Phase 4 asks the model for a structured claim plan that references terminal
+    # technical strings only by token-bank id, validates it deterministically, and
+    # renders the Markdown from accepted skeletons + exact token substitutions —
+    # preventing invented identifiers/routes/paths upstream rather than catching
+    # them after generation. Composes with either coverage mode.
+    grounded_claim_plan: bool = False
+
     # misc
     style: str = DEFAULT_STYLE
     audit_raw: bool = True
@@ -112,6 +120,11 @@ class WritingOptions:
     def is_enhancement(self) -> bool:
         """True when the opt-in DeepWiki coverage enhancement mode is requested."""
         return self.coverage_mode == COVERAGE_MODE_ENHANCEMENT
+
+    @property
+    def is_grounded(self) -> bool:
+        """True when the opt-in grounded claim/token planning path is requested."""
+        return bool(self.grounded_claim_plan)
 
     @property
     def model_for_metadata(self) -> str | None:
