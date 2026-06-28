@@ -54,7 +54,7 @@ from .schema import CLAIM_PLAN_SCHEMA_VERSION
 # terminal tokens.
 CLAIM_KINDS = frozenset({
     "api_route", "class_behavior", "config_field", "data_shape", "dependency",
-    "file_role", "runtime_flow", "cli_command", "env_config", "overview", "prose",
+    "file_role", "runtime_flow", "cli_command", "env_config", "overview", "summary", "prose",
 })
 
 # ``{{tok:<section_id>:<NNNN>}}`` placeholder for one token-bank entry.
@@ -449,6 +449,9 @@ claim's `token_ids`.
 - A `skeleton` MUST NOT contain inline-code technical tokens written literally \
 (use placeholders), MUST NOT contain `[ev:...]` citations (the renderer attaches \
 them from your `evidence_ids`), and MUST NOT contain ellipses inside code.
+- Use one of these `claim_kind` values: api_route, class_behavior, cli_command, \
+config_field, data_shape, dependency, env_config, file_role, overview, prose, \
+runtime_flow, summary.
 - Write explanatory prose skeletons; attach each claim to the specific evidence \
 that supports it. Prefer plain prose over forcing a token where evidence is thin.
 - `exact`/`high` evidence supports definitive statements; `low` (graph-context) \

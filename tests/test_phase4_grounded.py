@@ -156,6 +156,11 @@ class ClaimPlanValidationTests(unittest.TestCase):
         r = validate(plan_obj("svc", [self._good_claim()]), self.bank, self.b, "svc")
         self.assertTrue(r.ok, r.problem_lines())
 
+    def test_summary_claim_kind_is_valid(self):
+        r = validate(plan_obj("svc", [self._good_claim(claim_kind="summary")]),
+                     self.bank, self.b, "svc")
+        self.assertTrue(r.ok, r.problem_lines())
+
     def test_no_claims_rejected(self):
         r = validate(plan_obj("svc", []), self.bank, self.b, "svc")
         self.assertFalse(r.ok)
