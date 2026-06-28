@@ -382,6 +382,14 @@ class RenderedSection:
     covered_topics: list | None = None
 
 
+def _skeleton_paragraph_template(skeleton: str) -> str:
+    """Normalize a claim skeleton into one paragraph template before token
+    substitution. A skeleton is structured plan text, not final Markdown; allowing
+    embedded newlines would let one claim render as multiple paragraphs while the
+    renderer appends citations only once at the end."""
+    return re.sub(r"\s+", " ", skeleton or "").strip()
+
+
 def _render_claim_paragraph(claim, by_token) -> str:
     """One claim → one Markdown paragraph: skeleton with placeholders substituted by
     backtick-wrapped exact bank strings, followed by the claim's evidence citations
@@ -390,7 +398,7 @@ def _render_claim_paragraph(claim, by_token) -> str:
         entry = by_token.get(m.group(1))
         return f"`{entry.token}`" if entry is not None else m.group(0)
 
-    body = PLACEHOLDER_RE.sub(sub, claim["skeleton"]).strip()
+    body = PLACEHOLDER_RE.sub(sub, _skeleton_paragraph_template(claim["skeleton"])).strip()
     citation_ids = claim.get("render_evidence_ids") or claim["evidence_ids"]
     cites = "".join(f"[{eid}]" for eid in citation_ids)
     return f"{body} {cites}".strip() if cites else body

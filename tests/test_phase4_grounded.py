@@ -357,6 +357,22 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("{{", rendered.markdown)
         self.assertEqual(rendered.used_evidence_ids, ["ev:svc:0001"])
 
+    def test_multiline_skeleton_renders_as_one_cited_paragraph(self):
+        claim = {"claim_id": "c1", "claim_kind": "file_role",
+                 "evidence_ids": ["ev:svc:0001"], "token_ids": [self.t_path],
+                 "required_topic": None, "intent": "x",
+                 "skeleton": (f"The {{{{{self.t_path}}}}} module defines the worker.\n\n"
+                              "It handles queued work in the same claim.")}
+        r = validate(plan_obj("svc", [claim]), self.bank, self.b, "svc")
+        self.assertTrue(r.ok, r.problem_lines())
+        rendered = cp.render_section(r, token_bank=self.bank, title="Service",
+                                     section_id="svc")
+        self.assertNotIn("\n\nIt handles queued work", rendered.markdown)
+        draft = cp.rendered_draft(rendered)
+        v = validate_section_draft(section_id="svc", draft=draft, parse_note="ok",
+                                   finish_reason="STOP", bundle=self.b)
+        self.assertEqual(v.status, "pass", [vi for vi in v.violations])
+
     def test_rendered_markdown_passes_existing_section_validator(self):
         claims = [
             {"claim_id": "c1", "claim_kind": "file_role",
