@@ -236,6 +236,13 @@ def validate_claim_plan(plan, *, section_id, token_bank, allowed_evidence_ids,
                                  f"claim {cid} skeleton contains an inline [ev:...] "
                                  "citation; the renderer attaches citations from "
                                  "evidence_ids — do not write them"))
+        placeholders = cit.find_placeholders(skeleton)
+        if placeholders:
+            violations.append(_v("placeholder_in_skeleton",
+                                 f"claim {cid} skeleton contains reserved "
+                                 f"placeholder/apology/empty-heading text: "
+                                 f"{placeholders[:5]}; write concrete grounded "
+                                 "prose or omit the claim"))
 
         rt = claim.get("required_topic")
         if rt is not None and not isinstance(rt, str):
@@ -512,7 +519,8 @@ validation will derive that topic linkage and record a warning.
 the token use from the placeholder and records a warning.
 - A `skeleton` MUST NOT contain inline-code technical tokens written literally \
 (use placeholders), MUST NOT contain `[ev:...]` citations (the renderer attaches \
-claim and token-provenance citations), and MUST NOT contain ellipses inside code.
+claim and token-provenance citations), MUST NOT contain ellipses inside code, and \
+MUST NOT contain placeholder/apology/TODO/TBD/meta text.
 - Use one of these `claim_kind` values: api_route, class_behavior, cli_command, \
 config_field, data_shape, dependency, env_config, file_role, overview, prose, \
 runtime_flow, summary.

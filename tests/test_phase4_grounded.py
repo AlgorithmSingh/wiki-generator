@@ -219,6 +219,12 @@ class ClaimPlanValidationTests(unittest.TestCase):
         r = validate(plan_obj("svc", [c]), self.bank, self.b, "svc")
         self.assertIn("inline_citation_in_skeleton", {v["code"] for v in r.violations})
 
+    def test_placeholder_text_in_skeleton_rejected_before_render(self):
+        c = self._good_claim(
+            skeleton="The worker uses placeholder document IDs for queued jobs.")
+        r = validate(plan_obj("svc", [c]), self.bank, self.b, "svc")
+        self.assertIn("placeholder_in_skeleton", {v["code"] for v in r.violations})
+
     def test_plain_prose_terminal_token_rejected(self):
         c = self._good_claim(
             skeleton="This plain sentence still free-types HttpClient.request.")
