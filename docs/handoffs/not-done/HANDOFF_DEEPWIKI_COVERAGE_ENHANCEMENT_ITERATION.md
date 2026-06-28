@@ -627,13 +627,15 @@ accreting one-shot prompt examples.
   citations. `validate_claim_plan` deterministically rejects (with actionable,
   machine-checked diagnostics, never mutating the plan): unknown/duplicate claim ids,
   invalid claim kind, uncited claims, evidence outside the section allowlist, unknown
-  token ids, undeclared/unknown placeholders, **free-typed terminal technical tokens**
-  in a skeleton (the composite-synthesis defense), inline citations in a skeleton,
-  and (enhancement) an unplanned required topic or a required-topic claim that has
+  token ids/placeholders, **free-typed terminal technical tokens** in a skeleton (the
+  composite-synthesis defense), inline citations in a skeleton, and (enhancement) an
+  unplanned required topic or a required-topic claim that has
   neither claim evidence nor used-token provenance from the topic's mapped evidence.
-  Token ids carry provenance: when a claim uses a token id but omits that token's
-  `from` evidence from `evidence_ids[]`, the renderer attaches the token-provenance
-  citation deterministically. `render_section` then renders Markdown deterministically:
+  Token ids carry provenance and placeholders are authoritative: when a skeleton uses
+  a known placeholder but omits it from `token_ids[]`, validation derives the token
+  use and warns; when a claim uses a token id but omits that token's `from` evidence
+  from `evidence_ids[]`, the renderer attaches the token-provenance citation
+  deterministically. `render_section` then renders Markdown deterministically:
   each `{{token_id}}` → the backtick-wrapped exact bank string, with citations
   appended by the renderer from claim evidence plus used-token provenance — so
   accepted technical strings come only from deterministic substitution, never model

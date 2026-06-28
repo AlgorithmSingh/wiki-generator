@@ -205,12 +205,14 @@ class ClaimPlanValidationTests(unittest.TestCase):
         r = validate(plan_obj("svc", [c]), self.bank, self.b, "svc")
         self.assertIn("claim_uncited", {v["code"] for v in r.violations})
 
-    def test_placeholder_not_declared_rejected(self):
+    def test_placeholder_not_declared_is_derived_with_warning(self):
         other = tok_id(self.bank, "work")
         c = self._good_claim(token_ids=[self.t_path],
                              skeleton=f"Uses {{{{{other}}}}} undeclared.")
         r = validate(plan_obj("svc", [c]), self.bank, self.b, "svc")
-        self.assertIn("placeholder_not_declared", {v["code"] for v in r.violations})
+        self.assertTrue(r.ok, r.problem_lines())
+        self.assertTrue(any("derived token use" in w for w in r.warnings))
+        self.assertIn(other, r.claims[0]["token_ids"])
 
     def test_inline_citation_in_skeleton_rejected(self):
         c = self._good_claim(skeleton="The worker is here [ev:svc:0001].")

@@ -32,10 +32,13 @@ placeholder and contains NO inline ``[ev:...]`` citations. The deterministic
 validator rejects a plan — before any Markdown is rendered — when it references
 unknown evidence/token ids, free-types a terminal technical token in a skeleton
 instead of using a placeholder, or (in enhancement mode) leaves a required topic
-unplanned. Token ids carry their own provenance: rendering attaches both the
-claim evidence ids and the evidence ids for each used token. Rendering then
-substitutes the exact bank string for each placeholder, so a synthesized composite
-is structurally unreachable in the grounded path: it has no token id to reference.
+unplanned. Token ids carry their own provenance, and placeholders are authoritative:
+if a skeleton uses a known placeholder but the model forgets to repeat it in
+``token_ids``, validation records a warning and derives the token use from the
+placeholder. Rendering attaches both the claim evidence ids and the evidence ids
+for each used token. Rendering then substitutes the exact bank string for each
+placeholder, so a synthesized composite is structurally unreachable in the grounded
+path: it has no token id to reference.
 
 Pure and deterministic: no model call, no mutation of the parsed plan.
 """
@@ -190,8 +193,9 @@ def validate_claim_plan(plan, *, section_id, token_bank, allowed_evidence_ids,
                     f"its token provenance evidence {entry.evidence_ids}; the "
                     "renderer will attach token provenance citations automatically")
 
-        # skeleton discipline: placeholders must be declared + known; no free-typed
-        # terminal tokens, inline citations, or ellipsis route-families.
+        # skeleton discipline: placeholders must be known; token_ids are advisory
+        # and can be derived from placeholders. No free-typed terminal tokens,
+        # inline citations, or ellipsis route-families.
         placeholders = PLACEHOLDER_RE.findall(skeleton)
         declared = set(tok_ids)
         for ph in placeholders:
@@ -200,9 +204,21 @@ def validate_claim_plan(plan, *, section_id, token_bank, allowed_evidence_ids,
                                      f"claim {cid} skeleton uses {{{{{ph}}}}} which is "
                                      "not a token-bank id"))
             elif ph not in declared:
-                violations.append(_v("placeholder_not_declared",
-                                     f"claim {cid} skeleton uses {{{{{ph}}}}} not "
-                                     "listed in this claim's token_ids"))
+                warnings.append(
+                    f"claim {cid} skeleton uses {{{{{ph}}}}} not listed in token_ids; "
+                    "derived token use from placeholder")
+                tok_ids.append(ph)
+                declared.add(ph)
+                entry = by_token[ph]
+                for eid in entry.evidence_ids:
+                    if eid not in token_evidence_ids:
+                        token_evidence_ids.append(eid)
+                if not (set(entry.evidence_ids) & set(ev_ids)):
+                    warnings.append(
+                        f"claim {cid} uses placeholder {{{{{ph}}}}} ({entry.token!r}) "
+                        f"without listing its token provenance evidence "
+                        f"{entry.evidence_ids}; the renderer will attach token "
+                        "provenance citations automatically")
         unused = declared - set(placeholders)
         if unused:
             warnings.append(f"claim {cid} declares token_ids not used in its "
@@ -459,8 +475,9 @@ contract. Use JSON-safe string escaping.
 - Token ids carry provenance. Include a token's `from` evidence id in \
 `evidence_ids` when it supports the claim; the deterministic renderer will also \
 attach used-token provenance citations automatically.
-- Each `{{token_id}}` placeholder used in a `skeleton` MUST be listed in that \
-claim's `token_ids`.
+- Put every `{{token_id}}` placeholder used in a `skeleton` into that claim's \
+`token_ids` for audit clarity. If you forget, deterministic validation derives \
+the token use from the placeholder and records a warning.
 - A `skeleton` MUST NOT contain inline-code technical tokens written literally \
 (use placeholders), MUST NOT contain `[ev:...]` citations (the renderer attaches \
 claim and token-provenance citations), and MUST NOT contain ellipses inside code.
