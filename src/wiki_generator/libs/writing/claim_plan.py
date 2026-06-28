@@ -35,10 +35,12 @@ instead of using a placeholder, or (in enhancement mode) leaves a required topic
 unplanned. Token ids carry their own provenance, and placeholders are authoritative:
 if a skeleton uses a known placeholder but the model forgets to repeat it in
 ``token_ids``, validation records a warning and derives the token use from the
-placeholder. Rendering attaches both the claim evidence ids and the evidence ids
-for each used token. Rendering then substitutes the exact bank string for each
-placeholder, so a synthesized composite is structurally unreachable in the grounded
-path: it has no token id to reference.
+placeholder. Required-topic linkage is also evidence-derived: when a claim omits
+``required_topic`` but uses evidence mapped to exactly one required-topic obligation,
+validation records a warning and assigns that topic. Rendering attaches both the
+claim evidence ids and the evidence ids for each used token. Rendering then
+substitutes the exact bank string for each placeholder, so a synthesized composite
+is structurally unreachable in the grounded path: it has no token id to reference.
 
 Pure and deterministic: no model call, no mutation of the parsed plan.
 """
@@ -260,8 +262,14 @@ def validate_claim_plan(plan, *, section_id, token_bank, allowed_evidence_ids,
             "skeleton": skeleton,
         })
 
+    # enhancement: required_topic is useful audit metadata, but topic coverage is
+    # ultimately grounded by Phase 3's mapped evidence ids. If a claim omitted
+    # required_topic and its rendered evidence maps to exactly one obligation, derive
+    # the linkage deterministically instead of failing on a redundant field.
+    _derive_required_topics_from_mapped_evidence(norm_claims, obligations, warnings)
+
     # enhancement: every sufficient required-topic obligation must be planned by a
-    # claim that also cites at least one of the topic's mapped evidence ids.
+    # claim that also cites or uses at least one of the topic's mapped evidence ids.
     for ob in obligations:
         if not ob.get("is_obligation"):
             continue
@@ -284,6 +292,27 @@ def validate_claim_plan(plan, *, section_id, token_bank, allowed_evidence_ids,
 
     ok = not violations
     return PlanValidation(section_id, ok, violations, warnings, norm_claims)
+
+
+def _derive_required_topics_from_mapped_evidence(claims: list, obligations: list,
+                                                 warnings: list) -> None:
+    obligation_rows = [o for o in (obligations or []) if o.get("is_obligation")]
+    for claim in claims:
+        if claim.get("required_topic"):
+            continue
+        evidence_ids = set(claim.get("render_evidence_ids") or claim.get("evidence_ids") or [])
+        matches: list = []
+        for ob in obligation_rows:
+            mapped = set(ob.get("mapped_evidence_ids") or [])
+            topic = (ob.get("topic") or "").strip()
+            if topic and mapped and (evidence_ids & mapped):
+                matches.append(topic)
+        if len(matches) == 1:
+            claim["required_topic"] = matches[0]
+            warnings.append(
+                f"claim {claim.get('claim_id')} omitted required_topic; derived "
+                f"{matches[0]!r} from mapped evidence ids")
+
 
 
 def _free_typed_terminal_tokens(skeleton: str) -> list:
@@ -475,6 +504,9 @@ contract. Use JSON-safe string escaping.
 - Token ids carry provenance. Include a token's `from` evidence id in \
 `evidence_ids` when it supports the claim; the deterministic renderer will also \
 attach used-token provenance citations automatically.
+- For required topics, set `required_topic` to the exact topic string. If you omit \
+it on a claim that uses evidence mapped to exactly one required topic, deterministic \
+validation will derive that topic linkage and record a warning.
 - Put every `{{token_id}}` placeholder used in a `skeleton` into that claim's \
 `token_ids` for audit clarity. If you forget, deterministic validation derives \
 the token use from the placeholder and records a warning.

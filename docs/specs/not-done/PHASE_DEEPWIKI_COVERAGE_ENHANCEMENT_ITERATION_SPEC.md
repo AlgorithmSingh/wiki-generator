@@ -1709,13 +1709,15 @@ package names, and qualified names are terminal technical claims and must either
    - Fail the plan before accepted markdown is rendered if it references unknown
      evidence ids, unknown token ids, required topics without claim coverage, or
      free-form terminal technical tokens outside the approved token references.
-   - Token ids carry their own provenance, and placeholders are authoritative. If a
-     skeleton uses a known token placeholder but omits it from `token_ids[]`, the
-     validator should derive the token use and warn rather than fail; unknown
-     placeholders still fail. If a claim uses a token id but does not manually include
-     that token's provenance evidence id, the renderer must attach the token
-     provenance citation deterministically; this is provenance preservation, not
-     output patching.
+   - Token ids carry their own provenance, placeholders are authoritative, and
+     required-topic linkage may be evidence-derived. If a skeleton uses a known token
+     placeholder but omits it from `token_ids[]`, the validator should derive the
+     token use and warn rather than fail; unknown placeholders still fail. If a claim
+     uses a token id but does not manually include that token's provenance evidence
+     id, the renderer must attach the token provenance citation deterministically. If
+     a claim omits `required_topic` but uses evidence mapped to exactly one required
+     topic, the validator may derive that topic linkage and warn. These are
+     provenance-preserving structural normalizations, not output patching.
    - Fail closed on ambiguous compositions. If `HttpClient` and `request` are
      separately evidenced but `HttpClient.request` is absent from the token bank,
      the dotted token must be rejected.

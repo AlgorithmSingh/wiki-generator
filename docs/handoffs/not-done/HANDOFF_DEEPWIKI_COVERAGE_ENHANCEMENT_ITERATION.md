@@ -631,11 +631,14 @@ accreting one-shot prompt examples.
   composite-synthesis defense), inline citations in a skeleton, and (enhancement) an
   unplanned required topic or a required-topic claim that has
   neither claim evidence nor used-token provenance from the topic's mapped evidence.
-  Token ids carry provenance and placeholders are authoritative: when a skeleton uses
-  a known placeholder but omits it from `token_ids[]`, validation derives the token
-  use and warns; when a claim uses a token id but omits that token's `from` evidence
-  from `evidence_ids[]`, the renderer attaches the token-provenance citation
-  deterministically. `render_section` then renders Markdown deterministically:
+  Token ids carry provenance, placeholders are authoritative, and required-topic
+  linkage can be evidence-derived: when a skeleton uses a known placeholder but omits
+  it from `token_ids[]`, validation derives the token use and warns; when a claim uses
+  a token id but omits that token's `from` evidence from `evidence_ids[]`, the
+  renderer attaches the token-provenance citation deterministically; when a claim
+  omits `required_topic` but uses evidence mapped to exactly one required-topic
+  obligation, validation derives the topic linkage and warns. `render_section` then
+  renders Markdown deterministically:
   each `{{token_id}}` → the backtick-wrapped exact bank string, with citations
   appended by the renderer from claim evidence plus used-token provenance — so
   accepted technical strings come only from deterministic substitution, never model

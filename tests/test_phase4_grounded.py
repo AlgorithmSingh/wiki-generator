@@ -235,12 +235,22 @@ class ClaimPlanValidationTests(unittest.TestCase):
                      self.bank, self.b, "svc")
         self.assertIn("duplicate_claim_id", {v["code"] for v in r.violations})
 
-    def test_required_topic_not_planned_rejected(self):
+    def test_required_topic_derived_from_mapped_evidence(self):
         obligations = [{"topic": "Explain the worker.", "is_obligation": True,
                         "mapped_evidence_ids": ["ev:svc:0001"]}]
-        # plan covers nothing for the required topic
-        r = validate(plan_obj("svc", [self._good_claim()]), self.bank, self.b, "svc",
-                     obligations=obligations)
+        r = validate(plan_obj("svc", [self._good_claim(required_topic=None)]),
+                     self.bank, self.b, "svc", obligations=obligations)
+        self.assertTrue(r.ok, r.problem_lines())
+        self.assertEqual(r.claims[0]["required_topic"], "Explain the worker.")
+        self.assertTrue(any("derived" in w and "required_topic" in w
+                            for w in r.warnings))
+
+    def test_required_topic_not_planned_rejected(self):
+        obligations = [{"topic": "Explain the worker.", "is_obligation": True,
+                        "mapped_evidence_ids": ["ev:svc:0002"]}]
+        # plan covers only ev:svc:0001, so it cannot be derived for the mapped topic
+        r = validate(plan_obj("svc", [self._good_claim(required_topic=None)]),
+                     self.bank, self.b, "svc", obligations=obligations)
         self.assertIn("required_topic_not_planned", {v["code"] for v in r.violations})
 
     def test_required_topic_evidence_not_mapped_rejected(self):
