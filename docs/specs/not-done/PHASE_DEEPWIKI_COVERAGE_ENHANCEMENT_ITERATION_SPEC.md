@@ -25,7 +25,12 @@ slice is now implemented and tested non-live as the opt-in
 `write-wiki --grounded-claim-plan` path (deterministic per-section token bank →
 LLM-authored claim plan → deterministic plan validation → deterministic
 token-substitution render → the same strict writing/generated-coverage validators).
-Active next non-live slice: a grounded `--coverage-mode enhancement` CLI E2E.**
+The large grounded temp validation over the existing green RAGFlow Phase 1-3 bundle
+passed at `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260627-231309-phase4-temp-pi-gpt54-0f5734d`
+after one audited bounded claim-plan re-prompt for an LLM-authored invalid evidence
+id; generated coverage passed `58/58`, writing validation passed, and benchmark-only
+comparison was written. Active next decision: whether to request explicit approval
+for an official live/billed Vertex/Gemini retry.**
 
 ## Phase 4 Grounded Claim/Token Planning and Rendering — implemented non-live slice
 
@@ -1805,9 +1810,10 @@ uv run python -m pytest -q tests/test_phase4.py tests/test_phase4_generated_cove
 
 ### Remaining Milestone 2 work — active pending backlog
 
-1. **Implement Phase 4 claim/token planning non-live.** This is the current next
-   slice. It should make terminal technical-token invention harder by construction,
-   not by accumulating more one-off prompt examples.
+1. **Phase 4 claim/token planning non-live is implemented and temp-validated.** The
+   current grounded temp run passed after one audited bounded claim-plan re-prompt;
+   no additional non-live Phase 4 implementation slice is currently required for
+   this path.
 2. **No unapproved live retry.** The latest approved live run stopped in Phase 2 at
    `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-try-f9ad424`.
    Request explicit user approval before any further billed Vertex/Gemini call over
@@ -1815,10 +1821,9 @@ uv run python -m pytest -q tests/test_phase4.py tests/test_phase4_generated_cove
 3. **Earlier live blockers remain diagnostic.** Repair attempt 1 still had five
    deterministic TER defects after improving the plan to `53/58` complete; repair
    attempt 2 failed with external `RemoteProtocolError: Server disconnected without
-   sending a response`. Those remain upstream Phase 2/3 diagnostics, but the current
-   implementation launch targets Phase 4 claim/token planning because the temp
-   Phase 4 harness exposed recurring model-synthesized terminal tokens even on a
-   green Phase 1-3 bundle.
+   sending a response`. Those were upstream Phase 2/3 diagnostics from an older live
+   retry. The current green source bundle for grounded Phase 4 remains
+   `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-try-f9ad424-subagent-workaround`.
 
 ### Completed-slice acceptance — Phase 2 enhancement-mode planned-coverage upstream prevention
 

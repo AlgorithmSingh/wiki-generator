@@ -37,8 +37,12 @@ Phase 3 and Phase 4 did not run. No further live/billed retry unless the user
 explicitly approves it. The Phase 4 grounded claim/token planning + rendering slice
 (opt-in `write-wiki --grounded-claim-plan`: deterministic per-section token bank →
 LLM claim plan → deterministic plan validation → deterministic token-substitution
-render → same strict validators) is now implemented and tested non-live. Active next
-non-live slice: a grounded `--coverage-mode enhancement` CLI E2E.**
+render → same strict validators) is now implemented and tested non-live. Large
+grounded temp validation over the existing green RAGFlow Phase 1-3 bundle passed at
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260627-231309-phase4-temp-pi-gpt54-0f5734d`
+after one audited bounded claim-plan re-prompt for an LLM-authored invalid evidence
+id. Active next decision: whether to request explicit approval for an official
+live/billed Vertex/Gemini retry.**
 
 ## Why this exists
 
@@ -681,21 +685,24 @@ Work log (this slice): files changed — new `libs/writing/token_bank.py`,
 assemble,citations}.py`, `libs/commands/write_wiki.py`, `cli.py`, plus this handoff,
 the active spec, and `docs/README.md`. Verification (non-live): `git diff --check`
 clean; `git diff --exit-code -- docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`
-unchanged; `pytest -q tests/test_phase4.py tests/test_phase4_generated_coverage.py`
-→ 139 passed; `pytest -q tests/test_phase4_grounded.py` → 27 passed, 12 subtests;
-full suite `519 passed, 1 skipped, 21 subtests` (pre-existing faiss skip). No
+unchanged; `pytest -q tests/test_phase4_grounded.py tests/test_phase4.py tests/test_phase4_generated_coverage.py`
+→ 170 passed, 12 subtests; full suite `523 passed, 1 skipped, 21 subtests`
+(pre-existing faiss skip). No
 Vertex/Gemini/API/network; no historical wiki edits; protected Phase 3 spec
 untouched; existing validators unchanged or stricter; baseline non-breaking.
 
 Risks / remaining work: grounded mode is opt-in and NOT wired into the default
-Phase 4 path. The fake-provider E2E exercises the orchestrator in **baseline**
-coverage mode; enhancement-mode covered-topics derivation is proven at the unit
-level (renderer + generated-coverage evaluator) but not yet through a full grounded
-`--coverage-mode enhancement` CLI E2E. Token extraction is intentionally
+Phase 4 path. The fake-provider E2E and the larger temporary Pi-worker grounded run
+now both exercise enhancement behavior. The large temp run passed with generated
+coverage `58/58`, writing validation pass, and benchmark-only comparison written at
+`/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260627-231309-phase4-temp-pi-gpt54-0f5734d`.
+It needed one audited bounded LLM re-prompt for an LLM-authored invalid evidence id
+in `user-admin-health`; that is within the approved LLM-artifact repair boundary and
+is not a deterministic healing loop. Token extraction is intentionally
 permissive-but-verbatim (it may bank extra grounded tokens, e.g. partial filename
-variants); the safety property is "never invent", not "minimal set". A future slice
-should add the enhancement-mode grounded CLI E2E and, only with explicit user
-approval, a billed live retry.
+variants); the safety property is "never invent", not "minimal set". Remaining major
+open item is not another non-live Phase 4 slice; it is whether the user wants to
+approve an official live/billed Vertex/Gemini retry.
 
 ### Remaining Milestone 2 work — active pending backlog
 
