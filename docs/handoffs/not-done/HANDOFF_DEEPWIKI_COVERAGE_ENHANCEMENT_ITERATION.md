@@ -627,14 +627,17 @@ accreting one-shot prompt examples.
   citations. `validate_claim_plan` deterministically rejects (with actionable,
   machine-checked diagnostics, never mutating the plan): unknown/duplicate claim ids,
   invalid claim kind, uncited claims, evidence outside the section allowlist, unknown
-  token ids, broken token↔evidence linkage, undeclared/unknown placeholders,
-  **free-typed terminal technical tokens** in a skeleton (the composite-synthesis
-  defense), inline citations in a skeleton, and (enhancement) an unplanned required
-  topic or a required-topic claim that cites none of the topic's mapped evidence.
-  `render_section` then renders Markdown deterministically: each `{{token_id}}` →
-  the backtick-wrapped exact bank string, with citations appended by the renderer
-  from `evidence_ids` — so accepted technical strings come only from deterministic
-  substitution, never model free-text. In enhancement mode it renders each required
+  token ids, undeclared/unknown placeholders, **free-typed terminal technical tokens**
+  in a skeleton (the composite-synthesis defense), inline citations in a skeleton,
+  and (enhancement) an unplanned required topic or a required-topic claim that has
+  neither claim evidence nor used-token provenance from the topic's mapped evidence.
+  Token ids carry provenance: when a claim uses a token id but omits that token's
+  `from` evidence from `evidence_ids[]`, the renderer attaches the token-provenance
+  citation deterministically. `render_section` then renders Markdown deterministically:
+  each `{{token_id}}` → the backtick-wrapped exact bank string, with citations
+  appended by the renderer from claim evidence plus used-token provenance — so
+  accepted technical strings come only from deterministic substitution, never model
+  free-text. In enhancement mode it renders each required
   topic under its own `###` heading and derives a `covered_topics[]` declaration that
   passes the existing generated-coverage evaluator.
 - **`libs/writing/grounded.py` (new) + orchestrator wiring.** When
@@ -656,7 +659,7 @@ accreting one-shot prompt examples.
   `write-wiki --grounded-claim-plan` CLI flag, and the command-wrapper pass-through.
   A reusable `citations.candidate_identifiers` wrapper keeps the plan-time and
   post-render notions of a "terminal technical token" identical.
-- **Tests — `tests/test_phase4_grounded.py` (new, 27 tests + 12 subtests).** Token
+- **Tests — `tests/test_phase4_grounded.py` (new, 30 tests + 12 subtests).** Token
   extraction + kinds + the verbatim invariant + stable-id rerun + composite-only-when-
   verbatim; full claim-plan validation matrix; the six required composite-synthesis
   regressions (`quart_auth.AuthUser`, `Parser._pdf`, `HttpClient.request`,

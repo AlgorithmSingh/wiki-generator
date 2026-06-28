@@ -182,11 +182,18 @@ class ClaimPlanValidationTests(unittest.TestCase):
         r = validate(plan_obj("svc", [c]), self.bank, self.b, "svc")
         self.assertIn("unknown_token_id", {v["code"] for v in r.violations})
 
-    def test_token_evidence_not_cited_rejected(self):
-        # selects the path token (from ev:svc:0001) but cites only ev:svc:0002
+    def test_token_provenance_is_auto_cited_when_not_listed(self):
+        # selects the path token (from ev:svc:0001) but cites only ev:svc:0002.
+        # The plan remains valid because token ids carry provenance; rendering adds
+        # the token's evidence citation deterministically.
         c = self._good_claim(evidence_ids=["ev:svc:0002"])
         r = validate(plan_obj("svc", [c]), self.bank, self.b, "svc")
-        self.assertIn("token_evidence_not_cited", {v["code"] for v in r.violations})
+        self.assertTrue(r.ok, r.problem_lines())
+        self.assertTrue(any("token provenance" in w for w in r.warnings))
+        rendered = cp.render_section(r, token_bank=self.bank, title="Service",
+                                     section_id="svc")
+        self.assertIn("[ev:svc:0002][ev:svc:0001]", rendered.markdown)
+        self.assertEqual(rendered.used_evidence_ids, ["ev:svc:0001", "ev:svc:0002"])
 
     def test_evidence_not_allowed_rejected(self):
         c = self._good_claim(evidence_ids=["ev:other:0001"])

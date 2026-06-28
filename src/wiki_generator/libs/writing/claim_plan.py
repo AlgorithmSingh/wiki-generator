@@ -28,14 +28,14 @@ A claim plan (``phase4-claim-plan-v1``) is plain JSON — not a DSL:
 ```
 
 The skeleton references every terminal technical string by ``{{token_id}}``
-placeholder and contains NO inline ``[ev:...]`` citations (the renderer attaches
-those from the claim's ``evidence_ids``). The deterministic validator rejects a
-plan — before any Markdown is rendered — when it references unknown evidence/token
-ids, selects a token without citing the evidence it came from, free-types a
-terminal technical token in a skeleton instead of using a placeholder, or (in
-enhancement mode) leaves a required topic unplanned. Rendering then substitutes the
-exact bank string for each placeholder, so a synthesized composite is structurally
-unreachable in the grounded path: it has no token id to reference.
+placeholder and contains NO inline ``[ev:...]`` citations. The deterministic
+validator rejects a plan — before any Markdown is rendered — when it references
+unknown evidence/token ids, free-types a terminal technical token in a skeleton
+instead of using a placeholder, or (in enhancement mode) leaves a required topic
+unplanned. Token ids carry their own provenance: rendering attaches both the
+claim evidence ids and the evidence ids for each used token. Rendering then
+substitutes the exact bank string for each placeholder, so a synthesized composite
+is structurally unreachable in the grounded path: it has no token id to reference.
 
 Pure and deterministic: no model call, no mutation of the parsed plan.
 """
@@ -173,6 +173,7 @@ def validate_claim_plan(plan, *, section_id, token_bank, allowed_evidence_ids,
         tok_ids = claim.get("token_ids")
         tok_ids = [t for t in tok_ids if isinstance(t, str)] \
             if isinstance(tok_ids, list) else []
+        token_evidence_ids: list = []
         for tid in tok_ids:
             entry = by_token.get(tid)
             if entry is None:
@@ -180,13 +181,14 @@ def validate_claim_plan(plan, *, section_id, token_bank, allowed_evidence_ids,
                                      f"claim {cid} selects {tid!r} not in the section "
                                      "token bank"))
                 continue
-            # token-evidence linkage: a token may be used only if the claim cites
-            # at least one evidence item the token was extracted from.
+            for eid in entry.evidence_ids:
+                if eid not in token_evidence_ids:
+                    token_evidence_ids.append(eid)
             if not (set(entry.evidence_ids) & set(ev_ids)):
-                violations.append(_v("token_evidence_not_cited",
-                                     f"claim {cid} selects {tid!r} ({entry.token!r}) "
-                                     "but cites none of its evidence "
-                                     f"{entry.evidence_ids}"))
+                warnings.append(
+                    f"claim {cid} selects {tid!r} ({entry.token!r}) without listing "
+                    f"its token provenance evidence {entry.evidence_ids}; the "
+                    "renderer will attach token provenance citations automatically")
 
         # skeleton discipline: placeholders must be declared + known; no free-typed
         # terminal tokens, inline citations, or ellipsis route-families.
@@ -225,11 +227,17 @@ def validate_claim_plan(plan, *, section_id, token_bank, allowed_evidence_ids,
         if isinstance(rt, str) and rt.strip():
             planned_topics.add(rt.strip())
 
+        render_evidence_ids = list(ev_ids)
+        for eid in token_evidence_ids:
+            if eid not in render_evidence_ids:
+                render_evidence_ids.append(eid)
         norm_claims.append({
             "claim_id": claim.get("claim_id"),
             "claim_kind": kind,
             "evidence_ids": ev_ids,
             "token_ids": tok_ids,
+            "token_evidence_ids": token_evidence_ids,
+            "render_evidence_ids": render_evidence_ids,
             "required_topic": rt.strip() if isinstance(rt, str) and rt.strip() else None,
             "intent": claim.get("intent") if isinstance(claim.get("intent"), str)
             else "",
@@ -249,10 +257,14 @@ def validate_claim_plan(plan, *, section_id, token_bank, allowed_evidence_ids,
                                  f"required topic {topic!r} has no claim "
                                  "(required_topic linkage missing)"))
             continue
-        if mapped and not any(set(c["evidence_ids"]) & mapped for c in topic_claims):
+        if mapped and not any(
+            set(c.get("render_evidence_ids") or c["evidence_ids"]) & mapped
+            for c in topic_claims
+        ):
             violations.append(_v("required_topic_evidence_not_mapped",
                                  f"required topic {topic!r} is planned but no claim "
-                                 f"cites one of its mapped evidence ids {sorted(mapped)}"))
+                                 f"cites or uses a token from one of its mapped evidence "
+                                 f"ids {sorted(mapped)}"))
 
     ok = not violations
     return PlanValidation(section_id, ok, violations, warnings, norm_claims)
@@ -327,7 +339,8 @@ def _render_claim_paragraph(claim, by_token) -> str:
         return f"`{entry.token}`" if entry is not None else m.group(0)
 
     body = PLACEHOLDER_RE.sub(sub, claim["skeleton"]).strip()
-    cites = "".join(f"[{eid}]" for eid in claim["evidence_ids"])
+    citation_ids = claim.get("render_evidence_ids") or claim["evidence_ids"]
+    cites = "".join(f"[{eid}]" for eid in citation_ids)
     return f"{body} {cites}".strip() if cites else body
 
 
@@ -363,7 +376,7 @@ def render_section(plan_validation: PlanValidation, *, token_bank, title,
     for c in body_claims:
         lines.append(_render_claim_paragraph(c, by_token))
         lines.append("")
-        used.update(c["evidence_ids"])
+        used.update(c.get("render_evidence_ids") or c["evidence_ids"])
 
     # One ``###`` subsection per planned required topic (enhancement mode).
     for ob in obligations:
@@ -381,8 +394,9 @@ def render_section(plan_validation: PlanValidation, *, token_bank, title,
         for c in cs:
             lines.append(_render_claim_paragraph(c, by_token))
             lines.append("")
-            used.update(c["evidence_ids"])
-            for eid in c["evidence_ids"]:
+            rendered_ids = c.get("render_evidence_ids") or c["evidence_ids"]
+            used.update(rendered_ids)
+            for eid in rendered_ids:
                 if eid in mapped and eid not in topic_cited:
                     topic_cited.append(eid)
         covered_rows.append({
@@ -442,13 +456,14 @@ Plan rules:
 - Return ONE raw strict JSON object (no markdown fences) matching the response \
 contract. Use JSON-safe string escaping.
 - Each claim cites at least one `evidence_id` (only ids from `allowed_evidence_ids`).
-- A claim may select a `token_id` only if it also cites at least one of that \
-token's evidence ids (shown in the token bank as `from`).
+- Token ids carry provenance. Include a token's `from` evidence id in \
+`evidence_ids` when it supports the claim; the deterministic renderer will also \
+attach used-token provenance citations automatically.
 - Each `{{token_id}}` placeholder used in a `skeleton` MUST be listed in that \
 claim's `token_ids`.
 - A `skeleton` MUST NOT contain inline-code technical tokens written literally \
 (use placeholders), MUST NOT contain `[ev:...]` citations (the renderer attaches \
-them from your `evidence_ids`), and MUST NOT contain ellipses inside code.
+claim and token-provenance citations), and MUST NOT contain ellipses inside code.
 - Use one of these `claim_kind` values: api_route, class_behavior, cli_command, \
 config_field, data_shape, dependency, env_config, file_role, overview, prose, \
 runtime_flow, summary.

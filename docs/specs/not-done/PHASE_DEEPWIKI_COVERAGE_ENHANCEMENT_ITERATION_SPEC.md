@@ -1707,9 +1707,12 @@ package names, and qualified names are terminal technical claims and must either
 
 3. **Deterministic plan validation**
    - Fail the plan before accepted markdown is rendered if it references unknown
-     evidence ids, unknown token ids, token ids not supported by the cited evidence, required topics without
-     claim coverage, or free-form terminal technical tokens outside the approved
-     token references.
+     evidence ids, unknown token ids, required topics without claim coverage, or
+     free-form terminal technical tokens outside the approved token references.
+   - Token ids carry their own provenance. If a claim uses a token id but does not
+     manually include that token's provenance evidence id, the renderer must attach
+     the token provenance citation deterministically; this is provenance preservation,
+     not output patching.
    - Fail closed on ambiguous compositions. If `HttpClient` and `request` are
      separately evidenced but `HttpClient.request` is absent from the token bank,
      the dotted token must be rejected.
@@ -1719,9 +1722,9 @@ package names, and qualified names are terminal technical claims and must either
 
 4. **Markdown rendering from accepted plan**
    - The final section markdown should be rendered from accepted claims, prose
-     skeletons, and exact token-bank references. Terminal technical strings should
-     be inserted deterministically from validated token ids/placeholders, not copied
-     from unconstrained model prose.
+     skeletons, exact token-bank references, and renderer-attached claim/token
+     citations. Terminal technical strings should be inserted deterministically from
+     validated token ids/placeholders, not copied from unconstrained model prose.
    - If any implementation path still asks the model to draft prose, that prose is
      not the accepted artifact until deterministic validation confirms that every
      terminal technical string is either an approved token substitution or exact
