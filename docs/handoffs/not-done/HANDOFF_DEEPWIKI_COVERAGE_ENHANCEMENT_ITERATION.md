@@ -41,8 +41,14 @@ render → same strict validators) is now implemented and tested non-live. Large
 grounded temp validation over the existing green RAGFlow Phase 1-3 bundle passed at
 `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260627-231309-phase4-temp-pi-gpt54-0f5734d`
 after one audited bounded claim-plan re-prompt for an LLM-authored invalid evidence
-id. Active next decision: whether to request explicit approval for an official
-live/billed Vertex/Gemini retry.**
+id. The user then explicitly approved an official live/billed Vertex/Gemini retry.
+The official grounded enhancement-mode E2E passed at
+`/Users/ankitsingh/Documents/deep-wiki/15-e2e/20260628-001925-official-live-vertex-grounded-e2e`
+with Phase 2 live planning + bounded repair, Phase 3 deterministic retrieval,
+Phase 4 live Vertex grounded generation, writing validation pass, generated
+coverage `53/53`, and benchmark-only comparison written. Active next decision:
+review/sign off the generated wiki and decide whether grounded mode should remain
+opt-in or become default.**
 
 ## Why this exists
 
@@ -701,8 +707,9 @@ in `user-admin-health`; that is within the approved LLM-artifact repair boundary
 is not a deterministic healing loop. Token extraction is intentionally
 permissive-but-verbatim (it may bank extra grounded tokens, e.g. partial filename
 variants); the safety property is "never invent", not "minimal set". Remaining major
-open item is not another non-live Phase 4 slice; it is whether the user wants to
-approve an official live/billed Vertex/Gemini retry.
+open item is not another non-live Phase 4 slice; it is review/sign-off of the
+official live generated wiki and the product decision of whether grounded mode
+should remain opt-in or become default.
 
 ### Remaining Milestone 2 work — active pending backlog
 

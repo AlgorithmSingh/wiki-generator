@@ -29,8 +29,14 @@ The large grounded temp validation over the existing green RAGFlow Phase 1-3 bun
 passed at `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260627-231309-phase4-temp-pi-gpt54-0f5734d`
 after one audited bounded claim-plan re-prompt for an LLM-authored invalid evidence
 id; generated coverage passed `58/58`, writing validation passed, and benchmark-only
-comparison was written. Active next decision: whether to request explicit approval
-for an official live/billed Vertex/Gemini retry.**
+comparison was written. The user then explicitly approved an official live/billed
+Vertex/Gemini retry. The official grounded enhancement-mode E2E passed at
+`/Users/ankitsingh/Documents/deep-wiki/15-e2e/20260628-001925-official-live-vertex-grounded-e2e`
+with Phase 2 live planning + bounded repair, Phase 3 deterministic retrieval,
+Phase 4 live Vertex grounded generation, writing validation pass, generated
+coverage `53/53`, and benchmark-only comparison written. Active next decision:
+review/sign off the generated wiki and decide whether grounded mode should remain
+opt-in or become default.**
 
 ## Phase 4 Grounded Claim/Token Planning and Rendering — implemented non-live slice
 
@@ -1810,10 +1816,10 @@ uv run python -m pytest -q tests/test_phase4.py tests/test_phase4_generated_cove
 
 ### Remaining Milestone 2 work — active pending backlog
 
-1. **Phase 4 claim/token planning non-live is implemented and temp-validated.** The
-   current grounded temp run passed after one audited bounded claim-plan re-prompt;
-   no additional non-live Phase 4 implementation slice is currently required for
-   this path.
+1. **Phase 4 claim/token planning is implemented, temp-validated, and live-E2E
+   validated.** The grounded temp run passed after one audited bounded claim-plan
+   re-prompt, and the official live Vertex/Gemini grounded E2E passed under
+   `/Users/ankitsingh/Documents/deep-wiki/15-e2e/20260628-001925-official-live-vertex-grounded-e2e`.
 2. **No unapproved live retry.** The latest approved live run stopped in Phase 2 at
    `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260626-try-f9ad424`.
    Request explicit user approval before any further billed Vertex/Gemini call over
