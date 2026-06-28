@@ -23,6 +23,7 @@ PROMPT_OUT="${PROMPT_OUT:-}"
 RESPONSES_IN="${RESPONSES_IN:-}"
 MAX_REWRITE_ATTEMPTS="${MAX_REWRITE_ATTEMPTS:-}"
 COVERAGE_MODE="${COVERAGE_MODE:-}"
+GROUNDED_CLAIM_PLAN="${GROUNDED_CLAIM_PLAN:-0}"
 PREPARE_ONLY=0
 ACCEPT_NO_FORCE=0
 
@@ -58,6 +59,10 @@ Options:
                              preserves parent/child hierarchy; and deterministically
                              validates every evidenced sufficient required topic is
                              generated with valid mapped citations (else exit 5).
+  --grounded-claim-plan      opt-in grounded generation. Ask the model/imported Gem
+                             response for a structured claim/token plan, validate it,
+                             and render Markdown by deterministic token substitution.
+                             Composes with --coverage-mode; default off.
   --project ID               GCP project for vertex (default $GOOGLE_CLOUD_PROJECT)
   --location REGION          Vertex location (default $GOOGLE_CLOUD_LOCATION)
   --prepare-prompts-only     (gemini-gem) write per-section prompts and stop
@@ -89,6 +94,7 @@ while [[ $# -gt 0 ]]; do
     --max-output-tokens) MAX_OUTPUT_TOKENS="${2:-}"; shift 2 ;;
     --max-rewrite-attempts) MAX_REWRITE_ATTEMPTS="${2:-}"; shift 2 ;;
     --coverage-mode) COVERAGE_MODE="${2:-}"; shift 2 ;;
+    --grounded-claim-plan) GROUNDED_CLAIM_PLAN=1; shift ;;
     --project) PROJECT="${2:-}"; shift 2 ;;
     --location) LOCATION="${2:-}"; shift 2 ;;
     --prompt-out) PROMPT_OUT="${2:-}"; shift 2 ;;
@@ -134,6 +140,7 @@ cmd=(python -m wiki_generator write-wiki --bundle "$OUT" --provider "$PROVIDER")
 [[ "$ACCEPT_NO_FORCE" == "1" ]] && cmd+=(--accept-no-force)
 # Omitted when unset so the CLI default (baseline) stays the single source of truth.
 [[ -n "$COVERAGE_MODE" ]] && cmd+=(--coverage-mode "$COVERAGE_MODE")
+[[ "$GROUNDED_CLAIM_PLAN" == "1" ]] && cmd+=(--grounded-claim-plan)
 
 if [[ "$PREPARE_ONLY" == "1" ]]; then
   cmd+=(--prepare-prompts-only)
