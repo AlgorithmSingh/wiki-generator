@@ -1,0 +1,86 @@
+{
+  "design_slug": "deepwiki-scale-parity-next-phase",
+  "phase_relation": "next-phase-of:deepwiki-coverage-expansion",
+  "derived_from": "problem: 94-must catalog collapsed into 21 flat pages / 42 TERs under expanded mode",
+  "slice_1_scope": "Phase 2 promotion contract + anti-compression gate + data contract + CLI wiring + tests",
+  "gates": [
+    {
+      "id": "DOD-1",
+      "category": "anti-compression-correctness",
+      "statement": "A fixture mirroring the real collapse (13-topic family -> 1 leaf page, many must topics, too few TERs, flat hierarchy) fails deepwiki-scale with exit 3 and emits at least one of the new defect codes.",
+      "acceptance": "AC-S1",
+      "pass_example": "frontend family with 12 promoted leaf topics on one subsystem-deep-dive page -> leaf_page_overloaded + family_not_split + flat_hierarchy + missing TERs",
+      "fail_example": "gate returns passed=true for a 21-flat-page / 42-TER plan",
+      "verified_by": "tests/test_phase2_anti_compression.py"
+    },
+    {
+      "id": "DOD-2",
+      "category": "anti-compression-correctness",
+      "statement": "A fanned-out fixture (each promoted leaf topic on its own <=cap leaf page with a TER, hierarchically linked, >= breadth floor) passes with exit 0 and no diagnostics.",
+      "acceptance": "AC-S2",
+      "verified_by": "tests/test_phase2_anti_compression.py"
+    },
+    {
+      "id": "DOD-3",
+      "category": "overview-exemption",
+      "statement": "An overview/index page listing many promoted ids passes only when each topic also has its own non-overview leaf page + TER; a topic appearing only on the overview page fails with promoted_topic_not_on_leaf_page.",
+      "acceptance": "AC-S3",
+      "verified_by": "tests/test_phase2_anti_compression.py"
+    },
+    {
+      "id": "DOD-4",
+      "category": "non-regression",
+      "statement": "baseline/enhancement/expanded behavior and their tests are unchanged; the anti-compression gate is not run (and its artifact not written) outside deepwiki-scale.",
+      "acceptance": "AC-S4",
+      "verified_by": "tests/test_phase2_anti_compression.py + full pytest suite"
+    },
+    {
+      "id": "DOD-5",
+      "category": "determinism",
+      "statement": "Two evaluations over identical inputs produce identical anti-compression-gate.json.",
+      "acceptance": "AC-S5",
+      "verified_by": "tests/test_phase2_anti_compression.py"
+    },
+    {
+      "id": "DOD-6",
+      "category": "cli-coherence",
+      "statement": "normalize-plan/plan-repair/retrieve-evidence/write-wiki accept --coverage-mode deepwiki-scale; downstream behaves as expanded in Slice 1.",
+      "acceptance": "AC-S6",
+      "verified_by": "tests/test_phase2_anti_compression.py + EvidenceOptions/WritingOptions construction"
+    },
+    {
+      "id": "DOD-7",
+      "category": "promotion-contract",
+      "statement": "Every catalog topic is assigned a tier (page/overview/optional/known_gap); promoted_topics[] emitted as the downstream data contract; deferred promoted topic is tier known_gap and non-blocking.",
+      "acceptance": "AC-S7",
+      "verified_by": "tests/test_phase2_anti_compression.py"
+    },
+    {
+      "id": "DOD-8",
+      "category": "hard-rules",
+      "statement": "New code: explicit typing on public APIs, no mutable default args, no import-time side effects, injectable BreadthPolicy, no broad except, LLM-free/network-free/read-only.",
+      "acceptance": "QR-S1,QR-S2,UR-S13,UR-S14",
+      "verified_by": "code review + py_compile + import-safety + full suite"
+    },
+    {
+      "id": "DOD-9",
+      "category": "safety",
+      "statement": "Protected Phase 3 spec unchanged; no existing validator weakened; no live/billed provider call.",
+      "acceptance": "constraints",
+      "verified_by": "git diff --exit-code on protected spec + review"
+    },
+    {
+      "id": "DOD-10",
+      "category": "hygiene",
+      "statement": "Clean working tree: only intended deliverables changed; no stray caches/artifacts; git diff --check clean; definition-of-done.json valid JSON.",
+      "acceptance": "QR-S1",
+      "verified_by": "git status + git diff --check + python -m json.tool"
+    }
+  ],
+  "out_of_scope_slice_1": [
+    "Phase 3/4 promoted-topic-granular enforcement (VG-13) -> milestones M2/M3",
+    "Live billed run -> M4 with explicit user approval",
+    "Tree-sitter/SCIP finer catalog -> FG-S1"
+  ],
+  "open_decisions": ["OD-S1", "OD-S2", "OD-S3", "OD-S4"]
+}

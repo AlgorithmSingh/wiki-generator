@@ -162,7 +162,7 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("--provider", default="gemini",
                    help="planning provider name, recorded as metadata only")
     n.add_argument("--coverage-mode", dest="coverage_mode", default="baseline",
-                   choices=("baseline", "enhancement", "expanded"),
+                   choices=("baseline", "enhancement", "expanded", "deepwiki-scale"),
                    help=("Phase 2 → Phase 3 planned coverage boundary. "
                          "baseline (default): non-enforcing DeepWiki coverage "
                          "matrix only, never gates the command (safe for "
@@ -196,7 +196,7 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--max-output-tokens", dest="max_output_tokens", type=int,
                     default=32768, help="max output tokens (default 32768; not tiny)")
     pr.add_argument("--coverage-mode", dest="coverage_mode", default="baseline",
-                    choices=("baseline", "enhancement", "expanded"),
+                    choices=("baseline", "enhancement", "expanded", "deepwiki-scale"),
                     help=("repair acceptance gate. baseline (default): the old "
                           "Phase-3 readiness gate only. enhancement: accept a repair "
                           "ONLY when readiness AND the deterministic planned-coverage "
@@ -221,7 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
                      help="max evidence items kept per section (default: stable "
                           "implementation constant)")
     re_.add_argument("--coverage-mode", dest="coverage_mode", default="baseline",
-                     choices=("baseline", "enhancement", "expanded"),
+                     choices=("baseline", "enhancement", "expanded", "deepwiki-scale"),
                      help=("evidenced-coverage gate. baseline (default): report "
                            "evidenced coverage without gating (non-breaking for "
                            "legacy/compact fixtures). enhancement: a required "
@@ -272,7 +272,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="bounded format/citation rewrites for gemini-api/vertex "
                          "(0..2; default 1). Never used to add evidence.")
     ww.add_argument("--coverage-mode", dest="coverage_mode", default="baseline",
-                    choices=("baseline", "enhancement", "expanded"),
+                    choices=("baseline", "enhancement", "expanded", "deepwiki-scale"),
                     help=("DeepWiki coverage enhancement. baseline (default): write "
                           "the grounded wiki with no upstream coverage gate and no "
                           "generated-coverage validation (non-breaking for compact "
@@ -326,9 +326,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="output directory for the coverage report "
                          "(default <bundle>/coverage)")
     vc.add_argument("--mode", default="enhancement",
-                    choices=("enhancement", "baseline", "expanded"),
+                    choices=("enhancement", "baseline", "expanded", "deepwiki-scale"),
                     help="enhancement: missing mandatory family fails the gate "
-                         "(default); baseline: report coverage without enforcing")
+                         "(default); baseline: report coverage without enforcing; "
+                         "expanded/deepwiki-scale: additionally prove "
+                         "catalog→plan→source→evidence→output traceability + freshness")
     return p
 
 

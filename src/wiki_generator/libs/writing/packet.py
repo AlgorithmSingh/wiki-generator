@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from .. import util
 from . import generated_coverage as gencov
-from .options import COVERAGE_MODE_EXPANDED, ENFORCING_COVERAGE_MODES
+from .options import EXPANDED_COVERAGE_MODES, ENFORCING_COVERAGE_MODES
 from .schema import WRITING_PACKET_SCHEMA_VERSION
 
 # Phase C artifact the expanded writing packet surfaces per page (optional read).
@@ -140,8 +140,9 @@ def build_writing_packet(bundle, sid: str) -> WritingPacket:
     # Expanded (DeepWiki hierarchical) mode: carry the page profile, catalog topics,
     # required content blocks, the Phase D content-block obligations (the exact
     # evidence each block must be written with), and this page's deterministic
-    # relevant-source-map rows so the writer renders by content block.
-    if coverage_mode == COVERAGE_MODE_EXPANDED:
+    # relevant-source-map rows so the writer renders by content block. ``deepwiki-scale``
+    # is a strict superset of ``expanded`` and carries the same packet shape.
+    if coverage_mode in EXPANDED_COVERAGE_MODES:
         block_obs = (getattr(bundle, "content_block_obligations", None) or {}).get(sid) or []
         data["page_profile"] = plan.get("page_profile")
         data["catalog_topic_ids"] = list(plan.get("catalog_topic_ids") or [])

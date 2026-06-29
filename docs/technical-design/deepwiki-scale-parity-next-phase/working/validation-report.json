@@ -1,0 +1,41 @@
+{
+  "design_slug": "deepwiki-scale-parity-next-phase",
+  "phase": "phase-6-finalization",
+  "status": "passed",
+  "writer_approver_separation": "validation gates derived from definition-of-done.json (Phase 2); checked here against actual code + test outcomes",
+  "checks": [
+    {"id": "selected-sections-present", "ok": true,
+     "note": "TDD §1-17 present; deployment/migration intentionally omitted (opt-in additive mode, no schema migration), recorded in status.md"},
+    {"id": "reader-fitness", "ok": true,
+     "note": "addresses operator, coverage-gate maintainer, future implementation agent"},
+    {"id": "traceability", "ok": true,
+     "note": "PRD UR-S*/AC-S* -> TDD components/tests -> DOD-1..10 -> traceability_matrix.md; no orphan Must requirement"},
+    {"id": "grounding-tags", "ok": true,
+     "note": "requirements tagged sourced/inferred/open; open decisions OD-S1..S4 recorded"},
+    {"id": "validation-evidence-real", "ok": true,
+     "note": "no claimed-but-unrun checks; results below are actual command output"},
+    {"id": "conformance-to-definition-of-done", "ok": true, "note": "DOD-1..DOD-10 satisfied (see dod_results)"}
+  ],
+  "dod_results": [
+    {"id": "DOD-1", "status": "pass", "evidence": "test_collapse_fails_with_multiple_codes + integration test_fails_on_compressed_family -> exit 3 with overloaded/missing-TER/family-not-split codes"},
+    {"id": "DOD-2", "status": "pass", "evidence": "test_fanned_plan_passes -> exit 0, no diagnostics"},
+    {"id": "DOD-3", "status": "pass", "evidence": "test_topic_only_on_overview_fails + test_overview_index_with_leaf_pages_passes"},
+    {"id": "DOD-4", "status": "pass", "evidence": "test_baseline_reports_but_never_gates, test_expanded_is_report_only, test_expanded/enhancement_does_not_run_anti_compression; full suite 670 passed, 1 skipped"},
+    {"id": "DOD-5", "status": "pass", "evidence": "test_determinism -> identical serialized gate dict"},
+    {"id": "DOD-6", "status": "pass", "evidence": "test_evidence_and_writing_options_accept_mode; cli choices extended for 5 commands"},
+    {"id": "DOD-7", "status": "pass", "evidence": "PromotionContractTests (tiers) + test_deferred_topics_not_blocking + promoted_topics[] emitted"},
+    {"id": "DOD-8", "status": "pass", "evidence": "explicit typing, no mutable default args (tuple-only defaults), injectable BreadthPolicy, no broad except, LLM/network-free; py_compile + import-safety OK"},
+    {"id": "DOD-9", "status": "pass", "evidence": "git diff --exit-code protected Phase 3 spec clean; no validator weakened; no live provider call"},
+    {"id": "DOD-10", "status": "pass", "evidence": "git diff --check clean; git status shows only intended files; no stray caches; definition-of-done.json valid JSON"}
+  ],
+  "commands_run": [
+    {"cmd": "uv run python -m pytest -q tests/test_phase2_topic_catalog_planning.py tests/test_coverage_validation.py tests/test_relevant_source_map.py tests/test_coverage_traceability.py tests/test_phase2_anti_compression.py", "result": "89 passed"},
+    {"cmd": "uv run python -m pytest -q", "result": "670 passed, 1 skipped, 21 subtests passed"},
+    {"cmd": "git diff --check", "result": "clean"},
+    {"cmd": "git diff --exit-code -- docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md", "result": "unchanged"},
+    {"cmd": "python3 -m json.tool definition-of-done.json", "result": "valid"}
+  ],
+  "open_decisions_pending_user": ["OD-S1", "OD-S2", "OD-S3", "OD-S4"],
+  "revisit": null,
+  "next_phase": null
+}

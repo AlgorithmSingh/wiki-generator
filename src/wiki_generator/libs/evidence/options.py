@@ -25,8 +25,15 @@ DEFAULT_MAX_TOTAL_PER_SECTION = 40
 COVERAGE_MODE_BASELINE = "baseline"
 COVERAGE_MODE_ENHANCEMENT = "enhancement"
 COVERAGE_MODE_EXPANDED = "expanded"
+# ``deepwiki-scale`` is the next-phase breadth mode: a strict superset of ``expanded``.
+# In Phase 3 (this slice) it behaves exactly like ``expanded`` (the same profile-aware
+# portfolio + sufficiency gates); promoted-topic-granular Phase 3 enforcement is a
+# later slice (TDD VG-13 / milestone M2).
+COVERAGE_MODE_DEEPWIKI_SCALE = "deepwiki-scale"
 COVERAGE_MODES = (COVERAGE_MODE_BASELINE, COVERAGE_MODE_ENHANCEMENT,
-                  COVERAGE_MODE_EXPANDED)
+                  COVERAGE_MODE_EXPANDED, COVERAGE_MODE_DEEPWIKI_SCALE)
+# The modes that run the expanded portfolio behaviour (``expanded`` and its superset).
+EXPANDED_COVERAGE_MODES = (COVERAGE_MODE_EXPANDED, COVERAGE_MODE_DEEPWIKI_SCALE)
 
 
 @dataclass(frozen=True)

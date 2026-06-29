@@ -47,10 +47,17 @@ COVERAGE_MODE_ENHANCEMENT = "enhancement"
 # relevant-source-map rows) into the writing packet. It enforces the same
 # pre-provider upstream gates as ``enhancement``.
 COVERAGE_MODE_EXPANDED = "expanded"
+# ``deepwiki-scale`` is the next-phase breadth mode: a strict superset of ``expanded``.
+# In Phase 4 (this slice) it carries the same hierarchical writing behaviour as
+# ``expanded``; promoted-topic-granular generated coverage is a later slice (VG-13/M3).
+COVERAGE_MODE_DEEPWIKI_SCALE = "deepwiki-scale"
 COVERAGE_MODES = (COVERAGE_MODE_BASELINE, COVERAGE_MODE_ENHANCEMENT,
-                  COVERAGE_MODE_EXPANDED)
+                  COVERAGE_MODE_EXPANDED, COVERAGE_MODE_DEEPWIKI_SCALE)
 # The coverage modes that enforce the upstream gates + generated-coverage gate.
-ENFORCING_COVERAGE_MODES = (COVERAGE_MODE_ENHANCEMENT, COVERAGE_MODE_EXPANDED)
+ENFORCING_COVERAGE_MODES = (COVERAGE_MODE_ENHANCEMENT, COVERAGE_MODE_EXPANDED,
+                            COVERAGE_MODE_DEEPWIKI_SCALE)
+# The modes that run expanded hierarchical writing behaviour (``expanded`` + superset).
+EXPANDED_COVERAGE_MODES = (COVERAGE_MODE_EXPANDED, COVERAGE_MODE_DEEPWIKI_SCALE)
 
 
 @dataclass(frozen=True)
@@ -132,8 +139,9 @@ class WritingOptions:
 
     @property
     def is_expanded(self) -> bool:
-        """True when the opt-in DeepWiki-style expanded coverage mode is requested."""
-        return self.coverage_mode == COVERAGE_MODE_EXPANDED
+        """True for the DeepWiki-style expanded coverage mode or its strict superset
+        ``deepwiki-scale`` (both carry the hierarchical writing behaviour)."""
+        return self.coverage_mode in EXPANDED_COVERAGE_MODES
 
     @property
     def enforces_coverage(self) -> bool:

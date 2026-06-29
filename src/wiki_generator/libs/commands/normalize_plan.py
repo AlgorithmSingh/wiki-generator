@@ -117,32 +117,35 @@ def _run_coverage_gates(bundle_dir: str, out_dir: str, mode: str) -> int:
     if not ob_gate.passed:
         return ob_gate.exit_code
 
-    # 3) expanded-only gates (hierarchical page planning + relevant-source map).
-    if mode == coverage.MODE_EXPANDED:
-        return _run_expanded_gates(bundle_dir, out_dir, document_plan, sections)
+    # 3) expanded gate set (hierarchical page planning + relevant-source map). Run for
+    # ``expanded`` and its strict superset ``deepwiki-scale``; the latter additionally
+    # runs the anti-compression breadth gate (see _run_expanded_gates).
+    if coverage.is_expanded_family(mode):
+        return _run_expanded_gates(bundle_dir, out_dir, document_plan, sections, mode)
     return 0
 
 
 def _run_expanded_gates(bundle_dir: str, out_dir: str, document_plan: dict,
-                        sections: list) -> int:
-    """The expanded-mode-only Phase 2 gates: hierarchical page planning and the
-    deterministic relevant-source map. Reads the Phase A topic catalog; an absent
-    catalog is a hard missing-input failure (exit 2). Returns ``0`` when all expanded
-    gates pass, else the first failing gate's exit code. Never edits the plan."""
+                        sections: list, mode: str) -> int:
+    """The expanded-family Phase 2 gates: hierarchical page planning and the
+    deterministic relevant-source map (``expanded`` and ``deepwiki-scale``), plus the
+    anti-compression breadth gate for ``deepwiki-scale`` only. Reads the Phase A topic
+    catalog; an absent catalog is a hard missing-input failure (exit 2). Returns ``0``
+    when all applicable gates pass, else the first failing gate's exit code. Never edits
+    the plan."""
     catalog = coverage.load_topic_catalog(bundle_dir)
     if catalog is None:
-        log("  page-planning gate: expanded mode requires "
+        log(f"  page-planning gate: {mode} mode requires "
             "derived/topic-catalog.json (Phase A); it is absent — run condense/"
             "digest first. FAIL (missing input).")
         return coverage.COVERAGE_GATE_INPUT_EXIT
 
-    pp_gate = coverage.gate_page_planning(catalog, document_plan, sections,
-                                          mode=coverage.MODE_EXPANDED)
+    pp_gate = coverage.gate_page_planning(catalog, document_plan, sections, mode=mode)
     write_json(os.path.join(out_dir, "page-planning-gate.json"), pp_gate.to_dict())
     write_text(os.path.join(out_dir, "page-planning-report.md"),
                coverage.render_page_planning_markdown(
                    pp_gate.report,
-                   title="Phase 2 Hierarchical Page-Planning Gate (expanded mode)"))
+                   title=f"Phase 2 Hierarchical Page-Planning Gate ({mode} mode)"))
     for line in pp_gate.summary_lines():
         log(f"  {line}")
     log("  page-planning gate report: "
@@ -151,11 +154,42 @@ def _run_expanded_gates(bundle_dir: str, out_dir: str, document_plan: dict,
         return pp_gate.exit_code
 
     # Phase C: deterministic relevant-source map + source-selection gate.
-    return _run_source_map_gate(bundle_dir, out_dir, catalog, document_plan, sections)
+    sm_rc = _run_source_map_gate(bundle_dir, out_dir, catalog, document_plan, sections,
+                                 mode)
+    if sm_rc != 0:
+        return sm_rc
+
+    # deepwiki-scale only: the anti-compression breadth gate (distributive promotion
+    # contract — each promoted leaf catalog topic earns its own leaf page + TER, large
+    # families fan out, the plan is not flat, leaf-page count meets the catalog floor).
+    if coverage.enforces_breadth(mode):
+        return _run_anti_compression_gate(out_dir, catalog, document_plan, sections,
+                                          mode)
+    return 0
+
+
+def _run_anti_compression_gate(out_dir: str, catalog: dict, document_plan: dict,
+                               sections: list, mode: str) -> int:
+    """The ``deepwiki-scale`` anti-compression breadth gate. Deterministic, read-only:
+    closes the loophole where a high-signal catalog collapses into too few flat pages.
+    Writes ``anti-compression-gate.json`` + ``anti-compression-report.md`` and returns
+    ``0`` on pass / ``3`` on a compressed plan. Never edits the plan."""
+    ac_gate = coverage.gate_anti_compression(catalog, document_plan, sections,
+                                             mode=mode)
+    write_json(os.path.join(out_dir, "anti-compression-gate.json"), ac_gate.to_dict())
+    write_text(os.path.join(out_dir, "anti-compression-report.md"),
+               coverage.render_anti_compression_markdown(
+                   ac_gate.report,
+                   title=f"Phase 2 Anti-Compression Gate ({mode} mode)"))
+    for line in ac_gate.summary_lines():
+        log(f"  {line}")
+    log("  anti-compression gate report: "
+        f"{os.path.join(out_dir, 'anti-compression-report.md')}")
+    return ac_gate.exit_code
 
 
 def _run_source_map_gate(bundle_dir: str, out_dir: str, catalog: dict,
-                         document_plan: dict, sections: list) -> int:
+                         document_plan: dict, sections: list, mode: str) -> int:
     """Phase C: build ``plans/relevant-source-map.json`` deterministically and gate it.
 
     Selects each page's exact citeable source handles from the normalized plan's
@@ -170,14 +204,13 @@ def _run_source_map_gate(bundle_dir: str, out_dir: str, catalog: dict,
         catalog, document_plan, sections, substrate=substrate)
     write_json(os.path.join(out_dir, "relevant-source-map.json"),
                source_map.to_dict())
-    sm_gate = coverage.gate_source_map(source_map, sections,
-                                       mode=coverage.MODE_EXPANDED)
+    sm_gate = coverage.gate_source_map(source_map, sections, mode=mode)
     write_json(os.path.join(out_dir, "source-selection-gate.json"),
                sm_gate.to_dict())
     write_text(os.path.join(out_dir, "relevant-source-map-report.md"),
                coverage.render_source_map_markdown(
                    source_map, sm_gate,
-                   title="Phase 2 Relevant Source Map (expanded mode)"))
+                   title=f"Phase 2 Relevant Source Map ({mode} mode)"))
     for line in sm_gate.summary_lines():
         log(f"  {line}")
     log("  relevant source map: "
@@ -236,9 +269,13 @@ def run(args: argparse.Namespace) -> int:
     # Phase 2 → Phase 3 coverage boundary. Baseline (default) stays non-breaking;
     # enhancement runs the deterministic planned-coverage + topic-obligation gates;
     # expanded additionally runs the hierarchical page-planning + relevant-source-map
-    # gates and fails loudly on a missing family/obligation/page/source obligation.
+    # gates; deepwiki-scale additionally runs the anti-compression breadth gate (each
+    # promoted leaf catalog topic earns its own leaf page + TER; large families fan
+    # out; the plan is not flat; leaf-page count meets the catalog floor). Each fails
+    # loudly on a missing family/obligation/page/source obligation or a compressed plan.
     coverage_mode = getattr(args, "coverage_mode", coverage.MODE_BASELINE)
-    if coverage_mode in (coverage.MODE_ENHANCEMENT, coverage.MODE_EXPANDED):
+    if coverage_mode in (coverage.MODE_ENHANCEMENT, coverage.MODE_EXPANDED,
+                         coverage.MODE_DEEPWIKI_SCALE):
         gate_rc = _run_coverage_gates(bundle_dir, out_dir, coverage_mode)
         # A strict-normalization failure is more fundamental than coverage; report
         # both but let strict (rc=1) take precedence over the coverage code (2/3).

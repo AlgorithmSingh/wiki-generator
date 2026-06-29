@@ -61,9 +61,10 @@ def run(args: argparse.Namespace) -> int:
             "topic family(ies) not planned (see coverage-validation-report.md)")
 
     rc = gate.exit_code
-    # Expanded mode additionally proves catalog→plan→source→evidence→output
-    # traceability + artifact freshness over the produced downstream artifacts.
-    if mode == coverage.MODE_EXPANDED:
+    # Expanded-family modes additionally prove catalog→plan→source→evidence→output
+    # traceability + artifact freshness over the produced downstream artifacts
+    # (``deepwiki-scale`` is a strict superset of ``expanded``).
+    if coverage.is_expanded_family(mode):
         trace_rc = _run_traceability(bundle_root, out_dir)
         if trace_rc != 0 and rc == 0:
             rc = trace_rc

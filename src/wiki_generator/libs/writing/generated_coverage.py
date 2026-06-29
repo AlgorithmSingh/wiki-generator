@@ -50,8 +50,9 @@ GENERATED_COVERAGE_CHECK = "generated_required_topics_covered"
 GENERATED_BLOCK_COVERAGE_CHECK = "generated_required_content_blocks_covered"
 
 # The upstream coverage modes Phase 4 accepts as an enforced pass (``expanded`` is a
-# strict superset of ``enhancement``).
-_ENFORCING_MODES = ("enhancement", "expanded")
+# strict superset of ``enhancement``; ``deepwiki-scale`` is a strict superset of
+# ``expanded``).
+_ENFORCING_MODES = ("enhancement", "expanded", "deepwiki-scale")
 
 # Per-topic generated status.
 GEN_COVERED = "covered"          # generated with valid mapped citations

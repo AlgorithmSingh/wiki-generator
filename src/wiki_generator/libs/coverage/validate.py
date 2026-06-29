@@ -44,15 +44,41 @@ MODE_BASELINE = "baseline"
 # reports without enforcing. Staging the expanded gates behind their own mode keeps
 # every existing baseline AND enhancement run non-breaking (TDD OD-02 / OD-03).
 MODE_EXPANDED = "expanded"
-_MODES = (MODE_ENHANCEMENT, MODE_BASELINE, MODE_EXPANDED)
-# The modes whose gates fail closed (vs. report-only). ``expanded`` enforces like
-# ``enhancement``; both the planned-coverage and topic-obligation gates consult this.
-_ENFORCING_MODES = frozenset({MODE_ENHANCEMENT, MODE_EXPANDED})
+# ``deepwiki-scale`` is the next-phase opt-in DeepWiki *breadth* mode: a strict
+# superset of ``expanded`` that ALSO runs the anti-compression gate
+# (:mod:`.anti_compression`). It closes the loophole proven by the real RAGFlow run,
+# where a high-signal catalog (94 ``must`` topics across 13 families) collapsed into
+# 21 flat pages / 42 TERs because a topic counted as "planned" the moment its id
+# appeared on any page. ``deepwiki-scale`` enforces every ``expanded`` gate plus the
+# distributive promotion contract (own leaf page, own TER, family fan-out, non-flat
+# hierarchy, catalog-derived breadth floor). Staging it behind its own mode keeps the
+# passing ``expanded`` run and every existing baseline/enhancement run non-breaking.
+MODE_DEEPWIKI_SCALE = "deepwiki-scale"
+_MODES = (MODE_ENHANCEMENT, MODE_BASELINE, MODE_EXPANDED, MODE_DEEPWIKI_SCALE)
+# The modes whose gates fail closed (vs. report-only). ``expanded`` and
+# ``deepwiki-scale`` enforce like ``enhancement``; the planned-coverage and
+# topic-obligation gates consult this.
+_ENFORCING_MODES = frozenset({MODE_ENHANCEMENT, MODE_EXPANDED, MODE_DEEPWIKI_SCALE})
+# The modes that run the full ``expanded`` hierarchical/profile/source-map gate set.
+# ``deepwiki-scale`` is a strict superset of ``expanded``, so it belongs here too.
+EXPANDED_MODES = frozenset({MODE_EXPANDED, MODE_DEEPWIKI_SCALE})
 
 
 def is_enforcing(mode: str) -> bool:
-    """True when ``mode`` fails closed (``enhancement`` or ``expanded``)."""
+    """True when ``mode`` fails closed (``enhancement``/``expanded``/``deepwiki-scale``)."""
     return mode in _ENFORCING_MODES
+
+
+def is_expanded_family(mode: str) -> bool:
+    """True when ``mode`` runs the expanded hierarchical gate set (``expanded`` or its
+    strict superset ``deepwiki-scale``)."""
+    return mode in EXPANDED_MODES
+
+
+def enforces_breadth(mode: str) -> bool:
+    """True only for ``deepwiki-scale`` — the mode that runs the anti-compression
+    breadth gate on top of the expanded gates."""
+    return mode == MODE_DEEPWIKI_SCALE
 
 # Exit codes for the deterministic planned coverage gate (shared by the standalone
 # ``validate-coverage`` command and the integrated ``normalize-plan

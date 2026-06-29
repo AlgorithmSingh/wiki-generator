@@ -42,7 +42,11 @@ from ..coverage.obligations import (
     field_index_valid as _field_index_valid,
     parse_source_field as _parse_source_field,
 )
-from .options import COVERAGE_MODE_ENHANCEMENT, COVERAGE_MODE_EXPANDED
+from .options import (
+    COVERAGE_MODE_DEEPWIKI_SCALE,
+    COVERAGE_MODE_ENHANCEMENT,
+    COVERAGE_MODE_EXPANDED,
+)
 
 EVIDENCED_COVERAGE_SCHEMA_VERSION = "phase3-evidenced-coverage-v1"
 
@@ -325,8 +329,10 @@ def evaluate_evidenced_coverage(bundle, packets, options) -> EvidencedCoverage:
     failure; its section id is returned in ``blocking_section_ids`` so the run
     fails before Phase 4 with ``bad_underspecified_normalized_plan`` (exit 3)."""
     enforced = options.coverage_mode in (COVERAGE_MODE_ENHANCEMENT,
-                                         COVERAGE_MODE_EXPANDED)
-    expanded = options.coverage_mode == COVERAGE_MODE_EXPANDED
+                                         COVERAGE_MODE_EXPANDED,
+                                         COVERAGE_MODE_DEEPWIKI_SCALE)
+    expanded = options.coverage_mode in (COVERAGE_MODE_EXPANDED,
+                                         COVERAGE_MODE_DEEPWIKI_SCALE)
     packet_by_id = {p.get("section_id"): p for p in packets}
 
     section_rows: list = []

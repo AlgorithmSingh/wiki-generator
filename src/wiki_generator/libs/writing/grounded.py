@@ -20,7 +20,7 @@ from __future__ import annotations
 from . import assemble
 from . import claim_plan as cp
 from .errors import ProviderFailure, WritingValidationFailure
-from .options import COVERAGE_MODE_EXPANDED, ENFORCING_COVERAGE_MODES
+from .options import EXPANDED_COVERAGE_MODES, ENFORCING_COVERAGE_MODES
 from .parse import parse_section_response
 from .validate import validate_section_draft
 
@@ -34,8 +34,10 @@ def section_obligations(bundle, sid: str):
 
 
 def section_block_obligations(bundle, sid: str):
-    """The section's content-block obligations (expanded mode only), or ``None``."""
-    if getattr(bundle, "coverage_mode", "baseline") != COVERAGE_MODE_EXPANDED:
+    """The section's content-block obligations (expanded-family mode only), or
+    ``None``. ``deepwiki-scale`` is a strict superset of ``expanded`` and carries the
+    same content-block behaviour."""
+    if getattr(bundle, "coverage_mode", "baseline") not in EXPANDED_COVERAGE_MODES:
         return None
     return (getattr(bundle, "content_block_obligations", None) or {}).get(sid) or []
 

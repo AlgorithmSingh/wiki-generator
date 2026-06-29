@@ -1,0 +1,37 @@
+{
+  "run_id": "deepwiki-scale-parity-next-phase",
+  "current_phase": "completed",
+  "phase_relation": "next-phase-of:deepwiki-coverage-expansion",
+  "completed_gates": [
+    "Gate 0 run-setup",
+    "Gate 1 product-intent",
+    "Gate 3 goals-metrics-scope",
+    "Gate 5 requirements",
+    "Gate 6 acceptance-criteria",
+    "Gate 8 decisions-surfaced"
+  ],
+  "open_questions": [
+    {"id": "OD-S1", "question": "Confirm promotion threshold = priority 'must', tier by topic_kind, or supply a richer signal mix.", "phase_discovered": "phase-3", "routed_to": "user-sign-off"},
+    {"id": "OD-S2", "question": "Confirm default breadth policy (cap 4 / split 6 / floor sum ceil(leaf/4)) before any live run.", "phase_discovered": "phase-3", "routed_to": "user-sign-off"},
+    {"id": "OD-S3", "question": "Which high-risk families require human sign-off before live release.", "phase_discovered": "phase-5", "routed_to": "release-owner"},
+    {"id": "OD-S4", "question": "Should deepwiki-scale become default for source-derived runs or stay opt-in.", "phase_discovered": "phase-5", "routed_to": "user-sign-off"}
+  ],
+  "assumptions": [
+    {"id": "A-S1", "text": "topic_kind=='family' distinguishes index-level from leaf topics.", "confidence": "medium", "phase_recorded": "phase-2", "validation_status": "accepted-pending"},
+    {"id": "A-S2", "text": "priority=='must' is the correct promotion signal.", "confidence": "high", "phase_recorded": "phase-2", "validation_status": "accepted"},
+    {"id": "A-S3", "text": "page_profile=='overview' is the only default index profile (tunable).", "confidence": "medium", "phase_recorded": "phase-2", "validation_status": "accepted-pending"}
+  ],
+  "decisions": [
+    {"id": "DEC-S1", "topic": "coverage mode name", "question": "Name of the new mode.", "user_choice": "deepwiki-scale", "phase_surfaced": "phase-3", "status": "resolved"},
+    {"id": "DEC-S2", "topic": "slice boundary", "question": "Scope of first delivery.", "user_choice": "Phase 2 promotion contract + anti-compression gates + data contract + CLI wiring + tests; downstream treats deepwiki-scale as expanded for now.", "phase_surfaced": "phase-3", "status": "resolved"}
+  ],
+  "artifact_paths": {
+    "input": "input.md",
+    "prd_final": "artifacts/final_prd.md",
+    "traceability_matrix": "artifacts/traceability_matrix.md"
+  },
+  "related_design": {
+    "tdd": "docs/technical-design/deepwiki-scale-parity-next-phase/final/technical-design-document.md",
+    "prior_prd": "docs/product-requirements/deepwiki-coverage-expansion/artifacts/final_prd.md"
+  }
+}
