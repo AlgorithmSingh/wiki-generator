@@ -1,0 +1,6 @@
+{"id":"D-01","phase":"phase-2-product-understanding","decision":"Treat ragflow-deepwiki.md as benchmark-only: breadth comparator, not citeable evidence or source truth.","basis":["SRC-USER","SRC-REV","SRC-COMP"]}
+{"id":"D-02","phase":"phase-2-product-understanding","decision":"Frame coverage expansion as upstream topic/page discovery and planning, not Phase 4 prose-length expansion.","basis":["SRC-USER","SRC-COVX","SRC-DR"]}
+{"id":"D-03","phase":"phase-3-requirements-construction","decision":"Preserve strict validators and deterministic Phase 3 retrieval as non-negotiable product rules.","basis":["SRC-USER","SRC-SPEC","SRC-HANDOFF"]}
+{"id":"D-04","phase":"phase-3-requirements-construction","decision":"Forbid output patching, synthetic evidence, silent downgrades, and generic heal/retry-until-green loops.","basis":["SRC-USER","SRC-COVX","SRC-SPEC"]}
+{"id":"D-05","phase":"phase-3-requirements-construction","decision":"Allow bounded repair only for LLM-authored plans or claim plans with exact diagnostics, hard caps, audit artifacts, and strict revalidation.","basis":["SRC-USER","SRC-SPEC","SRC-HANDOFF"]}
+{"id":"D-06","phase":"phase-4-prd-drafting","decision":"Keep the PRD product/requirements focused and defer module-level architecture to later TDD.","basis":["SRC-USER"]}

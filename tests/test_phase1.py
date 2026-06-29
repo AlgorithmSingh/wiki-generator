@@ -440,6 +440,41 @@ class DigestTests(unittest.TestCase):
     def test_upload_within_budget(self):
         self.assertIn("within budget", self.dig.stderr)
 
+    # --- Phase A: topic catalog (shadow mode) --------------------------------
+    def test_topic_catalog_artifacts_written(self):
+        # condense/digest emit the deterministic catalog markdown + JSON sidecar.
+        md = os.path.join(self.out, "derived", "planning-topic-catalog.md")
+        js = os.path.join(self.out, "derived", "topic-catalog.json")
+        self.assertTrue(os.path.exists(md), "missing planning-topic-catalog.md")
+        self.assertTrue(os.path.exists(js), "missing topic-catalog.json")
+        with open(js, encoding="utf-8") as f:
+            data = json.load(f)
+        self.assertEqual(data["schema_version"], "deepwiki-topic-catalog-v1")
+        self.assertFalse(data["citeable_as_evidence"])
+        self.assertEqual(data["role"], "planner_context")
+        self.assertEqual(data["family_count"], 13)
+        self.assertTrue(data["source_fingerprint"].startswith("sha256:"))
+        # the markdown loudly labels itself non-citeable planner context
+        self.assertIn("not citeable Phase 3 evidence", self._read(
+            "derived", "planning-topic-catalog.md"))
+
+    def test_topic_catalog_is_deterministic_across_runs(self):
+        first = self._read("derived", "topic-catalog.json")
+        _run_cmd("condense", "--in", self.out)
+        self.assertEqual(first, self._read("derived", "topic-catalog.json"))
+
+    def test_topic_catalog_markdown_shipped_in_upload_bundle(self):
+        pkg = os.path.join(self.out, "planner-digest")
+        self.assertTrue(os.path.exists(
+            os.path.join(pkg, "planning-topic-catalog.md")))
+        with open(os.path.join(pkg, "planner-upload-bundle.md"),
+                  encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn(
+            "BEGIN INCLUDED FILE: derived/planning-topic-catalog.md", text)
+        # the machine-readable JSON sidecar is NOT uploaded (planner context only)
+        self.assertNotIn("topic-catalog.json", set(os.listdir(pkg)))
+
     def test_graph_labels_disambiguate_same_file(self):
         # Two symbols in one file must not collapse to one ambiguous label.
         from wiki_generator.libs.digest import planning_graph as G

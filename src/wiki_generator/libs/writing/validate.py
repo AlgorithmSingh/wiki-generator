@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 from . import citations as cit
 from . import generated_coverage as gencov
-from .options import COVERAGE_MODE_ENHANCEMENT
+from .options import ENFORCING_COVERAGE_MODES
 from .schema import (
     GOOD_FINISH_REASONS,
     TRUNCATION_FINISH_REASONS,
@@ -57,6 +57,7 @@ class SectionValidation:
     citations_total: int = 0
     finish_reason: str = "UNKNOWN"
     covered_topics: list = field(default_factory=list)  # enhancement declaration
+    covered_content_blocks: list = field(default_factory=list)  # expanded declaration
 
     @property
     def rewriteable_problems(self) -> list:
@@ -139,6 +140,10 @@ def validate_section_draft(*, section_id, draft, parse_note, finish_reason,
     # Its semantic validation against the markdown happens in the deterministic
     # whole-document generated-coverage check (a writing-validation failure, exit 5).
     covered_topics = gencov.normalize_covered_topics(draft.get("covered_topics"))
+    # Expanded-mode generated content-block declaration (read-only; validated against
+    # the markdown in the deterministic whole-document generated-coverage check).
+    covered_content_blocks = gencov.normalize_covered_content_blocks(
+        draft.get("covered_content_blocks"))
 
     # 2. citation resolution ---------------------------------------------------
     cres = cit.resolve_citations(
@@ -203,7 +208,8 @@ def validate_section_draft(*, section_id, draft, parse_note, finish_reason,
         cited_ids=cres["resolved"], cross_section=cres["cross_section"],
         violations=violations, warnings=warnings,
         citations_total=len(cit.extract_citations(markdown)), finish_reason=fr,
-        covered_topics=covered_topics)
+        covered_topics=covered_topics,
+        covered_content_blocks=covered_content_blocks)
 
 
 # --- final whole-document validation ------------------------------------------
@@ -296,7 +302,7 @@ def validate_document(bundle, generated, citation_manifest, out_dir) -> dict:
     # post-provider). A missing/placeholder/out-of-scope/uncited topic is a
     # writing-validation failure (exit 5). Never runs in baseline mode.
     generated_coverage = None
-    if getattr(bundle, "coverage_mode", "baseline") == COVERAGE_MODE_ENHANCEMENT:
+    if getattr(bundle, "coverage_mode", "baseline") in ENFORCING_COVERAGE_MODES:
         generated_coverage = gencov.evaluate_generated_coverage(
             bundle, generated, citation_manifest)
         gc_counts = generated_coverage["counts"]
@@ -305,6 +311,16 @@ def validate_document(bundle, generated, citation_manifest, out_dir) -> dict:
             "topics generated with valid mapped citations"
             if generated_coverage["status"] == "pass"
             else "; ".join(generated_coverage["failures"][:4]))
+        # Expanded mode also reports a content-block coverage line (the same
+        # generated-coverage check fails the run if any content block is uncovered).
+        if gc_counts.get("required_content_blocks"):
+            chk(gencov.GENERATED_BLOCK_COVERAGE_CHECK,
+                generated_coverage["status"] == "pass",
+                f"{gc_counts.get('content_blocks_covered', 0)}/"
+                f"{gc_counts['required_content_blocks']} evidenced required content "
+                "blocks generated with valid mapped citations"
+                if generated_coverage["status"] == "pass"
+                else "; ".join(generated_coverage["failures"][:4]))
 
     failed = [c for c in checks if c["status"] != "pass"]
     doc = {

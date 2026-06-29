@@ -42,6 +42,7 @@ CONDENSATES = [
     "planning-tests.md",
     "planning-gaps.md",
     "planning-coverage-signals.md",
+    "planning-topic-catalog.md",
 ]
 
 # Trimmable supporting artifacts (always offered when present), in bundle order.
@@ -222,6 +223,14 @@ def _readme(repo_root: str, source_bundle: str, generated_at: str,
           "Those candidate paths are planner **context only** — never citeable "
           "evidence; still place exact handles from `planning-handles.md` in the "
           "exact lanes.",
+          "",
+          "`planning-topic-catalog.md` goes one level deeper: a deterministic, "
+          "repository-derived catalog of candidate **parent topics** (the mandatory "
+          "families) and **child subsystems** (source-derived, by directory) with "
+          "suggested page profiles and candidate source handles. Use it to plan a "
+          "hierarchical parent/child page tree. It is planner **context only** — "
+          "non-citeable and benchmark-isolated; weak/deferred topics are explicit "
+          "known gaps, not pages to invent.",
           "",
           "Produce:",
           "",

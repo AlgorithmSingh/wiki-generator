@@ -9,17 +9,17 @@ from __future__ import annotations
 import argparse
 import os
 
-from ..coverage import derive_coverage_signals
+from ..coverage import build_topic_catalog, derive_coverage_signals
 from ..digest import loader
 from ..digest import planning_coverage_signals, planning_gaps, planning_graph
 from ..digest import planning_handles, planning_runtime_surfaces
-from ..digest import planning_symbols, planning_tests
+from ..digest import planning_symbols, planning_tests, planning_topic_catalog
 from ..util import log, token_estimate, write_json, write_text
 
 # condensate filename -> builder module. planning-handles.md leads so the exact
 # retrieval handles sit at the front of the planner bundle (right after README).
-# planning-coverage-signals.md trails: it is a coverage map over the families the
-# earlier condensates already surfaced.
+# planning-coverage-signals.md and planning-topic-catalog.md trail: they are
+# coverage maps over the families/subsystems the earlier condensates surfaced.
 CONDENSATES = [
     ("planning-handles.md", planning_handles),
     ("planning-symbols.md", planning_symbols),
@@ -28,6 +28,7 @@ CONDENSATES = [
     ("planning-tests.md", planning_tests),
     ("planning-gaps.md", planning_gaps),
     ("planning-coverage-signals.md", planning_coverage_signals),
+    ("planning-topic-catalog.md", planning_topic_catalog),
 ]
 
 
@@ -52,6 +53,7 @@ def write_condensates(bundle, derived_dir: str) -> list[tuple[str, int]]:
         log(f"  wrote derived/{name}  (~{toks:,} tokens)")
 
     # Machine-readable coverage-signals sidecar (isolated like the condensates).
+    signals = None
     try:
         signals = derive_coverage_signals(bundle)
         write_json(os.path.join(derived_dir, "coverage-signals.json"),
@@ -61,6 +63,20 @@ def write_condensates(bundle, derived_dir: str) -> list[tuple[str, int]]:
             f"of {signals.family_count} families)")
     except Exception as e:  # noqa: BLE001 - sidecar failure must not abort condense
         log(f"coverage-signals.json FAILED: {e.__class__.__name__}: {e}")
+
+    # Phase A: machine-readable topic-catalog sidecar (planner CONTEXT, never
+    # citeable evidence; deterministic and benchmark-isolated). Isolated like the
+    # condensates so a failure here never aborts the condense step.
+    try:
+        catalog = build_topic_catalog(bundle, signals)
+        write_json(os.path.join(derived_dir, "topic-catalog.json"),
+                   catalog.to_dict())
+        log(f"  wrote derived/topic-catalog.json  "
+            f"({catalog.topic_count} topics: {catalog.family_count} families, "
+            f"{catalog.subsystem_count} subsystems, {catalog.deferred_count} "
+            f"deferred)")
+    except Exception as e:  # noqa: BLE001 - sidecar failure must not abort condense
+        log(f"topic-catalog.json FAILED: {e.__class__.__name__}: {e}")
     return written
 
 

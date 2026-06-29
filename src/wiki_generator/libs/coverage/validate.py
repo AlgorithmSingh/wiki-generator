@@ -36,7 +36,23 @@ COVERAGE_VALIDATION_SCHEMA_VERSION = "phase2-coverage-validation-v1"
 
 MODE_ENHANCEMENT = "enhancement"
 MODE_BASELINE = "baseline"
-_MODES = (MODE_ENHANCEMENT, MODE_BASELINE)
+# ``expanded`` is the opt-in DeepWiki-style hierarchical coverage mode. It is a
+# strict superset of ``enhancement``: it enforces the same planned-coverage and
+# topic-obligation gates AND the additional Phase B/C hierarchical catalog / page
+# profile / content-block / relevant-source-map gates. ``enhancement`` keeps its
+# exact historical behaviour (the existing enhancement gates only); ``baseline``
+# reports without enforcing. Staging the expanded gates behind their own mode keeps
+# every existing baseline AND enhancement run non-breaking (TDD OD-02 / OD-03).
+MODE_EXPANDED = "expanded"
+_MODES = (MODE_ENHANCEMENT, MODE_BASELINE, MODE_EXPANDED)
+# The modes whose gates fail closed (vs. report-only). ``expanded`` enforces like
+# ``enhancement``; both the planned-coverage and topic-obligation gates consult this.
+_ENFORCING_MODES = frozenset({MODE_ENHANCEMENT, MODE_EXPANDED})
+
+
+def is_enforcing(mode: str) -> bool:
+    """True when ``mode`` fails closed (``enhancement`` or ``expanded``)."""
+    return mode in _ENFORCING_MODES
 
 # Exit codes for the deterministic planned coverage gate (shared by the standalone
 # ``validate-coverage`` command and the integrated ``normalize-plan
@@ -224,7 +240,7 @@ def evaluate_plan_coverage(document_plan: dict | None, sections: list, *,
             missing.append(family.key)
             diagnostics.append(_diagnostic(family))
 
-    enforced = mode == MODE_ENHANCEMENT
+    enforced = is_enforcing(mode)
     status = "fail" if (enforced and missing) else "pass"
     section_count = len(sections)
     if not section_count and isinstance(document_plan, dict):

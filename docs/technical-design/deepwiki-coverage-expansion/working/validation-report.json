@@ -1,0 +1,71 @@
+{
+  "schema_version": "tdd-validation-report-v1",
+  "workspace_root": "docs/technical-design/deepwiki-coverage-expansion",
+  "status": "pass",
+  "validated_on": "2026-06-29",
+  "checks": [
+    {
+      "id": "VR-01",
+      "name": "required_files_present",
+      "status": "pass",
+      "details": "All files requested by the user are present under the workspace."
+    },
+    {
+      "id": "VR-02",
+      "name": "json_artifacts_parse",
+      "status": "pass",
+      "details": "manifest.json, definition-of-done.json, working/01-intent.json, working/03-rightsize-plan.json, and working/validation-report.json parse as JSON."
+    },
+    {
+      "id": "VR-03",
+      "name": "formal_tdd_toc",
+      "status": "pass",
+      "details": "final/technical-design-document.md includes a formal table of contents and the full TDD section set required by the prompt."
+    },
+    {
+      "id": "VR-04",
+      "name": "prd_requirement_coverage",
+      "status": "pass",
+      "details": "Final TDD addresses topic catalog, hierarchy, page profiles, source selection, evidence retrieval, grounded rendering, traceability, benchmark isolation, strict validators, fail-closed behavior, known gaps, reporting, and bounded repair."
+    },
+    {
+      "id": "VR-05",
+      "name": "benchmark_isolation",
+      "status": "pass",
+      "details": "Final TDD repeatedly marks benchmark material as comparator-only and excludes it from evidence, headings, prose, claims, required topics, and citation sources."
+    },
+    {
+      "id": "VR-06",
+      "name": "strict_validator_preservation",
+      "status": "pass",
+      "details": "Design preserves or strengthens existing citation, malformed-token, unsupported-identifier, placeholder, truncation, context-artifact, evidence, generated coverage, and freshness validators."
+    },
+    {
+      "id": "VR-07",
+      "name": "phase3_determinism",
+      "status": "pass",
+      "details": "Design keeps Phase 3 deterministic and LLM-free; source selection is deterministic before retrieval."
+    },
+    {
+      "id": "VR-08",
+      "name": "bounded_repair_policy",
+      "status": "pass",
+      "details": "Repair is limited to LLM-authored page plans and claim plans with exact diagnostics, audit artifacts, hard caps, and strict revalidation."
+    },
+    {
+      "id": "VR-09",
+      "name": "module_naming_grounding",
+      "status": "pass",
+      "details": "Existing modules are identified separately from inferred new modules."
+    },
+    {
+      "id": "VR-10",
+      "name": "code_not_edited",
+      "status": "pass",
+      "details": "Only documentation workspace files were created; no source code files were edited."
+    }
+  ],
+  "definition_of_done_status": "pass",
+  "diagnostics": [],
+  "revisit": null
+}

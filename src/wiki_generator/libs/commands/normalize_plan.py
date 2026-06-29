@@ -36,11 +36,12 @@ from .. import plan_normalization
 from ..util import log, write_json, write_text
 
 
-def _run_enhancement_gate(bundle_dir: str, out_dir: str) -> int:
-    """Deterministic Phase 2 → Phase 3 enhancement gates over the just-written plan.
+def _run_coverage_gates(bundle_dir: str, out_dir: str, mode: str) -> int:
+    """Deterministic Phase 2 → Phase 3 coverage gates over the just-written plan.
 
     Loads the normalized plan from ``out_dir`` (the exact artifacts Phase 3 reads)
-    and runs two complementary deterministic gates before Phase 3 retrieval:
+    and runs the deterministic gates for ``mode`` before Phase 3 retrieval. Both the
+    ``enhancement`` and ``expanded`` modes run:
 
     1. **Planned coverage** — does the plan name every mandatory DeepWiki topic
        family? Writes ``coverage-gate.json`` + ``coverage-gate-report.md``.
@@ -55,30 +56,38 @@ def _run_enhancement_gate(bundle_dir: str, out_dir: str) -> int:
        field that resolves in inventory but has no citeable chunk coverage — at the
        Phase 2 boundary instead of after Phase 3 retrieves and fails closed.
 
+    The ``expanded`` (DeepWiki-style hierarchical) mode additionally runs:
+
+    3. **Hierarchical page planning** — resolved acyclic parent/child links, a valid
+       page profile and its required content blocks per page, and every high-signal
+       catalog topic planned or explicitly deferred. Writes ``page-planning-gate.json``
+       + ``page-planning-report.md``. It reads the Phase A ``derived/topic-catalog.json``;
+       an absent catalog in expanded mode is a hard missing-input failure (exit 2).
+
     The citeable-source-availability part of gate 2 reads the bundle's
     ``rag/chunks.jsonl`` corpus (the same chunk substrate Phase 3 cites) into a
     read-only :class:`~coverage.CiteableSubstrate` view. When that corpus is absent,
     the citeability check is skipped (report-only) and only the plan-only shape +
     lane/type checks run; the gate logs which mode it used.
 
-    Returns ``0`` only when BOTH gates pass; ``COVERAGE_GATE_FAIL_EXIT`` (3) when
-    either fails. Neither gate adds or repairs anything — upstream prevention is by
-    loud failure, not auto-heal."""
+    Returns ``0`` only when ALL applicable gates pass; the first failing gate's exit
+    code otherwise. No gate adds or repairs anything — upstream prevention is by loud
+    failure, not auto-heal."""
     try:
         document_plan, sections = coverage.load_plan_from_dir(out_dir)
     except FileNotFoundError as e:
         # The normalizer just wrote these; their absence is a real failure.
-        log(f"  enhancement gate: cannot read normalized plan — {e}")
+        log(f"  coverage gate: cannot read normalized plan — {e}")
         return coverage.COVERAGE_GATE_INPUT_EXIT
 
+    label = f"{mode} mode"
+
     # 1) planned coverage gate (mandatory topic families).
-    cov_gate = coverage.gate_plan_coverage(document_plan, sections,
-                                           mode=coverage.MODE_ENHANCEMENT)
+    cov_gate = coverage.gate_plan_coverage(document_plan, sections, mode=mode)
     write_json(os.path.join(out_dir, "coverage-gate.json"), cov_gate.to_dict())
     write_text(os.path.join(out_dir, "coverage-gate-report.md"),
                coverage.render_markdown(
-                   cov_gate.report,
-                   title="Phase 2 Planned Coverage Gate (enhancement mode)"))
+                   cov_gate.report, title=f"Phase 2 Planned Coverage Gate ({label})"))
     for line in cov_gate.summary_lines():
         log(f"  {line}")
     log("  planned coverage gate report: "
@@ -91,23 +100,89 @@ def _run_enhancement_gate(bundle_dir: str, out_dir: str) -> int:
     if substrate is None:
         log("  topic-obligation gate: no rag/chunks.jsonl corpus — citeable-source "
             "viability NOT checked (lane/type + shape checks only)")
-    ob_gate = coverage.gate_topic_obligations(document_plan, sections,
-                                              mode=coverage.MODE_ENHANCEMENT,
+    ob_gate = coverage.gate_topic_obligations(document_plan, sections, mode=mode,
                                               substrate=substrate)
     write_json(os.path.join(out_dir, "topic-obligations-gate.json"),
                ob_gate.to_dict())
     write_text(os.path.join(out_dir, "topic-obligations-report.md"),
                coverage.render_obligations_markdown(
-                   ob_gate.report,
-                   title="Phase 2 Topic-Obligation Gate (enhancement mode)"))
+                   ob_gate.report, title=f"Phase 2 Topic-Obligation Gate ({label})"))
     for line in ob_gate.summary_lines():
         log(f"  {line}")
     log("  topic-obligation gate report: "
         f"{os.path.join(out_dir, 'topic-obligations-report.md')}")
 
-    # Both must pass to reach Phase 3. Either failure is exit 3 before retrieval.
-    return (cov_gate.exit_code if not cov_gate.passed
-            else ob_gate.exit_code)
+    if not cov_gate.passed:
+        return cov_gate.exit_code
+    if not ob_gate.passed:
+        return ob_gate.exit_code
+
+    # 3) expanded-only gates (hierarchical page planning + relevant-source map).
+    if mode == coverage.MODE_EXPANDED:
+        return _run_expanded_gates(bundle_dir, out_dir, document_plan, sections)
+    return 0
+
+
+def _run_expanded_gates(bundle_dir: str, out_dir: str, document_plan: dict,
+                        sections: list) -> int:
+    """The expanded-mode-only Phase 2 gates: hierarchical page planning and the
+    deterministic relevant-source map. Reads the Phase A topic catalog; an absent
+    catalog is a hard missing-input failure (exit 2). Returns ``0`` when all expanded
+    gates pass, else the first failing gate's exit code. Never edits the plan."""
+    catalog = coverage.load_topic_catalog(bundle_dir)
+    if catalog is None:
+        log("  page-planning gate: expanded mode requires "
+            "derived/topic-catalog.json (Phase A); it is absent — run condense/"
+            "digest first. FAIL (missing input).")
+        return coverage.COVERAGE_GATE_INPUT_EXIT
+
+    pp_gate = coverage.gate_page_planning(catalog, document_plan, sections,
+                                          mode=coverage.MODE_EXPANDED)
+    write_json(os.path.join(out_dir, "page-planning-gate.json"), pp_gate.to_dict())
+    write_text(os.path.join(out_dir, "page-planning-report.md"),
+               coverage.render_page_planning_markdown(
+                   pp_gate.report,
+                   title="Phase 2 Hierarchical Page-Planning Gate (expanded mode)"))
+    for line in pp_gate.summary_lines():
+        log(f"  {line}")
+    log("  page-planning gate report: "
+        f"{os.path.join(out_dir, 'page-planning-report.md')}")
+    if not pp_gate.passed:
+        return pp_gate.exit_code
+
+    # Phase C: deterministic relevant-source map + source-selection gate.
+    return _run_source_map_gate(bundle_dir, out_dir, catalog, document_plan, sections)
+
+
+def _run_source_map_gate(bundle_dir: str, out_dir: str, catalog: dict,
+                         document_plan: dict, sections: list) -> int:
+    """Phase C: build ``plans/relevant-source-map.json`` deterministically and gate it.
+
+    Selects each page's exact citeable source handles from the normalized plan's
+    resolved lanes (never benchmark/generated-wiki inputs), fingerprints the catalog
+    and plan it consumed, and fails closed (exit 3) when a page-profile floor, a
+    blocking required topic, or an evidence-bearing content block has no citeable
+    selected handle. The file/test citeability decision uses the bundle's
+    ``rag/chunks.jsonl`` substrate when present (else those lanes are undecidable and
+    never cause a false failure). Never edits the plan."""
+    substrate = coverage.load_citeable_substrate(bundle_dir)
+    source_map = coverage.build_relevant_source_map(
+        catalog, document_plan, sections, substrate=substrate)
+    write_json(os.path.join(out_dir, "relevant-source-map.json"),
+               source_map.to_dict())
+    sm_gate = coverage.gate_source_map(source_map, sections,
+                                       mode=coverage.MODE_EXPANDED)
+    write_json(os.path.join(out_dir, "source-selection-gate.json"),
+               sm_gate.to_dict())
+    write_text(os.path.join(out_dir, "relevant-source-map-report.md"),
+               coverage.render_source_map_markdown(
+                   source_map, sm_gate,
+                   title="Phase 2 Relevant Source Map (expanded mode)"))
+    for line in sm_gate.summary_lines():
+        log(f"  {line}")
+    log("  relevant source map: "
+        f"{os.path.join(out_dir, 'relevant-source-map.json')}")
+    return sm_gate.exit_code
 
 
 def run(args: argparse.Namespace) -> int:
@@ -158,13 +233,15 @@ def run(args: argparse.Namespace) -> int:
     else:
         log("normalize-plan: done")
 
-    # Phase 2 → Phase 3 planned coverage boundary. Baseline (default) stays non-breaking;
-    # enhancement runs the deterministic planned coverage gate and fails loudly on a missing family.
+    # Phase 2 → Phase 3 coverage boundary. Baseline (default) stays non-breaking;
+    # enhancement runs the deterministic planned-coverage + topic-obligation gates;
+    # expanded additionally runs the hierarchical page-planning + relevant-source-map
+    # gates and fails loudly on a missing family/obligation/page/source obligation.
     coverage_mode = getattr(args, "coverage_mode", coverage.MODE_BASELINE)
-    if coverage_mode == coverage.MODE_ENHANCEMENT:
-        gate_rc = _run_enhancement_gate(bundle_dir, out_dir)
+    if coverage_mode in (coverage.MODE_ENHANCEMENT, coverage.MODE_EXPANDED):
+        gate_rc = _run_coverage_gates(bundle_dir, out_dir, coverage_mode)
         # A strict-normalization failure is more fundamental than coverage; report
-        # both but let strict (rc=1) take precedence over the coverage code (3).
+        # both but let strict (rc=1) take precedence over the coverage code (2/3).
         if gate_rc != 0 and rc == 0:
             rc = gate_rc
     return rc

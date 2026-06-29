@@ -1,0 +1,109 @@
+{
+  "schema_version": "tdd-definition-of-done-v1",
+  "title": "Definition of Done — DeepWiki Coverage Expansion TDD",
+  "status": "final",
+  "design_specific_gates": [
+    {
+      "id": "DOD-01",
+      "name": "Workspace completeness",
+      "type": "documentation",
+      "required": true,
+      "criteria": "All required TDD workspace files exist under docs/technical-design/deepwiki-coverage-expansion/ and are non-empty.",
+      "validation_method": "file inventory check",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-02",
+      "name": "Formal TDD structure",
+      "type": "documentation",
+      "required": true,
+      "criteria": "Final TDD includes header metadata, table of contents, goals/non-goals/future goals, metrics, requirements, architecture, detailed design, data contracts, interfaces, validation, implementation, rollout, operations, risks, alternatives, ADRs, and references.",
+      "validation_method": "manual section review against TDD guide",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-03",
+      "name": "Requirement coverage",
+      "type": "traceability",
+      "required": true,
+      "criteria": "All PRD Must requirements UR-01 through UR-12 and UR-15 are addressed by architecture, data contracts, validation, and implementation sections; Should requirements UR-13 and UR-14 are addressed or staged.",
+      "validation_method": "cross-check final TDD against PRD and traceability matrix",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-04",
+      "name": "Benchmark isolation",
+      "type": "safety",
+      "required": true,
+      "criteria": "TDD explicitly states benchmark material is comparator-only and must not become citeable evidence, generated headings, copied prose, copied claims, or source truth.",
+      "validation_method": "search/review final TDD and ADR",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-05",
+      "name": "Strict validator preservation",
+      "type": "quality",
+      "required": true,
+      "criteria": "Design preserves or strengthens citation, malformed-token, unsupported-identifier, placeholder, truncation, context-artifact, generated coverage, evidence sufficiency, and freshness validators; no weakening is proposed.",
+      "validation_method": "review constraints and validation sections",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-06",
+      "name": "Deterministic Phase 3",
+      "type": "architecture",
+      "required": true,
+      "criteria": "Phase 3 remains deterministic and LLM-free; page-level source selection and evidence retrieval are deterministic and fail closed.",
+      "validation_method": "review architecture/data-flow sections",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-07",
+      "name": "Bounded repair policy",
+      "type": "safety",
+      "required": true,
+      "criteria": "Repair is limited to LLM-authored page plans or claim plans, uses exact diagnostics, audit artifacts, hard attempt caps, and strict revalidation; no generic heal/retry loop or output patching is proposed.",
+      "validation_method": "review design constraints, behavior, and rollout sections",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-08",
+      "name": "Data contract specificity",
+      "type": "architecture",
+      "required": true,
+      "criteria": "TDD defines topic-catalog, hierarchical page-plan, relevant-source-map, evidence linkage, generated coverage, citation manifest, and coverage traceability artifacts with required fields and ownership.",
+      "validation_method": "review data contracts section",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-09",
+      "name": "Implementation readiness",
+      "type": "execution",
+      "required": true,
+      "criteria": "TDD names likely existing and inferred modules to create/modify, phased milestones, tests, rollout, rollback, operations, and risks.",
+      "validation_method": "review detailed design and execution readiness artifacts",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-10",
+      "name": "JSON validity",
+      "type": "artifact-quality",
+      "required": true,
+      "criteria": "JSON artifacts in the workspace parse successfully.",
+      "validation_method": "python json parser over manifest, definition of done, intent, rightsize plan, validation report",
+      "status": "pass"
+    }
+  ],
+  "implementation_acceptance_gates_from_design": [
+    "Catalog gate: source-derived topic catalog exists, is deterministic, and excludes benchmark-only material.",
+    "Planning gate: hierarchy, page profiles, required content blocks, required topics, and source obligations are complete.",
+    "Source-selection gate: per-page relevant file/symbol/span/contract/test/doc handles are selected before Phase 3.",
+    "Evidence gate: every blocking topic/content block has sufficient exact citeable evidence before Phase 4.",
+    "Grounded rendering gate: pages render from validated grounded claim/token plans.",
+    "Generated coverage gate: every evidenced obligation maps to Markdown anchors and valid local citations.",
+    "Validator gate: all strict validators pass without weakening.",
+    "Freshness gate: downstream PASS artifacts fingerprint the exact plan/evidence artifacts consumed.",
+    "Benchmark isolation gate: comparison report is separate, non-citeable, and excluded from evidence gates.",
+    "Traceability gate: topic catalog to final output lineage is complete or explicitly deferred with reason."
+  ]
+}

@@ -8,6 +8,8 @@ This is the single README for project documentation. Keep detailed specs, handof
 - `specs/not-done/` — active approved work with remaining implementation or verification tasks. This is where the current coding-agent source of truth should live.
 - `specs/future/` — proposed ideas or reference-driven architecture notes. These are not approved for implementation and are not gates.
 - `specs/protected/` — canonical contracts that should be amended through new iteration specs rather than casually edited.
+- `product-requirements/` — PRDs for upcoming or active product-level changes.
+- `technical-design/` — TDD workspaces and final technical designs for implementation-ready changes.
 - `handoffs/done/` — historical handoffs for completed or superseded phases.
 - `handoffs/not-done/` — active handoffs for unfinished work.
 
@@ -15,9 +17,12 @@ There is intentionally no separate `plans/` tree now. Early plans are treated as
 
 ## Current source of truth
 
-- Active implementation spec: `specs/not-done/PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md` — Phase 4 claim/token planning and grounded rendering is implemented as the opt-in `write-wiki --grounded-claim-plan` path; grounded enhancement-mode temp validation passed, and the official live/billed Vertex/Gemini E2E passed under `/Users/ankitsingh/Documents/deep-wiki/15-e2e/20260628-001925-official-live-vertex-grounded-e2e`.
+- Active implementation spec: `specs/not-done/DEEPWIKI_COVERAGE_EXPANSION_IMPLEMENTATION_SPEC.md` — expanded DeepWiki-style coverage implementation. Phase A–F are implemented locally and validated non-live, including the expanded `write-wiki` fake-provider command E2E. Next step is a broader non-live expanded E2E under `/Users/ankitsingh/Documents/deep-wiki/19-do-it-e2e`. Phase G live validation remains unauthorized without explicit approval.
+- Prior enhancement spec: `specs/not-done/PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md` — Phase 4 claim/token planning and grounded rendering is implemented as the opt-in `write-wiki --grounded-claim-plan` path; grounded enhancement-mode temp validation passed, and the official live/billed Vertex/Gemini E2E passed under `/Users/ankitsingh/Documents/deep-wiki/15-e2e/20260628-001925-official-live-vertex-grounded-e2e`.
 - Active handoff: `handoffs/not-done/HANDOFF_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION.md`
 - Protected Phase 3 evidence contract: `specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md`
+- Coverage expansion PRD: `product-requirements/deepwiki-coverage-expansion/artifacts/final_prd.md`
+- Coverage expansion TDD: `technical-design/deepwiki-coverage-expansion/final/technical-design-document.md`
 - Future architecture borrowing note: `specs/future/DEEPWIKI_OPEN_ARCHITECTURE_BORROWING_SPEC.md`
 
 ## Sequence journal
@@ -36,7 +41,9 @@ Oldest to newest, by project intent:
 10. `specs/done/PHASE4_WRITING_SYNTHESIS_SPEC.md` — **done / implemented spec**. Phase 4 writing command and validation baseline.
 11. `specs/done/PHASE4_WRITING_SYNTHESIS_ITERATION_2_SPEC.md` — **done / implemented amendment**. Shell-variable/path synthesized-identifier rewrite behavior.
 12. `specs/not-done/PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md` plus `handoffs/not-done/HANDOFF_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION.md` — **active / not done**. Completed foundation slices: Milestone 1 malformed-token validation, Milestone 2 coverage taxonomy/validation, Phase 2 planning/PagePlan obligation preservation, Phase 1 deterministic coverage-signal expansion, Phase 2 planned-coverage upstream-prevention gating, Phase 3 evidenced coverage, Phase 4 enhancement-mode hierarchical writing + generated coverage, wrapper `--coverage-mode` support, the non-live hierarchical E2E + benchmark-only comparison, the Phase 2 required-topic evidence-obligation gate, the Phase 2 TER source-field canonicalization + enhancement-mode bounded `plan-repair` diagnostics, the Phase 2/3 TER evidence-alignment gate (lane/type consistency + citeable-substrate viability via `coverage/substrate.py`), one-shot Phase 4 prompt hardening through commit `3eb72b6`, and the grounded Phase 4 claim/token planning path through `00cdd71`. Large grounded temp validation over the existing green RAGFlow Phase 1-3 bundle passed at `/Users/ankitsingh/Documents/deep-wiki/13-e2e-allphases/live-ragflow-enhancement-runs/20260627-231309-phase4-temp-pi-gpt54-0f5734d`; the official live/billed Vertex/Gemini grounded E2E then passed at `/Users/ankitsingh/Documents/deep-wiki/15-e2e/20260628-001925-official-live-vertex-grounded-e2e` with writing validation pass, generated coverage `53/53`, and benchmark-only comparison written. Pending next: review/sign off the generated wiki and decide whether grounded mode should remain opt-in or become default.
-13. `specs/future/DEEPWIKI_OPEN_ARCHITECTURE_BORROWING_SPEC.md` — **future / not approved**. Reference-only architecture borrowing ideas from `deepwiki-open`.
+13. `product-requirements/deepwiki-coverage-expansion/artifacts/final_prd.md` plus `technical-design/deepwiki-coverage-expansion/final/technical-design-document.md` — **active planning / not implemented**. Defines the next coverage-expansion direction: source-derived hierarchical topic/page catalog, per-page source selection, deterministic page-level evidence, grounded claim-plan rendering per page, and topic→plan→evidence→output traceability. Benchmark material remains comparator-only.
+14. `specs/not-done/DEEPWIKI_COVERAGE_EXPANSION_IMPLEMENTATION_SPEC.md` — **active implementation / Phase A–F implemented non-live**. Phase A deterministic topic catalog artifacts and Phases B–F expanded coverage mode are implemented locally: hierarchical planning contracts/gates, deterministic relevant-source map, profile-aware evidence portfolios, grounded page-profile rendering/content-block coverage, traceability/freshness, and expanded `write-wiki` fake-provider command E2E. Next step is broader non-live expanded E2E. Phase G live validation requires separate explicit approval.
+15. `specs/future/DEEPWIKI_OPEN_ARCHITECTURE_BORROWING_SPEC.md` — **future / not approved**. Reference-only architecture borrowing ideas from `deepwiki-open`.
 
 ## Cleanup rules for future agents
 

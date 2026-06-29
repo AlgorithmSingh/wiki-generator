@@ -9,11 +9,16 @@ Evidence IDs are copied verbatim — never renumbered — so citations round-tri
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
+from .. import util
 from . import generated_coverage as gencov
-from .options import COVERAGE_MODE_ENHANCEMENT
+from .options import COVERAGE_MODE_EXPANDED, ENFORCING_COVERAGE_MODES
 from .schema import WRITING_PACKET_SCHEMA_VERSION
+
+# Phase C artifact the expanded writing packet surfaces per page (optional read).
+_RELEVANT_SOURCE_MAP_REL = "plans/relevant-source-map.json"
 
 
 @dataclass
@@ -24,6 +29,7 @@ class WritingPacket:
     data: dict                       # the serializable packet handed to the prompt
     allowed_evidence_ids: list       # this section's own citeable IDs (verbatim)
     required_topics_coverage: list = None  # enhancement: evidenced topic obligations
+    content_block_coverage: list = None    # expanded: evidenced content-block obligations
 
 
 def _evidence_row(ev: dict) -> dict:
@@ -113,7 +119,9 @@ def build_writing_packet(bundle, sid: str) -> WritingPacket:
     # evidenced topic rows so the writer knows the exact required topics it must
     # cover and the exact evidence_ids that support each one.
     required_topics_coverage = None
-    if getattr(bundle, "coverage_mode", "baseline") == COVERAGE_MODE_ENHANCEMENT:
+    content_block_coverage = None
+    coverage_mode = getattr(bundle, "coverage_mode", "baseline")
+    if coverage_mode in ENFORCING_COVERAGE_MODES:
         obligations = (bundle.topic_obligations or {}).get(sid) or []
         data["hierarchy"] = {
             "parent_section_id": plan.get("parent_section_id"),
@@ -129,6 +137,24 @@ def build_writing_packet(bundle, sid: str) -> WritingPacket:
             for ob in obligations]
         required_topics_coverage = data["required_topics_coverage"]
 
+    # Expanded (DeepWiki hierarchical) mode: carry the page profile, catalog topics,
+    # required content blocks, the Phase D content-block obligations (the exact
+    # evidence each block must be written with), and this page's deterministic
+    # relevant-source-map rows so the writer renders by content block.
+    if coverage_mode == COVERAGE_MODE_EXPANDED:
+        block_obs = (getattr(bundle, "content_block_obligations", None) or {}).get(sid) or []
+        data["page_profile"] = plan.get("page_profile")
+        data["catalog_topic_ids"] = list(plan.get("catalog_topic_ids") or [])
+        data["required_content_blocks"] = list(plan.get("required_content_blocks") or [])
+        data["content_block_coverage"] = [
+            {"content_block_id": ob.get("content_block_id"),
+             "evidenced_status": ob.get("evidenced_status"),
+             "is_obligation": ob.get("is_obligation"),
+             "supporting_evidence_ids": list(ob.get("supporting_evidence_ids") or [])}
+            for ob in block_obs]
+        content_block_coverage = data["content_block_coverage"]
+        data["relevant_source_handles"] = _relevant_source_handles(bundle, sid)
+
     return WritingPacket(
         section_id=sid,
         title=plan.get("title") or sid,
@@ -136,4 +162,22 @@ def build_writing_packet(bundle, sid: str) -> WritingPacket:
         data=data,
         allowed_evidence_ids=allowed_ids,
         required_topics_coverage=required_topics_coverage,
+        content_block_coverage=content_block_coverage,
     )
+
+
+def _relevant_source_handles(bundle, sid: str) -> list:
+    """This page's selected source handles from ``plans/relevant-source-map.json``,
+    or ``[]`` when the map is absent. Orientation context for the writer — never
+    citeable (citations still resolve only through the EvidencePacket manifest)."""
+    path = os.path.join(getattr(bundle, "root", ""), _RELEVANT_SOURCE_MAP_REL)
+    if not os.path.isfile(path):
+        return []
+    try:
+        source_map = util.read_json(path)
+    except (OSError, ValueError):
+        return []
+    for page in (source_map or {}).get("pages") or []:
+        if page.get("section_id") == sid:
+            return list(page.get("selected_handles") or [])
+    return []

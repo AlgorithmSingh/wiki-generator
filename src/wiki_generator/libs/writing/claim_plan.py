@@ -256,6 +256,7 @@ def validate_claim_plan(plan, *, section_id, token_bank, allowed_evidence_ids,
         for eid in token_evidence_ids:
             if eid not in render_evidence_ids:
                 render_evidence_ids.append(eid)
+        cb = claim.get("content_block_id")
         norm_claims.append({
             "claim_id": claim.get("claim_id"),
             "claim_kind": kind,
@@ -264,6 +265,9 @@ def validate_claim_plan(plan, *, section_id, token_bank, allowed_evidence_ids,
             "token_evidence_ids": token_evidence_ids,
             "render_evidence_ids": render_evidence_ids,
             "required_topic": rt.strip() if isinstance(rt, str) and rt.strip() else None,
+            # Phase E: optional link to the page's content block this claim grounds.
+            "content_block_id": cb.strip() if isinstance(cb, str) and cb.strip()
+            else None,
             "intent": claim.get("intent") if isinstance(claim.get("intent"), str)
             else "",
             "skeleton": skeleton,
@@ -380,6 +384,7 @@ class RenderedSection:
     markdown: str
     used_evidence_ids: list = field(default_factory=list)
     covered_topics: list | None = None
+    covered_content_blocks: list | None = None
 
 
 def _skeleton_paragraph_template(skeleton: str) -> str:
@@ -405,14 +410,18 @@ def _render_claim_paragraph(claim, by_token) -> str:
 
 
 def render_section(plan_validation: PlanValidation, *, token_bank, title,
-                   section_id, obligations=None) -> RenderedSection:
+                   section_id, obligations=None,
+                   content_block_obligations=None) -> RenderedSection:
     """Render the section Markdown deterministically from an accepted plan.
 
     Baseline: a title heading followed by one paragraph per claim. Enhancement
     (``obligations`` given): each sufficient required topic is rendered under its own
     ``###`` heading so its generated coverage is locally grounded and anchor-locatable,
-    with a deterministically derived ``covered_topics[]`` declaration. Must only be
-    called on a passing :class:`PlanValidation`."""
+    with a deterministically derived ``covered_topics[]`` declaration. Expanded
+    (``content_block_obligations`` given): each evidence-bearing content block is
+    additionally proven covered by the topic subsection(s) of the claims linked to it
+    (``content_block_id``), with a deterministically derived ``covered_content_blocks[]``
+    declaration. Must only be called on a passing :class:`PlanValidation`."""
     by_token = token_bank.by_id()
     claims = plan_validation.claims
     obligations = obligations or []
@@ -422,6 +431,8 @@ def render_section(plan_validation: PlanValidation, *, token_bank, title,
     lines: list = [f"## {title}", ""]
     used: set = set()
     covered_rows: list = []
+    # topic -> (anchor, cited mapped evidence ids) for content-block derivation.
+    topic_render: dict = {}
 
     # Non-obligation claims first as flat intro/body paragraphs.
     body_claims = [c for c in claims
@@ -459,18 +470,69 @@ def render_section(plan_validation: PlanValidation, *, token_bank, title,
             for eid in rendered_ids:
                 if eid in mapped and eid not in topic_cited:
                     topic_cited.append(eid)
+        anchor = gencov.heading_slug(heading_line)
         covered_rows.append({
-            "topic": topic,
-            "status": gencov.GEN_COVERED,
-            "evidence_ids": topic_cited,
-            "markdown_anchor": gencov.heading_slug(heading_line),
+            "topic": topic, "status": gencov.GEN_COVERED,
+            "evidence_ids": topic_cited, "markdown_anchor": anchor,
         })
+        topic_render[topic] = (anchor, topic_cited)
+
+    # Expanded mode: derive covered content blocks from the topic subsections of the
+    # claims linked to each block (a block is grounded by its linked covered topics).
+    block_rows = _derive_covered_content_blocks(
+        content_block_obligations or [], claims, topic_claims, topic_render)
 
     markdown = "\n".join(lines).rstrip() + "\n"
     return RenderedSection(
         section_id=section_id, title=title, markdown=markdown,
         used_evidence_ids=sorted(used),
-        covered_topics=covered_rows if obligations else None)
+        covered_topics=covered_rows if obligations else None,
+        covered_content_blocks=block_rows
+        if content_block_obligations is not None else None)
+
+
+def _derive_covered_content_blocks(block_obligations: list, claims: list,
+                                   topic_claims: dict, topic_render: dict) -> list:
+    """Deterministically derive ``covered_content_blocks[]`` for the rendered page.
+
+    A content block obligation is declared covered when a claim links it
+    (``content_block_id``) to a required topic that was rendered under its own
+    subsection: the block reuses that topic's anchor and the subset of its cited
+    evidence that is in the block's supporting Phase 3 IDs. No new headings are
+    invented; coverage is the topic subsection that grounds the block."""
+    # block_id -> ordered list of (topic) the linked claims belong to.
+    topics_by_block: dict = {}
+    for c in claims:
+        bid = c.get("content_block_id")
+        rt = c.get("required_topic")
+        if bid and rt and rt in topic_render:
+            topics_by_block.setdefault(bid, [])
+            if rt not in topics_by_block[bid]:
+                topics_by_block[bid].append(rt)
+
+    rows: list = []
+    for ob in block_obligations:
+        if not ob.get("is_obligation"):
+            continue
+        bid = ob.get("content_block_id")
+        supporting = set(ob.get("supporting_evidence_ids") or [])
+        topics = topics_by_block.get(bid) or []
+        if not topics:
+            continue
+        anchor, _ = topic_render[topics[0]]
+        cited: list = []
+        for t in topics:
+            _, topic_cited = topic_render[t]
+            for eid in topic_cited:
+                if (not supporting or eid in supporting) and eid not in cited:
+                    cited.append(eid)
+        if not cited:
+            continue
+        rows.append({
+            "content_block_id": bid, "status": gencov.GEN_COVERED,
+            "evidence_ids": cited, "markdown_anchor": anchor,
+        })
+    return rows
 
 
 def rendered_draft(rendered: RenderedSection) -> dict:
@@ -487,6 +549,8 @@ def rendered_draft(rendered: RenderedSection) -> dict:
     }
     if rendered.covered_topics is not None:
         draft["covered_topics"] = rendered.covered_topics
+    if rendered.covered_content_blocks is not None:
+        draft["covered_content_blocks"] = rendered.covered_content_blocks
     return draft
 
 

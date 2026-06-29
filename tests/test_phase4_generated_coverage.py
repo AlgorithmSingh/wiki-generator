@@ -270,6 +270,382 @@ class CoverageProvider:
         return SectionResponse(json.dumps(draft), "STOP")
 
 
+# --- expanded command-level E2E fixture ---------------------------------------
+_EXPANDED_SID = "ops"
+_EXPANDED_TOPIC = "operations flow"
+_EXPANDED_BLOCK = "operations"
+_EXPANDED_EVIDENCE_ID = "ev:ops:0001"
+_EXPANDED_CATALOG_ID = "ops.runtime"
+
+_EXPANDED_REQUIRED_CONTRACT_CHECKS = (
+    "all_sections_have_packets", "document_plan_valid", "section_plans_valid_jsonl",
+    "section_plans_cover_order", "capabilities_consistent", "packets_schema_valid",
+    "evidence_anchors_resolve", "no_plan_only_evidence",
+    "no_context_artifact_evidence", "required_topic_evidence_sufficient",
+)
+
+
+def _expanded_required_content_blocks():
+    return [{"block_id": b} for b in (
+        "purpose", "operations", "key_files", "known_gaps")]
+
+
+def _expanded_section_plan():
+    return _base_section(
+        _EXPANDED_SID, "Operations",
+        order=1, page_profile="operations-page",
+        catalog_topic_ids=[_EXPANDED_CATALOG_ID],
+        required_content_blocks=_expanded_required_content_blocks(),
+        required_topics=[_EXPANDED_TOPIC],
+        topic_evidence_requirements=[{
+            "topic": _EXPANDED_TOPIC, "required": True,
+            "source_fields": ["retrieval_needs.files[0]"],
+            "min_items": 1, "acceptable_lanes": ["file_anchor"],
+            "catalog_topic_id": _EXPANDED_CATALOG_ID,
+            "content_block_id": _EXPANDED_BLOCK,
+        }],
+        retrieval_needs={
+            "query_packs": [], "symbols": [],
+            "files": [{"input": "pkg/ops.py", "path": "pkg/ops.py",
+                       "anchor": None, "anchor_confidence": None,
+                       "resolution": "file_exists", "candidates": []}],
+            "contracts": [], "tests": [], "graph_nodes": [],
+            "search_hints": [], "context_artifacts": []},
+        expected_evidence_types=["files"])
+
+
+def _expanded_evidence_item():
+    return {
+        "evidence_id": _EXPANDED_EVIDENCE_ID,
+        "lane": "file_anchor",
+        "type": "source_span",
+        "source": {"artifact": "rag/spans.jsonl", "path": "pkg/ops.py",
+                   "range": {"start_line": 1, "end_line": 20},
+                   "span_id": "span:pkg/ops.py:1-20:function",
+                   "symbol_id": "sym:pkg.ops.run_operations"},
+        "excerpt": ("def run_operations():\n"
+                    "    # The operations flow is driven by local source evidence.\n"
+                    "    return 'ok'\n"),
+        "provenance": {"matched_by": "file_range", "input": "pkg/ops.py"},
+        "scores": {"lane_rank": 1, "lane_score": None, "bm25": None,
+                   "vector": None},
+        "confidence": "exact",
+        "dedupe_key": "pkg/ops.py:1-20",
+    }
+
+
+def _expanded_packet(section_sha):
+    ev = _expanded_evidence_item()
+    return {
+        "schema_version": "phase3-evidence-packet-v1",
+        "section_id": _EXPANDED_SID,
+        "title": "Operations",
+        "order": 1,
+        "retrieval_mode": "lexical-symbolic",
+        "source_plan": {"document_plan_path": "plans/document-plan.json",
+                        "section_plans_path": "plans/section-plans.jsonl",
+                        "section_plan_sha256": section_sha},
+        "work_order": {"purpose": "Document Operations.",
+                       "required_topics": [_EXPANDED_TOPIC],
+                       "expected_evidence_types": ["files"],
+                       "retrieval_needs": {"query_packs": [], "symbols": [],
+                                           "files": ["pkg/ops.py"],
+                                           "contracts": [], "tests": [],
+                                           "graph_nodes": []},
+                       "context_artifacts": []},
+        "evidence": [ev],
+        "lane_summary": {"file_anchor": {"requested": 1, "returned": 1,
+                                          "status": "pass"}},
+        "coverage": {"satisfied": ["files"], "missing": [], "warnings": [],
+                     "exact_requests": [{
+                         "lane": "file_anchor",
+                         "source_field": "retrieval_needs.files[0]",
+                         "status": "covered", "candidate_count": 1,
+                         "kept_count": 1,
+                         "evidence_ids": [_EXPANDED_EVIDENCE_ID]}]},
+        "validation": {"status": "pass", "errors": [], "warnings": []},
+    }
+
+
+def _expanded_evidenced_coverage():
+    return {
+        "schema_version": "phase3-evidenced-coverage-v1",
+        "coverage_mode": "expanded",
+        "enforced": True,
+        "status": "pass",
+        "failure_category": None,
+        "counts": {"sections": 1, "required_topics": 1, "topics_evaluated": 1,
+                   "sufficient": 1, "weak": 0, "missing": 0,
+                   "not_applicable": 0},
+        "blocking_sections": [],
+        "sections": [{
+            "section_id": _EXPANDED_SID,
+            "section_role": "source",
+            "status": "pass",
+            "required_topic_count": 1,
+            "topics": [{
+                "topic": _EXPANDED_TOPIC, "required": True,
+                "status": "sufficient", "diagnostic_code": None,
+                "min_items": 1, "acceptable_lanes": ["file_anchor"],
+                "source_fields": ["retrieval_needs.files[0]"],
+                "source_field_results": [{
+                    "source_field": "retrieval_needs.files[0]",
+                    "field": "retrieval_needs.files", "index": 0,
+                    "lane": "file_anchor", "kind": "exact", "valid": True,
+                    "exact_status": "covered", "candidate_count": 1,
+                    "kept_count": 1,
+                    "evidence_ids": [_EXPANDED_EVIDENCE_ID],
+                    "related": False}],
+                "mapped_evidence_ids": [_EXPANDED_EVIDENCE_ID],
+                "evidence_count": 1,
+                "source_categories": ["file_anchor"],
+                "remediation": "",
+                "catalog_topic_id": _EXPANDED_CATALOG_ID,
+                "content_block_id": _EXPANDED_BLOCK,
+            }],
+            "page_profile": "operations-page",
+            "portfolio_status": "sufficient",
+            "portfolio_requirements": {
+                "floor_lanes": ["file_anchor", "query_pack"],
+                "min_exact_items": 1,
+                "covered_floor_lanes": ["file_anchor"],
+                "exact_evidence_ids": 1,
+            },
+            "content_blocks": [{"content_block_id": _EXPANDED_BLOCK,
+                                "status": "sufficient",
+                                "topics": [_EXPANDED_TOPIC]}],
+        }],
+    }
+
+
+def _write_expanded_command_bundle(root: str) -> str:
+    """Write a tiny schema-faithful expanded bundle for command E2E tests.
+
+    Returns the response directory to pass to ``write-wiki --provider gemini-gem``.
+    """
+    os.makedirs(os.path.join(root, "plans"), exist_ok=True)
+    os.makedirs(os.path.join(root, "derived"), exist_ok=True)
+    os.makedirs(os.path.join(root, "evidence", "packets"), exist_ok=True)
+    os.makedirs(os.path.join(root, "pkg"), exist_ok=True)
+    util.write_text(os.path.join(root, "pkg", "ops.py"),
+                    "def run_operations():\n    return 'ok'\n")
+
+    section = _expanded_section_plan()
+    doc = {"schema_version": "phase2-plan-v1",
+           "repo": {"name": "expanded-demo", "root": root},
+           "title": "Expanded Demo", "purpose": "Exercise expanded writing.",
+           "summary": "", "audience": "developers",
+           "section_order": [_EXPANDED_SID], "coverage_goals": [],
+           "known_gaps": [], "source_raw_response": "plans/raw.md",
+           "provider": "test",
+           "normalization": {"generated_by": "test", "unresolved_count": 0,
+                             "warnings": []}}
+    util.write_json(os.path.join(root, "plans", "document-plan.json"), doc)
+    raw = json.dumps(section)
+    with open(os.path.join(root, "plans", "section-plans.jsonl"), "w",
+              encoding="utf-8") as f:
+        f.write(raw + "\n")
+    section_sha = f"sha256:{util.sha256_text(raw)}"
+    util.write_text(os.path.join(root, "plans", "normalization-report.md"),
+                    "# normalization report\n")
+    util.write_text(os.path.join(root, "plans", "phase3-readiness-report.md"),
+                    "# Phase 3 Readiness Report\n\nStatus: PASS\nFailures: 0\n"
+                    "Warnings: 0\nSections: 1\n")
+    util.write_json(os.path.join(root, "plans", "coverage-gate.json"), {
+        "passed": True, "exit_code": 0,
+        "report": {"schema_version": "phase2-coverage-validation-v1",
+                   "mode": "expanded", "status": "pass", "enforced": True,
+                   "missing_mandatory": []}})
+    util.write_json(os.path.join(root, "plans", "relevant-source-map.json"), {
+        "schema_version": "phase2-relevant-source-map-v1",
+        "coverage_mode": "expanded",
+        "pages": [{"section_id": _EXPANDED_SID,
+                   "page_profile": "operations-page",
+                   "catalog_topic_ids": [_EXPANDED_CATALOG_ID],
+                   "content_block_ids": [_EXPANDED_BLOCK],
+                   "selected_handles": [{
+                       "handle_id": "ops:files:0", "lane": "file_anchor",
+                       "source_field": "retrieval_needs.files[0]",
+                       "path": "pkg/ops.py",
+                       "catalog_topic_ids": [_EXPANDED_CATALOG_ID],
+                       "content_block_ids": [_EXPANDED_BLOCK]}]}]})
+    util.write_json(os.path.join(root, "derived", "topic-catalog.json"), {
+        "schema_version": "deepwiki-topic-catalog-v1",
+        "source_fingerprint": "sha256:expanded-demo",
+        "topics": [{"topic_id": _EXPANDED_CATALOG_ID,
+                    "parent_topic_id": None, "family": "ops",
+                    "label": "Runtime operations", "topic_kind": "subsystem",
+                    "priority": "must", "signal_strength": "high",
+                    "status": "present"}]})
+
+    packet = _expanded_packet(section_sha)
+    util.write_json(os.path.join(root, "evidence", "packets",
+                                 f"{_EXPANDED_SID}.json"), packet)
+    util.write_jsonl(os.path.join(root, "evidence", "evidence-packets.jsonl"),
+                     [packet])
+    util.write_json(os.path.join(root, "evidence", "evidence-manifest.json"), {
+        "schema_version": "phase3-evidence-manifest-v1",
+        "bundle_root": root,
+        "document_plan": "plans/document-plan.json",
+        "section_plans": "plans/section-plans.jsonl",
+        "retrieval_mode": "lexical-symbolic",
+        "section_count": 1, "packet_count": 1,
+        "combined_packets": "evidence/evidence-packets.jsonl",
+        "packet_paths": [f"evidence/packets/{_EXPANDED_SID}.json"],
+        "validation": "evidence/retrieval-validation.json",
+        "report": "evidence/retrieval-report.md", "status": "pass"})
+    util.write_json(os.path.join(root, "evidence", "retrieval-validation.json"), {
+        "schema_version": "phase3-retrieval-validation-v1",
+        "status": "pass", "failure_category": None,
+        "retrieval_mode": "lexical-symbolic",
+        "counts": {"sections_expected": 1, "sections_processed": 1,
+                   "packets_written": 1, "evidence_items": 1},
+        "contract_checks": [{"name": n, "status": "pass", "details": "ok"}
+                            for n in _EXPANDED_REQUIRED_CONTRACT_CHECKS],
+        "section_results": [{"section_id": _EXPANDED_SID, "status": "pass",
+                             "evidence_count": 1,
+                             "missing_expected_evidence_types": [],
+                             "warnings": []}],
+        "errors": [], "warnings": []})
+    util.write_json(os.path.join(root, "evidence", "evidenced-coverage.json"),
+                    _expanded_evidenced_coverage())
+    util.write_json(os.path.join(root, "run-metadata.json"),
+                    {"generator": "test", "git": {"head_commit": "abc"}})
+    util.write_text(os.path.join(root, "command-manifest.tsv"),
+                    "phase3_retrieve_evidence\tscripts/phase3_retrieve_evidence.sh "
+                    f"--out {root}\t0\n")
+
+    responses = os.path.join(root, "responses")
+    os.makedirs(responses, exist_ok=True)
+    return responses
+
+
+def _write_expanded_claim_plan(responses_dir: str, *, include_block: bool) -> None:
+    claim = {"claim_id": "c1", "claim_kind": "prose",
+             "evidence_ids": [_EXPANDED_EVIDENCE_ID], "token_ids": [],
+             "required_topic": _EXPANDED_TOPIC,
+             "intent": "Cover the expanded operations content block.",
+             "skeleton": "The operations flow is grounded in local source evidence."}
+    if include_block:
+        claim["content_block_id"] = _EXPANDED_BLOCK
+    util.write_text(os.path.join(responses_dir, f"{_EXPANDED_SID}.raw.txt"),
+                    json.dumps({"schema_version": "phase4-claim-plan-v1",
+                                "section_id": _EXPANDED_SID,
+                                "claims": [claim]}, indent=2) + "\n")
+
+
+class ExpandedWriteWikiCommandE2ETests(unittest.TestCase):
+    """Real ``write-wiki --coverage-mode expanded`` command path, non-live.
+
+    Uses the existing ``gemini-gem`` response-import provider, so no Vertex/Gemini/API
+    client is constructed and no billed provider can be called.
+    """
+
+    def _bundle(self, *, include_block: bool):
+        tmp = tempfile.mkdtemp(prefix="p4gc_expanded_cmd_")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = os.path.join(tmp, "bundle")
+        os.makedirs(root)
+        responses = _write_expanded_command_bundle(root)
+        _write_expanded_claim_plan(responses, include_block=include_block)
+        return root, responses
+
+    def _write_wiki(self, root: str, responses: str) -> subprocess.CompletedProcess:
+        return _run_cmd(
+            "write-wiki", "--bundle", root,
+            "--provider", "gemini-gem",
+            "--responses-in", responses,
+            "--coverage-mode", "expanded",
+            "--grounded-claim-plan",
+            "--validate-and-assemble")
+
+    def test_expanded_grounded_command_happy_path_writes_block_coverage(self):
+        root, responses = self._bundle(include_block=True)
+        res = self._write_wiki(root, responses)
+        self.assertEqual(res.returncode, 0, res.stderr + res.stdout)
+
+        wiki = os.path.join(root, "wiki")
+        gc = json.load(open(os.path.join(wiki, "metadata",
+                                         "generated-coverage.json")))
+        self.assertEqual(gc["coverage_mode"], "expanded")
+        self.assertEqual(gc["status"], "pass", gc["failures"])
+        self.assertEqual(gc["counts"]["required_topics"], 1)
+        self.assertEqual(gc["counts"]["required_content_blocks"], 1)
+        self.assertEqual(gc["counts"]["content_blocks_covered"], 1)
+        block = gc["sections"][0]["content_blocks"][0]
+        self.assertEqual(block["content_block_id"], _EXPANDED_BLOCK)
+        self.assertEqual(block["generated_status"], "covered")
+        self.assertEqual(block["evidence_ids"], [_EXPANDED_EVIDENCE_ID])
+
+        vd = json.load(open(os.path.join(wiki, "validation",
+                                         "writing-validation.json")))
+        by_name = {c["name"]: c for c in vd["checks"]}
+        self.assertEqual(by_name["generated_required_topics_covered"]["status"],
+                         "pass")
+        self.assertEqual(by_name["generated_required_content_blocks_covered"]
+                         ["status"], "pass")
+
+        rows = [json.loads(l) for l in open(os.path.join(
+            wiki, "metadata", "generated-sections.jsonl")) if l.strip()]
+        row = rows[0]
+        self.assertEqual(row["page_profile"], "operations-page")
+        self.assertEqual(row["covered_content_blocks"][0]["content_block_id"],
+                         _EXPANDED_BLOCK)
+        self.assertEqual(row["generation"]["provider_mode"], "gemini-gem")
+        self.assertIsNone(row["generation"]["model"])
+        self.assertIn("grounded", row)
+
+        doc = json.load(open(os.path.join(wiki, "metadata",
+                                          "generated-document.json")))
+        self.assertEqual(doc["coverage_mode"], "expanded")
+        self.assertTrue(doc["grounded_claim_plan"])
+        self.assertEqual(doc["generated_coverage_status"], "pass")
+
+        prompt = open(os.path.join(wiki, "audit", "prompts",
+                                   f"{_EXPANDED_SID}.md"), encoding="utf-8").read()
+        # The real command-built WritingPacket carried expanded planning metadata.
+        for needle in (
+            '"page_profile": "operations-page"',
+            f'"{_EXPANDED_CATALOG_ID}"',
+            '"required_content_blocks"',
+            '"content_block_coverage"',
+            f'"content_block_id": "{_EXPANDED_BLOCK}"',
+            '"relevant_source_handles"',
+            '"path": "pkg/ops.py"',
+        ):
+            self.assertIn(needle, prompt)
+
+    def test_expanded_grounded_command_omitted_block_fails_exit_5(self):
+        root, responses = self._bundle(include_block=False)
+        res = self._write_wiki(root, responses)
+        self.assertEqual(res.returncode, 5, res.stderr + res.stdout)
+
+        wiki = os.path.join(root, "wiki")
+        gc = json.load(open(os.path.join(wiki, "metadata",
+                                         "generated-coverage.json")))
+        self.assertEqual(gc["coverage_mode"], "expanded")
+        self.assertEqual(gc["status"], "fail")
+        self.assertEqual(gc["counts"]["required_content_blocks"], 1)
+        self.assertEqual(gc["counts"]["content_blocks_omitted"], 1)
+        self.assertTrue(any(_EXPANDED_BLOCK in f and "covered_content_blocks" in f
+                            for f in gc["failures"]))
+        self.assertEqual(gc["sections"][0]["content_blocks"][0]
+                         ["generated_status"], "omitted")
+
+        vd = json.load(open(os.path.join(wiki, "validation",
+                                         "writing-validation.json")))
+        check = next(c for c in vd["checks"]
+                     if c["name"] == "generated_required_content_blocks_covered")
+        self.assertEqual(check["status"], "fail")
+
+        # Failure happened after the non-live Gem import/grounded render boundary,
+        # not by calling Vertex/direct Gemini.
+        rows = [json.loads(l) for l in open(os.path.join(
+            wiki, "metadata", "generated-sections.jsonl")) if l.strip()]
+        self.assertEqual(rows[0]["generation"]["provider_mode"], "gemini-gem")
+        self.assertIsNone(rows[0]["generation"]["model"])
+
+
 # ---------------------------------------------------------------------------
 class EnhancementE2ETests(unittest.TestCase):
     """Full enhancement-mode Phase 4 over a real bundle + fake provider."""

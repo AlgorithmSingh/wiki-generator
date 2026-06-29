@@ -69,6 +69,7 @@ from .validate import (
     MODE_BASELINE,
     MODE_ENHANCEMENT,
     _MODES,
+    is_enforcing,
 )
 
 TOPIC_OBLIGATIONS_SCHEMA_VERSION = "phase2-topic-obligations-v1"
@@ -523,7 +524,7 @@ def evaluate_topic_obligations(document_plan: dict | None, sections: list, *,
     if not isinstance(sections, list):
         raise ValueError("sections must be a list of normalized section-plan dicts")
 
-    enforced = mode == MODE_ENHANCEMENT
+    enforced = is_enforcing(mode)
     citeability_checked = substrate is not None and getattr(substrate, "available", False)
     section_rows: list = []
     diagnostics: list = []

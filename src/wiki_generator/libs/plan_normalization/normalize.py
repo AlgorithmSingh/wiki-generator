@@ -153,6 +153,69 @@ def _str_list(*sources) -> list[str]:
     return out
 
 
+# --- Phase B: hierarchical page-plan fields (page profile, catalog topics,
+# required content blocks). All additive and optional — a baseline/legacy plan
+# that omits them normalizes to None / [] and is unaffected. ----------------------
+def _opt_id(x) -> str | None:
+    """A stable optional identifier (catalog topic id / content block id), kept
+    verbatim and trimmed. ``None`` for empty/garbage — never invented."""
+    if x is None:
+        return None
+    s = str(x).strip()
+    return s or None
+
+
+def _page_profile(plan: dict, meta: dict) -> str | None:
+    """The page profile a planner declared, kebab-normalized so common spellings
+    (``"API Reference"`` / ``"api_reference"``) map onto the canonical profile key.
+    Returns ``None`` when absent. Profile *validity* is enforced by the Phase B
+    gate, not here — normalization preserves what the planner authored."""
+    raw = plan.get("page_profile") or meta.get("page_profile")
+    return _coverage_label(raw)
+
+
+def _required_content_blocks(plan: dict) -> list[dict]:
+    """Normalize the additive ``required_content_blocks[]`` page field.
+
+    Each item may be a bare string (a block id) or an object. Normalized to a
+    stable dict shape the Phase B content-block gate and the Phase D/E consumers
+    read: ``block_id`` (required, non-empty), ``block_type`` (defaults to
+    ``block_id``), ``required`` (default True), ``required_topics[]`` (verbatim
+    topic strings), ``min_exact_items`` (>=0 int, default 0), and
+    ``expected_evidence_lanes[]`` (verbatim lane strings). Structural only — no
+    inference, no synthesis; an unknown/empty item is dropped."""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for item in _as_list(plan.get("required_content_blocks")):
+        if isinstance(item, str):
+            block_id = item.strip()
+            block = {"block_id": block_id, "block_type": block_id,
+                     "required": True, "required_topics": [],
+                     "min_exact_items": 0, "expected_evidence_lanes": []}
+        elif isinstance(item, dict):
+            block_id = str(item.get("block_id") or item.get("id") or "").strip()
+            if not block_id:
+                continue
+            min_exact = item.get("min_exact_items")
+            min_exact = min_exact if isinstance(min_exact, int) and min_exact >= 0 else 0
+            block = {
+                "block_id": block_id,
+                "block_type": str(item.get("block_type") or block_id).strip(),
+                "required": bool(item.get("required", True)),
+                "required_topics": _str_list(item.get("required_topics")),
+                "min_exact_items": min_exact,
+                "expected_evidence_lanes": [
+                    str(x).strip() for x in _as_list(item.get("expected_evidence_lanes"))
+                    if str(x).strip()],
+            }
+        else:
+            continue
+        if block["block_id"] and block["block_id"] not in seen:
+            seen.add(block["block_id"])
+            out.append(block)
+    return out
+
+
 # Lane field names a topic_evidence_requirements[] source_field may point at, and
 # the acceptable retrieval lanes a topic may declare. These are the exact
 # (citeable-evidence) lanes; broad-recall fields (graph_nodes / search_hints) are
@@ -266,12 +329,18 @@ def _topic_evidence_requirements(plan: dict, lane_maps: dict, section_id: str,
         min_items = min_items if isinstance(min_items, int) and min_items >= 1 else 1
         lanes = [str(x).strip() for x in _as_list(item.get("acceptable_lanes"))
                  if str(x).strip()]
+        # Phase B (expanded coverage): additive optional links from a topic
+        # obligation to the catalog topic and content block it grounds. Preserved
+        # verbatim (catalog topic ids and block ids are stable identifiers, not
+        # coverage labels); ``None`` when the planner omits them (baseline-compatible).
         out.append({
             "topic": topic.strip(),
             "required": bool(item.get("required", True)),
             "source_fields": source_fields,
             "min_items": min_items,
             "acceptable_lanes": lanes or list(_TER_ACCEPTABLE_LANES),
+            "catalog_topic_id": _opt_id(item.get("catalog_topic_id")),
+            "content_block_id": _opt_id(item.get("content_block_id")),
         })
     return out
 
@@ -634,6 +703,13 @@ def _build_section(nid: str, order: int, meta: dict | None, plan: dict | None,
         "parent_section_id": raw_parent,
         "coverage_labels": _clean_labels(plan.get("coverage_labels"),
                                          meta.get("coverage_labels")),
+        # Phase B (expanded coverage): additive hierarchical page-plan fields. All
+        # optional — a baseline plan omitting them gets None / []. Validity (valid
+        # profile, required blocks present, catalog-topic coverage) is the Phase B
+        # gate's job in expanded mode, not normalization's.
+        "page_profile": _page_profile(plan, meta),
+        "catalog_topic_ids": _str_list(plan.get("catalog_topic_ids")),
+        "required_content_blocks": _required_content_blocks(plan),
         "priority": meta.get("priority"),
         "purpose": meta.get("purpose") or plan.get("goal") or "",
         "goal": plan.get("goal") or "",

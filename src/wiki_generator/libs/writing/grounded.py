@@ -20,17 +20,24 @@ from __future__ import annotations
 from . import assemble
 from . import claim_plan as cp
 from .errors import ProviderFailure, WritingValidationFailure
-from .options import COVERAGE_MODE_ENHANCEMENT
+from .options import COVERAGE_MODE_EXPANDED, ENFORCING_COVERAGE_MODES
 from .parse import parse_section_response
 from .validate import validate_section_draft
 
 
 def section_obligations(bundle, sid: str):
-    """The section's sufficient required-topic obligations (enhancement only), or
+    """The section's sufficient required-topic obligations (enhancement/expanded), or
     ``None`` in baseline mode (no required-topic planning is enforced)."""
-    if getattr(bundle, "coverage_mode", "baseline") != COVERAGE_MODE_ENHANCEMENT:
+    if getattr(bundle, "coverage_mode", "baseline") not in ENFORCING_COVERAGE_MODES:
         return None
     return (bundle.topic_obligations or {}).get(sid) or []
+
+
+def section_block_obligations(bundle, sid: str):
+    """The section's content-block obligations (expanded mode only), or ``None``."""
+    if getattr(bundle, "coverage_mode", "baseline") != COVERAGE_MODE_EXPANDED:
+        return None
+    return (getattr(bundle, "content_block_obligations", None) or {}).get(sid) or []
 
 
 def generate_grounded_section(options, provider, bundle, writing_packet, *,
@@ -98,7 +105,8 @@ def generate_grounded_section(options, provider, bundle, writing_packet, *,
 
     rendered = cp.render_section(
         pv, token_bank=token_bank, title=writing_packet.title, section_id=sid,
-        obligations=obligations)
+        obligations=obligations,
+        content_block_obligations=section_block_obligations(bundle, sid))
     draft = cp.rendered_draft(rendered)
     validation = validate_section_draft(
         section_id=sid, draft=draft, parse_note="grounded-render",

@@ -59,4 +59,34 @@ def run(args: argparse.Namespace) -> int:
     else:
         log(f"validate-coverage: FAIL — {len(report.missing_mandatory)} mandatory "
             "topic family(ies) not planned (see coverage-validation-report.md)")
+
+    rc = gate.exit_code
+    # Expanded mode additionally proves catalog→plan→source→evidence→output
+    # traceability + artifact freshness over the produced downstream artifacts.
+    if mode == coverage.MODE_EXPANDED:
+        trace_rc = _run_traceability(bundle_root, out_dir)
+        if trace_rc != 0 and rc == 0:
+            rc = trace_rc
+    return rc
+
+
+def _run_traceability(bundle_root: str, out_dir: str) -> int:
+    """Build + gate the coverage traceability over the bundle's expanded artifacts.
+
+    Writes ``coverage/coverage-traceability.json`` + ``coverage-traceability-report.md``.
+    Returns ``0`` on a fresh, fully-traced PASS; ``2`` when a required upstream
+    artifact is absent; ``3`` when a stale fingerprint or broken lineage fails closed.
+    Read-only — it never edits an upstream artifact."""
+    try:
+        report, gate = coverage.build_and_gate_from_bundle(bundle_root)
+    except FileNotFoundError as e:
+        log(f"  traceability: {e}")
+        return coverage.COVERAGE_GATE_INPUT_EXIT
+    write_json(os.path.join(out_dir, "coverage-traceability.json"), report.to_dict())
+    write_text(os.path.join(out_dir, "coverage-traceability-report.md"),
+               coverage.render_traceability_markdown(report))
+    for line in gate.summary_lines():
+        log(f"  {line}")
+    log(f"  traceability report: "
+        f"{os.path.join(out_dir, 'coverage-traceability-report.md')}")
     return gate.exit_code

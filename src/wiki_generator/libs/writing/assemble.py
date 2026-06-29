@@ -12,6 +12,7 @@ import os
 from .. import markdown as md
 from .. import util
 from . import generated_coverage as gencov
+from .options import ENFORCING_COVERAGE_MODES
 from .schema import (
     CITATION_MANIFEST_SCHEMA_VERSION,
     GENERATED_DOCUMENT_SCHEMA_VERSION,
@@ -279,7 +280,7 @@ def generated_section_record(bundle, options, *, writing_packet, validation,
     }
     # DeepWiki coverage enhancement: preserve hierarchy + the Phase 3 evidenced topic
     # status + the writer's generated-topic declaration for the coverage matrix.
-    if getattr(bundle, "coverage_mode", "baseline") == "enhancement":
+    if getattr(bundle, "coverage_mode", "baseline") in ENFORCING_COVERAGE_MODES:
         record["parent_section_id"] = plan.get("parent_section_id")
         record["coverage_labels"] = list(plan.get("coverage_labels") or [])
         record["required_topics"] = list(plan.get("required_topics") or [])
@@ -289,6 +290,13 @@ def generated_section_record(bundle, options, *, writing_packet, validation,
              "supporting_evidence_ids": list(o.get("mapped_evidence_ids") or [])}
             for o in (bundle.topic_obligations or {}).get(sid, [])]
         record["covered_topics"] = list(validation.covered_topics)
+        # Expanded mode: carry the writer's content-block declaration + the page
+        # profile so generated content-block coverage can be validated.
+        block_obs = (getattr(bundle, "content_block_obligations", None) or {}).get(sid)
+        if block_obs:
+            record["page_profile"] = plan.get("page_profile")
+            record["covered_content_blocks"] = list(
+                getattr(validation, "covered_content_blocks", []) or [])
     return record
 
 

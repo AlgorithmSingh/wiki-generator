@@ -1,0 +1,68 @@
+{
+  "run_id": "deepwiki-coverage-expansion-prd-20260629",
+  "status": "completed",
+  "current_phase": "phase-6-eval-and-improvement-complete",
+  "completed_gates": [
+    "Gate 0",
+    "Gate 1",
+    "Gate 2",
+    "Gate 3",
+    "Gate 4",
+    "Gate 5",
+    "Gate 6",
+    "Gate 7",
+    "Gate 8",
+    "Gate 9"
+  ],
+  "open_questions": [
+    "OD-01: Should grounded claim-plan mode become default for expanded coverage runs or remain opt-in?",
+    "OD-02: What threshold promotes a source-derived facet from optional to required?",
+    "OD-03: What initial page-count/topic-count target is appropriate after the first real catalog is generated?",
+    "OD-04: Which page profiles must be included in the first implementation slice?",
+    "OD-05: Which high-risk page families require human sign-off before broad release?"
+  ],
+  "assumptions": [
+    "A-01",
+    "A-02",
+    "A-03",
+    "A-04",
+    "A-05",
+    "A-06"
+  ],
+  "decisions": [
+    "D-01",
+    "D-02",
+    "D-03",
+    "D-04",
+    "D-05",
+    "D-06"
+  ],
+  "artifact_paths": {
+    "final_prd": "artifacts/final_prd.md",
+    "traceability_matrix": "artifacts/traceability_matrix.md"
+  },
+  "trace_paths": {
+    "assumptions": "traces/assumptions.jsonl",
+    "decisions": "traces/decisions.jsonl",
+    "harness_trace": "traces/harness_trace.jsonl"
+  },
+  "eval_paths": {
+    "findings": "eval/findings.md"
+  },
+  "source_inputs_read": [
+    "/Users/ankitsingh/Documents/deep-wiki/reverse-engineer.md",
+    "/Users/ankitsingh/Documents/deep-wiki/15-e2e/20260628-001925-official-live-vertex-grounded-e2e/GPT55_XHIGH_BENCHMARK_COMPARISON.md",
+    "/Users/ankitsingh/Documents/deep-wiki/15-e2e/20260628-001925-official-live-vertex-grounded-e2e/COVERAGE_EXPANSION_GPT55_XHIGH.md",
+    "/Users/ankitsingh/Documents/deep-wiki/15-e2e/20260628-001925-official-live-vertex-grounded-e2e/COVERAGE_EXPANSION_DEEP_RESEARCH.md",
+    "/Users/ankitsingh/Documents/deep-wiki/15-e2e/20260628-001925-official-live-vertex-grounded-e2e/OFFICIAL_LIVE_E2E_RESULT.md",
+    "/Users/ankitsingh/Documents/deep-wiki/15-e2e/20260628-001925-official-live-vertex-grounded-e2e/wiki/metadata/generated-coverage.json",
+    "/Users/ankitsingh/Documents/deep-wiki/15-e2e/20260628-001925-official-live-vertex-grounded-e2e/wiki/metadata/citation-manifest.json",
+    "/Users/ankitsingh/Documents/deep-wiki/10-porting/wiki-generator/docs/specs/not-done/PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md",
+    "/Users/ankitsingh/Documents/deep-wiki/10-porting/wiki-generator/docs/handoffs/not-done/HANDOFF_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION.md"
+  ],
+  "notes": [
+    "No code was edited.",
+    "No commits were made.",
+    "Benchmark material is recorded as comparator-only."
+  ]
+}

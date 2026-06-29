@@ -1,0 +1,83 @@
+{
+  "schema_version": "tdd-phase-series-manifest-v1",
+  "slug": "deepwiki-coverage-expansion",
+  "title": "Technical Design: DeepWiki Coverage Expansion",
+  "workspace_root": "docs/technical-design/deepwiki-coverage-expansion",
+  "document_weight": "full",
+  "status": "finalized",
+  "created_on": "2026-06-29",
+  "last_updated_on": "2026-06-29",
+  "phase_series_reference": "/Users/ankitsingh/Documents/my-pi-ai-tts-setup/5-Technical-Design-document/2-TDD-Phases/tdd-phase-series",
+  "primary_input": "docs/product-requirements/deepwiki-coverage-expansion/artifacts/final_prd.md",
+  "source_inputs": [
+    {
+      "id": "SRC-PRD",
+      "path": "docs/product-requirements/deepwiki-coverage-expansion/artifacts/final_prd.md",
+      "role": "primary product requirements"
+    },
+    {
+      "id": "SRC-TRACE",
+      "path": "docs/product-requirements/deepwiki-coverage-expansion/artifacts/traceability_matrix.md",
+      "role": "requirement and gate traceability"
+    },
+    {
+      "id": "SRC-REV",
+      "path": "/Users/ankitsingh/Documents/deep-wiki/reverse-engineer.md",
+      "role": "benchmark reverse-engineering analysis; comparator-only"
+    },
+    {
+      "id": "SRC-COVX",
+      "path": "/Users/ankitsingh/Documents/deep-wiki/15-e2e/20260628-001925-official-live-vertex-grounded-e2e/COVERAGE_EXPANSION_GPT55_XHIGH.md",
+      "role": "implementation-slice recommendations and observed current state"
+    },
+    {
+      "id": "SRC-DR",
+      "path": "/Users/ankitsingh/Documents/deep-wiki/15-e2e/20260628-001925-official-live-vertex-grounded-e2e/COVERAGE_EXPANSION_DEEP_RESEARCH.md",
+      "role": "research synthesis and rollout guidance"
+    },
+    {
+      "id": "SRC-SPEC",
+      "path": "docs/specs/not-done/PHASE_DEEPWIKI_COVERAGE_ENHANCEMENT_ITERATION_SPEC.md",
+      "role": "existing implementation/spec context"
+    },
+    {
+      "id": "SRC-CODE",
+      "path": "src/wiki_generator/libs/{commands,coverage,digest,evidence,plan_normalization,writing}",
+      "role": "existing module and CLI context inspected for design fit"
+    }
+  ],
+  "required_workspace_files": [
+    "README.md",
+    "manifest.json",
+    "status.md",
+    "source-index.md",
+    "definition-of-done.json",
+    "working/01-intent.json",
+    "working/02-readers-and-stakeholders.md",
+    "working/03-rightsize-plan.json",
+    "working/problem-success.md",
+    "working/technical-design.md",
+    "working/design-judgment.md",
+    "working/execution-readiness.md",
+    "working/validation-report.json",
+    "working/repair-log.md",
+    "adr/0001-expanded-coverage-as-hierarchical-topic-catalog.md",
+    "final/technical-design-document.md"
+  ],
+  "phase_completion": {
+    "phase-1-setup-framing": "completed",
+    "phase-2-problem-success": "completed",
+    "phase-3-technical-design": "completed",
+    "phase-4-design-judgment": "completed",
+    "phase-5-execution-readiness": "completed",
+    "phase-6-finalization": "completed",
+    "phase-7-maintenance": "addressed in rollout and operations section"
+  },
+  "grounding_policy": {
+    "claim_labels": ["sourced", "inferred", "open"],
+    "benchmark_policy": "benchmark and reverse-engineered DeepWiki export are comparator-only and never citeable evidence for generated wiki content",
+    "module_name_policy": "new file/module names are marked inferred unless they already exist in the inspected repository"
+  },
+  "code_changed": false,
+  "committed": false
+}

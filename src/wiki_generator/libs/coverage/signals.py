@@ -331,12 +331,45 @@ def _is_skippable(row: dict) -> bool:
                 or row.get("is_binary"))
 
 
+def family_candidates(files: list, det: FamilyDetector) -> list:
+    """All non-skippable inventory rows that signal ``det``'s family, as
+    ``{path, category, reasons}`` dicts sorted by path.
+
+    Uncapped on purpose: the per-family detector slices it to a compact display
+    set, while the Phase-A topic-catalog facet builder needs the full list to
+    cluster a family's files into subsystems. Sharing this one helper keeps the
+    detector and the catalog from ever disagreeing on which files signal a
+    family. Deterministic: identical input → identical output."""
+    candidates: list[dict] = []
+    for row in files:
+        if _is_skippable(row):
+            continue
+        reasons = _file_reasons(row, det)
+        if reasons:
+            candidates.append({
+                "path": str(row.get("path") or ""),
+                "category": row.get("category") or "?",
+                "reasons": reasons,
+            })
+    candidates.sort(key=lambda c: c["path"])
+    return candidates
+
+
 def _status_for(file_count: int, query_hit_count: int, symbol_count: int) -> str:
     if file_count == 0 and query_hit_count == 0 and symbol_count == 0:
         return STATUS_MISSING
     if file_count >= 3 or query_hit_count >= 5 or symbol_count >= 3:
         return STATUS_PRESENT
     return STATUS_LOW
+
+
+def status_for(file_count: int, query_hit_count: int = 0,
+               symbol_count: int = 0) -> str:
+    """Public wrapper over the canonical signal-strength thresholds so the
+    Phase-A topic catalog classifies a facet's file signal exactly as the
+    per-family detector does (``present`` ≥3 files, else ``low``, else
+    ``missing``)."""
+    return _status_for(file_count, query_hit_count, symbol_count)
 
 
 _NOTE_MISSING = ("No Phase-1 source signal detected for this family. If the "
@@ -355,18 +388,7 @@ def _detect_family(key: str, label: str, suggested_labels: list,
     det = DETECTORS[key]
 
     # 1) candidate files from the inventory (skip generated/vendor/binary).
-    candidates: list[dict] = []
-    for row in files:
-        if _is_skippable(row):
-            continue
-        reasons = _file_reasons(row, det)
-        if reasons:
-            candidates.append({
-                "path": str(row.get("path") or ""),
-                "category": row.get("category") or "?",
-                "reasons": reasons,
-            })
-    candidates.sort(key=lambda c: c["path"])
+    candidates = family_candidates(files, det)
     file_count = len(candidates)
 
     # 2) ripgrep query-pack signals (counts + a few example anchors).

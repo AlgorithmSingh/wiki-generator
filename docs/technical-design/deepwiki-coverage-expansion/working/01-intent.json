@@ -1,0 +1,121 @@
+{
+  "schema_version": "tdd-intent-v1",
+  "title": "DeepWiki Coverage Expansion",
+  "status": "complete",
+  "intent_summary": "Design an upstream coverage-expansion architecture that plans and renders a broader DeepWiki-style hierarchical wiki from repository evidence without weakening grounding.",
+  "target_system": {
+    "name": "wiki-generator",
+    "repo_path": "/Users/ankitsingh/Documents/deep-wiki/10-porting/wiki-generator",
+    "affected_pipeline": [
+      "Phase 1 decomposition, condense, digest, bundle, retrieval substrate",
+      "Phase 2 planning and normalization",
+      "Phase 3 deterministic evidence retrieval",
+      "Phase 4 grounded writing and generated coverage validation"
+    ]
+  },
+  "requested_deliverables": [
+    "TDD workspace under docs/technical-design/deepwiki-coverage-expansion/",
+    "Formal final technical design document with table of contents",
+    "Definition of done and validation report",
+    "ADR for hierarchical topic catalog decision"
+  ],
+  "design_target": [
+    {
+      "statement": "Increase coverage by moving from a concise 22-section grounded wiki to a broader DeepWiki-style hierarchical page plan generated from repository evidence.",
+      "grounding": "sourced: user request and SRC-PRD"
+    },
+    {
+      "statement": "Add a repo-derived expanded topic/page catalog before Phase 2 planning.",
+      "grounding": "sourced: user request, SRC-PRD UR-01, SRC-COVX Slice 1, SRC-DR"
+    },
+    {
+      "statement": "Generate parent/child page plans from deterministic repo signals and LLM planning constrained by evidence-backed topic candidates.",
+      "grounding": "sourced: user request, SRC-PRD UR-02/UR-03"
+    },
+    {
+      "statement": "Add per-page relevant file/symbol/span selection before Phase 3 evidence retrieval.",
+      "grounding": "sourced: user request, SRC-PRD UR-04"
+    },
+    {
+      "statement": "Retrieve evidence per page while keeping Phase 3 deterministic.",
+      "grounding": "sourced: user request, SRC-PRD BR-05"
+    },
+    {
+      "statement": "Render pages using the existing grounded claim/token plan path.",
+      "grounding": "sourced: user request, SRC-SPEC, SRC-CODE"
+    },
+    {
+      "statement": "Evaluate coverage through topic→plan→evidence→output traceability, not benchmark copying.",
+      "grounding": "sourced: user request, SRC-PRD G-05/G-06"
+    }
+  ],
+  "hard_constraints": [
+    {
+      "constraint": "Benchmark material is comparison-only and must not become citeable evidence.",
+      "grounding": "sourced: user request, SRC-PRD BR-01"
+    },
+    {
+      "constraint": "Strict validators must not be weakened to pass expanded output.",
+      "grounding": "sourced: user request, SRC-PRD BR-06"
+    },
+    {
+      "constraint": "No output patching and no generic heal/retry loops.",
+      "grounding": "sourced: user request, SRC-PRD BR-07/BR-08"
+    },
+    {
+      "constraint": "Bounded repair is allowed only for LLM-authored page plans or claim plans, with exact diagnostics and hard caps.",
+      "grounding": "sourced: user request, SRC-PRD UR-15"
+    },
+    {
+      "constraint": "Phase 3 remains deterministic.",
+      "grounding": "sourced: user request, SRC-PRD BR-05, SRC-SPEC"
+    },
+    {
+      "constraint": "Official final provider path remains Vertex/Gemini.",
+      "grounding": "sourced: user request and existing README/CLI"
+    },
+    {
+      "constraint": "Do not edit code and do not commit as part of this TDD task.",
+      "grounding": "sourced: user request"
+    }
+  ],
+  "known_uncertainties": [
+    {
+      "id": "U-01",
+      "description": "Exact source-derived thresholds for promoting a candidate topic/facet to required page status.",
+      "state": "open"
+    },
+    {
+      "id": "U-02",
+      "description": "Whether expanded catalog enforcement becomes the default behavior of --coverage-mode enhancement immediately or rolls out in shadow/enforced stages.",
+      "state": "open"
+    },
+    {
+      "id": "U-03",
+      "description": "Final page-count/topic-count target after the first real repository-derived catalog is generated.",
+      "state": "open"
+    },
+    {
+      "id": "U-04",
+      "description": "Whether to model the new deterministic source-selection boundary as a new command or as part of normalize-plan. The design recommends integrating it into normalize-plan for compatibility, with an optional report-only command later.",
+      "state": "inferred recommendation"
+    }
+  ],
+  "assumptions": [
+    {
+      "id": "A-01",
+      "description": "The current official generated wiki is valid for its current planned scope but insufficient for DeepWiki-style breadth.",
+      "grounding": "sourced: SRC-PRD, SRC-COVX"
+    },
+    {
+      "id": "A-02",
+      "description": "The existing enhancement mode and grounded claim-plan implementation can be extended rather than replaced.",
+      "grounding": "inferred from SRC-SPEC and inspected code"
+    },
+    {
+      "id": "A-03",
+      "description": "Most data contract changes can be additive to existing SectionPlan/EvidencePacket/generated-coverage artifacts to preserve baseline mode.",
+      "grounding": "inferred from existing normalized plan and coverage artifacts"
+    }
+  ]
+}

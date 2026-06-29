@@ -15,10 +15,18 @@ DEFAULT_MAX_TOTAL_PER_SECTION = 40
 # Evidenced-coverage gate modes (Phase 3 evidenced coverage). ``baseline`` is the
 # historical, non-breaking behaviour: evidenced coverage is reported but never
 # gates the run. ``enhancement`` fails the run before Phase 4 when a required
-# topic's evidence is weak or missing (spec "CLI and mode behavior").
+# topic's evidence is weak or missing (spec "CLI and mode behavior"). ``expanded``
+# is the DeepWiki-style hierarchical mode: it enforces the same required-topic
+# sufficiency AND a profile-aware evidence portfolio per page (a page must carry a
+# sufficient exact handle in one of its page-profile floor lanes; a broad recall
+# lane alone is never enough). Both enhancement and expanded fail closed; expanded
+# adds the additive page_profile / catalog_topic_id / content_block_id linkage and
+# the portfolio verdict to the evidenced-coverage matrix.
 COVERAGE_MODE_BASELINE = "baseline"
 COVERAGE_MODE_ENHANCEMENT = "enhancement"
-COVERAGE_MODES = (COVERAGE_MODE_BASELINE, COVERAGE_MODE_ENHANCEMENT)
+COVERAGE_MODE_EXPANDED = "expanded"
+COVERAGE_MODES = (COVERAGE_MODE_BASELINE, COVERAGE_MODE_ENHANCEMENT,
+                  COVERAGE_MODE_EXPANDED)
 
 
 @dataclass(frozen=True)

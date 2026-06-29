@@ -46,6 +46,12 @@ EVIDENCED_CONTRACT_CHECK = "required_topic_evidence_sufficient"
 
 # The named Phase 4 writing-validation check this module contributes.
 GENERATED_COVERAGE_CHECK = "generated_required_topics_covered"
+# The named Phase 4 content-block writing-validation check (expanded mode only).
+GENERATED_BLOCK_COVERAGE_CHECK = "generated_required_content_blocks_covered"
+
+# The upstream coverage modes Phase 4 accepts as an enforced pass (``expanded`` is a
+# strict superset of ``enhancement``).
+_ENFORCING_MODES = ("enhancement", "expanded")
 
 # Per-topic generated status.
 GEN_COVERED = "covered"          # generated with valid mapped citations
@@ -80,11 +86,11 @@ def _planned_gate_failures(bundle_root: str) -> list[str]:
                 "`normalize-plan --coverage-mode enhancement` and fix any missing "
                 "mandatory topic families before Phase 4"]
     report = gate.get("report") or {}
-    # baseline/report-only or non-enhancement gate is not an enforced pass.
-    if report.get("mode") != "enhancement" or not report.get("enforced"):
-        return [f"`{PLANNED_GATE_REL}` is not an enforced enhancement gate "
+    # baseline/report-only or non-enforcing gate is not an enforced pass.
+    if report.get("mode") not in _ENFORCING_MODES or not report.get("enforced"):
+        return [f"`{PLANNED_GATE_REL}` is not an enforced enhancement/expanded gate "
                 f"(mode={report.get('mode')!r}, enforced={report.get('enforced')!r}); "
-                "re-run `normalize-plan --coverage-mode enhancement`"]
+                "re-run `normalize-plan --coverage-mode enhancement` (or expanded)"]
     if not gate.get("passed") or report.get("status") != "pass":
         return [f"Phase 2 planned-coverage gate failed (status="
                 f"{report.get('status')!r}, missing="
@@ -104,11 +110,12 @@ def _evidenced_gate_failures(bundle_root: str, retrieval_validation: dict) -> li
             f"missing Phase 3 evidenced-coverage gate `{EVIDENCED_COVERAGE_REL}`; run "
             "`retrieve-evidence --coverage-mode enhancement` before Phase 4")
     else:
-        if matrix.get("coverage_mode") != "enhancement" or not matrix.get("enforced"):
+        if (matrix.get("coverage_mode") not in _ENFORCING_MODES
+                or not matrix.get("enforced")):
             failures.append(
                 f"`{EVIDENCED_COVERAGE_REL}` is report-only (coverage_mode="
                 f"{matrix.get('coverage_mode')!r}, enforced={matrix.get('enforced')!r}); "
-                "re-run `retrieve-evidence --coverage-mode enhancement`")
+                "re-run `retrieve-evidence --coverage-mode enhancement` (or expanded)")
         elif matrix.get("status") != "pass":
             failures.append(
                 f"Phase 3 evidenced-coverage gate failed (status="
@@ -175,6 +182,43 @@ def build_topic_obligations(evidenced_matrix: dict | None) -> dict:
     return out
 
 
+def build_content_block_obligations(evidenced_matrix: dict | None) -> dict:
+    """``section_id -> [content-block obligation]`` from the evidenced-coverage matrix.
+
+    Phase D (expanded mode) writes a ``content_blocks[]`` list on each evidenced
+    section row. An obligation is one evidence-bearing content block whose evidence
+    is ``sufficient`` (Phase 4 must generate it), carrying the union of the Phase 3
+    mapped ``evidence_id`` values of the topics that link to it. Empty for an
+    enhancement/baseline matrix (no ``content_blocks``)."""
+    out: dict = {}
+    if not isinstance(evidenced_matrix, dict):
+        return out
+    for sec in evidenced_matrix.get("sections") or []:
+        blocks = sec.get("content_blocks") or []
+        if not blocks:
+            continue
+        sid = sec.get("section_id")
+        ev_by_block: dict = {}
+        for t in sec.get("topics") or []:
+            bid = t.get("content_block_id")
+            if bid:
+                ev_by_block.setdefault(bid, set()).update(
+                    t.get("mapped_evidence_ids") or [])
+        rows: list = []
+        for b in blocks:
+            bid = b.get("content_block_id")
+            rows.append({
+                "content_block_id": bid,
+                "evidenced_status": b.get("status"),
+                "is_obligation": b.get("status") == _OBLIGATION_STATUS,
+                "supporting_evidence_ids": sorted(ev_by_block.get(bid, set())),
+                "topics": list(b.get("topics") or []),
+            })
+        if sid is not None:
+            out[sid] = rows
+    return out
+
+
 # --- covered_topics declaration parsing ---------------------------------------
 def normalize_covered_topics(value) -> list:
     """Defensively normalize a draft's ``covered_topics`` value into a list of
@@ -195,6 +239,32 @@ def normalize_covered_topics(value) -> list:
         anchor = item.get("markdown_anchor")
         rows.append({
             "topic": topic.strip(),
+            "status": item.get("status") if isinstance(item.get("status"), str)
+            else None,
+            "evidence_ids": eids,
+            "markdown_anchor": anchor.strip() if isinstance(anchor, str) else None,
+        })
+    return rows
+
+
+def normalize_covered_content_blocks(value) -> list:
+    """Normalize a draft's ``covered_content_blocks`` value into a list of
+    ``{content_block_id, status, evidence_ids, markdown_anchor}`` rows. The writer
+    authors this; deterministic code only reads it, never edits its semantics."""
+    rows: list = []
+    if not isinstance(value, list):
+        return rows
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        bid = item.get("content_block_id") or item.get("block_id")
+        if not isinstance(bid, str) or not bid.strip():
+            continue
+        eids = item.get("evidence_ids")
+        eids = [e for e in eids if isinstance(e, str)] if isinstance(eids, list) else []
+        anchor = item.get("markdown_anchor")
+        rows.append({
+            "content_block_id": bid.strip(),
             "status": item.get("status") if isinstance(item.get("status"), str)
             else None,
             "evidence_ids": eids,
@@ -374,6 +444,98 @@ def evaluate_section_coverage(*, obligations, covered_topics, markdown,
     return {"rows": rows, "failures": failures}
 
 
+# --- per-section generated content-block coverage -----------------------------
+def evaluate_section_block_coverage(*, obligations, covered_blocks, markdown,
+                                    evidence_index, manifest_ids):
+    """Deterministically validate one section's generated content-block coverage.
+
+    Mirrors :func:`evaluate_section_coverage` for content blocks: every evidence-
+    bearing content block whose Phase 3 evidence was ``sufficient`` must have a
+    ``covered_content_blocks[]`` row whose ``evidence_ids`` are within the block's
+    supporting Phase 3 mapped IDs, resolve through the citation manifest, and appear
+    as inline citations in the block's local markdown (located by its declared
+    anchor or block id). Returns ``{rows, failures}``."""
+    cited = set(cit.distinct_citations(markdown))
+    by_block = {r["content_block_id"]: r for r in covered_blocks}
+    rows: list = []
+    failures: list = []
+
+    for ob in obligations:
+        bid = ob.get("content_block_id")
+        if not ob.get("is_obligation"):
+            rows.append({
+                "content_block_id": bid,
+                "evidenced_status": ob.get("evidenced_status"),
+                "generated_status": GEN_OMITTED, "evidence_ids": [],
+                "markdown_anchor": None, "cited": False, "problems": []})
+            continue
+
+        supporting = set(ob.get("supporting_evidence_ids") or [])
+        decl = by_block.get(bid)
+        problems: list = []
+        status = GEN_COVERED
+        decl_ids: list = []
+        anchor = None
+
+        if decl is None:
+            status = GEN_OMITTED
+            problems.append(
+                f"required content block {bid!r} has no covered_content_blocks "
+                "declaration (omitted from generated output)")
+        else:
+            anchor = decl.get("markdown_anchor")
+            decl_ids = list(decl.get("evidence_ids") or [])
+            if decl.get("status") != GEN_COVERED:
+                status = GEN_INVALID
+                problems.append(f"content block {bid!r} declared status "
+                                f"{decl.get('status')!r}, not {GEN_COVERED!r}")
+            if not decl_ids:
+                status = GEN_INVALID
+                problems.append(f"content block {bid!r} declares no evidence_ids")
+            for eid in decl_ids:
+                if supporting and eid not in supporting:
+                    status = GEN_INVALID
+                    problems.append(
+                        f"content block {bid!r} cites {eid!r} outside its supporting "
+                        f"Phase 3 evidence IDs {sorted(supporting)}")
+                    continue
+                if eid not in evidence_index or eid not in manifest_ids:
+                    status = GEN_INVALID
+                    problems.append(
+                        f"content block {bid!r} cites {eid!r} that does not resolve "
+                        "through the citation manifest")
+                    continue
+                if eid not in cited:
+                    status = GEN_INVALID
+                    problems.append(
+                        f"content block {bid!r} declares {eid!r} but it is not cited "
+                        "in the generated markdown")
+            if status == GEN_COVERED:
+                block = topic_block(markdown, bid, anchor)
+                if block is None:
+                    status = GEN_INVALID
+                    problems.append(
+                        f"content block {bid!r} not found in generated markdown (no "
+                        f"matching text or heading anchor {anchor!r})")
+                else:
+                    block_cited = set(cit.distinct_citations(block))
+                    if not any(e in block_cited for e in decl_ids):
+                        status = GEN_INVALID
+                        problems.append(
+                            f"content block {bid!r} content has no inline citation to "
+                            "its declared evidence IDs (covered without local grounding)")
+
+        rows.append({
+            "content_block_id": bid, "evidenced_status": ob.get("evidenced_status"),
+            "generated_status": status, "evidence_ids": decl_ids,
+            "markdown_anchor": anchor,
+            "cited": bool(decl_ids) and all(e in cited for e in decl_ids),
+            "problems": problems})
+        failures += problems
+
+    return {"rows": rows, "failures": failures}
+
+
 # --- whole-document generated coverage matrix ---------------------------------
 def evaluate_generated_coverage(bundle, generated: list, manifest: dict) -> dict:
     """Build the whole-document generated-coverage matrix + verdict.
@@ -384,10 +546,13 @@ def evaluate_generated_coverage(bundle, generated: list, manifest: dict) -> dict
     timestamp-free."""
     manifest_ids = {c.get("evidence_id") for c in manifest.get("citations", [])}
     obligations = bundle.topic_obligations or {}
+    block_obligations = getattr(bundle, "content_block_obligations", None) or {}
     by_sid = {g["section_id"]: g for g in generated}
 
     counts = {"covered": 0, "omitted": 0, "invalid": 0}
+    block_counts = {"covered": 0, "omitted": 0, "invalid": 0}
     required_topics = 0
+    required_blocks = 0
     section_rows: list = []
     all_failures: list = []
 
@@ -415,13 +580,36 @@ def evaluate_generated_coverage(bundle, generated: list, manifest: dict) -> dict
                 row["generated_status"], 0) + 1
         all_failures += [f"{sid}: {f}" for f in result["failures"]]
 
-        section_rows.append({
+        section_row = {
             "section_id": sid,
             "parent_section_id": plan.get("parent_section_id"),
             "coverage_labels": list(plan.get("coverage_labels") or []),
             "required_topics": list(plan.get("required_topics") or []),
             "topics": result["rows"],
-        })
+        }
+
+        # Expanded mode: also validate generated content-block coverage.
+        sec_block_obligations = block_obligations.get(sid) or []
+        if sec_block_obligations:
+            section_row["page_profile"] = plan.get("page_profile")
+            covered_blocks = normalize_covered_content_blocks(
+                (g or {}).get("covered_content_blocks"))
+            block_result = evaluate_section_block_coverage(
+                obligations=sec_block_obligations, covered_blocks=covered_blocks,
+                markdown=markdown, evidence_index=bundle.evidence_index,
+                manifest_ids=manifest_ids)
+            for row in block_result["rows"]:
+                if not any(o.get("is_obligation")
+                           and o.get("content_block_id") == row["content_block_id"]
+                           for o in sec_block_obligations):
+                    continue
+                required_blocks += 1
+                block_counts[row["generated_status"]] = block_counts.get(
+                    row["generated_status"], 0) + 1
+            all_failures += [f"{sid}: {f}" for f in block_result["failures"]]
+            section_row["content_blocks"] = block_result["rows"]
+
+        section_rows.append(section_row)
 
     status = "fail" if all_failures else "pass"
     matrix = {
@@ -435,6 +623,10 @@ def evaluate_generated_coverage(bundle, generated: list, manifest: dict) -> dict
             "covered": counts["covered"],
             "omitted": counts["omitted"],
             "invalid": counts["invalid"],
+            "required_content_blocks": required_blocks,
+            "content_blocks_covered": block_counts["covered"],
+            "content_blocks_omitted": block_counts["omitted"],
+            "content_blocks_invalid": block_counts["invalid"],
         },
         "sections": section_rows,
         "failures": all_failures,

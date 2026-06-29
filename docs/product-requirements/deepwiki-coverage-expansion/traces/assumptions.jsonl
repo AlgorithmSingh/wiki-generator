@@ -1,0 +1,6 @@
+{"id":"A-01","phase":"phase-2-product-understanding","assumption":"The current official generated wiki is valid for its planned scope but insufficient for DeepWiki-style breadth.","basis":["SRC-COMP","SRC-E2E","SRC-GENCOV"]}
+{"id":"A-02","phase":"phase-2-product-understanding","assumption":"The benchmark export is useful as a breadth signal but not source truth because it was indexed at a different commit.","basis":["SRC-USER","SRC-REV"]}
+{"id":"A-03","phase":"phase-3-requirements-construction","assumption":"Repository-derived signals can identify enough high-value facets to justify a deeper hierarchy.","basis":["SRC-COVX","SRC-DR","SRC-SPEC"]}
+{"id":"A-04","phase":"phase-3-requirements-construction","assumption":"Phase 3 can remain deterministic if page/topic evidence obligations are explicit before retrieval.","basis":["SRC-USER","SRC-SPEC","SRC-HANDOFF"]}
+{"id":"A-05","phase":"phase-3-requirements-construction","assumption":"Grounded claim-plan rendering can scale to per-page generation while preserving strict validation.","basis":["SRC-E2E","SRC-SPEC","SRC-HANDOFF"]}
+{"id":"A-06","phase":"phase-3-requirements-construction","assumption":"The first expanded target band should be calibrated after catalog generation rather than fixed solely from the benchmark.","basis":["SRC-COMP","SRC-COVX","SRC-DR"]}

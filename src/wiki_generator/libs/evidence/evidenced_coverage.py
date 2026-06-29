@@ -34,6 +34,7 @@ from ..context_docs import is_provenance_section
 # single source of truth shared with the producer-side Phase 2 obligation gate
 # (libs.coverage.obligations), so this Phase 3 consumer cannot drift from the
 # Phase 2 checker on what an exact citeable lane is or which topics are blocking.
+from ..coverage import page_profiles
 from ..coverage.obligations import (
     BROAD_FIELD_LANES as _BROAD_FIELD_LANES,
     EXACT_FIELD_LANES as _EXACT_FIELD_LANES,
@@ -41,7 +42,7 @@ from ..coverage.obligations import (
     field_index_valid as _field_index_valid,
     parse_source_field as _parse_source_field,
 )
-from .options import COVERAGE_MODE_ENHANCEMENT
+from .options import COVERAGE_MODE_ENHANCEMENT, COVERAGE_MODE_EXPANDED
 
 EVIDENCED_COVERAGE_SCHEMA_VERSION = "phase3-evidenced-coverage-v1"
 
@@ -59,6 +60,9 @@ STATUS_NOT_APPLICABLE = "not_applicable"
 # required_topic_evidence_weak / required_topic_evidence_missing).
 CODE_WEAK = "required_topic_evidence_weak"
 CODE_MISSING = "required_topic_evidence_missing"
+# Phase D portfolio diagnostic codes (expanded mode only).
+CODE_PORTFOLIO_WEAK = "page_evidence_portfolio_weak"
+CODE_BLOCK_WEAK = "content_block_evidence_insufficient"
 
 # ``_EXACT_FIELD_LANES`` (field -> exact citeable lane) and ``_BROAD_FIELD_LANES``
 # (field -> broad recall lane) are imported above from libs.coverage.obligations:
@@ -230,6 +234,86 @@ def _eval_topic(section, packet, exact_by_field, topic, ter, *, required,
     }
 
 
+# --- Phase D: profile-aware evidence portfolios (expanded mode only) ----------
+def _packet_exact_lanes(packet: dict):
+    """The exact lanes that produced covered citeable evidence + the union of those
+    evidence ids, read straight from the packet's exact-request coverage records.
+
+    This reflects the page's *actual* exact evidence portfolio regardless of which
+    topic referenced each handle — the same exact substrate Phase C's source map
+    selected from, so the Phase C plan-floor and the Phase D evidence-floor align."""
+    covered_lanes: set = set()
+    all_ids: set = set()
+    for rec in (packet.get("coverage") or {}).get("exact_requests", []):
+        if rec.get("status") == "covered":
+            ev = list(rec.get("evidence_ids") or [])
+            if ev:
+                lane = rec.get("lane")
+                if lane:
+                    covered_lanes.add(lane)
+                all_ids.update(ev)
+    return covered_lanes, all_ids
+
+
+def _section_portfolio(section: dict, topic_rows: list, packet: dict) -> dict:
+    """Evaluate one page's profile-aware evidence portfolio (expanded mode).
+
+    A page is portfolio-``sufficient`` when its retrieved exact evidence covers at
+    least one of its page-profile floor lanes and meets the profile's minimum exact
+    item count; otherwise ``weak``. Profiles with no exact floor (the glossary) are
+    ``not_applicable``. Evidence-bearing content blocks that a TER links are checked
+    too: a linked block with no sufficient topic is insufficient. Read-only; never
+    synthesizes evidence."""
+    profile = section.get("page_profile")
+    floor = page_profiles.profile_evidence_floor(profile)
+    min_exact = page_profiles.profile_min_exact_items(profile)
+    covered_lanes, all_ids = _packet_exact_lanes(packet)
+    covered_floor = sorted(covered_lanes & set(floor))
+
+    if not floor:
+        portfolio_status = STATUS_NOT_APPLICABLE
+        floor_satisfied = True
+    else:
+        floor_satisfied = bool(covered_floor) and len(all_ids) >= min_exact
+        portfolio_status = STATUS_SUFFICIENT if floor_satisfied else STATUS_WEAK
+
+    # content blocks: evaluate every evidence-bearing profile block a TER links.
+    evidence_blocks = set(page_profiles.evidence_block_ids(profile))
+    by_block: dict = {}
+    for row in topic_rows:
+        bid = row.get("content_block_id")
+        if bid:
+            by_block.setdefault(bid, []).append(row)
+    block_rows: list = []
+    block_insufficient: list = []
+    for bid in sorted(set(by_block) & evidence_blocks):
+        rows = by_block[bid]
+        if any(r["status"] == STATUS_SUFFICIENT for r in rows):
+            bstatus = STATUS_SUFFICIENT
+        elif any(r["status"] == STATUS_WEAK for r in rows):
+            bstatus = STATUS_WEAK
+        else:
+            bstatus = STATUS_MISSING
+        block_rows.append({"content_block_id": bid, "status": bstatus,
+                           "topics": [r["topic"] for r in rows]})
+        if bstatus != STATUS_SUFFICIENT:
+            block_insufficient.append(bid)
+
+    return {
+        "page_profile": profile,
+        "portfolio_status": portfolio_status,
+        "portfolio_requirements": {
+            "floor_lanes": list(floor),
+            "min_exact_items": min_exact,
+            "covered_floor_lanes": covered_floor,
+            "exact_evidence_ids": len(all_ids),
+        },
+        "content_blocks": block_rows,
+        "floor_satisfied": floor_satisfied,
+        "block_insufficient": block_insufficient,
+    }
+
+
 # ``_section_topics`` (the required-topic enumeration) is imported above from
 # libs.coverage.obligations: the set of Phase-3-blocking topics this consumer
 # evaluates is exactly the set the Phase 2 obligation gate validates.
@@ -240,7 +324,9 @@ def evaluate_evidenced_coverage(bundle, packets, options) -> EvidencedCoverage:
     normal source-evidence section that is ``weak`` or ``missing`` is a blocking
     failure; its section id is returned in ``blocking_section_ids`` so the run
     fails before Phase 4 with ``bad_underspecified_normalized_plan`` (exit 3)."""
-    enforced = options.coverage_mode == COVERAGE_MODE_ENHANCEMENT
+    enforced = options.coverage_mode in (COVERAGE_MODE_ENHANCEMENT,
+                                         COVERAGE_MODE_EXPANDED)
+    expanded = options.coverage_mode == COVERAGE_MODE_EXPANDED
     packet_by_id = {p.get("section_id"): p for p in packets}
 
     section_rows: list = []
@@ -263,6 +349,11 @@ def evaluate_evidenced_coverage(bundle, packets, options) -> EvidencedCoverage:
         for topic, ter, required in _section_topics(section):
             row = _eval_topic(section, packet, exact_by_field, topic, ter,
                               required=required, provenance=provenance)
+            # Phase D (expanded): additive page/profile/content-block linkage on the
+            # topic row, so traceability can map topic -> catalog topic -> block.
+            if expanded:
+                row["catalog_topic_id"] = (ter or {}).get("catalog_topic_id")
+                row["content_block_id"] = (ter or {}).get("content_block_id")
             topic_rows.append(row)
             total_topics += 1
             counts[row["status"]] = counts.get(row["status"], 0) + 1
@@ -274,9 +365,34 @@ def evaluate_evidenced_coverage(bundle, packets, options) -> EvidencedCoverage:
                     f"{row['status']} ({row['diagnostic_code']}); "
                     f"{row['remediation']}")
 
+        # Phase D (expanded): profile-aware evidence portfolio + content blocks. A
+        # page whose retrieved exact evidence covers no page-profile floor lane, or a
+        # TER-linked evidence-bearing content block with no sufficient topic, blocks
+        # before Phase 4 (deterministic; never synthesizes evidence).
+        portfolio: dict | None = None
+        if expanded and not provenance:
+            portfolio = _section_portfolio(section, topic_rows, packet)
+            if not portfolio["floor_satisfied"]:
+                section_blocking = True
+                req = portfolio["portfolio_requirements"]
+                blocking_diags.append(
+                    f"{sid}: page profile "
+                    f"{portfolio['page_profile']!r} evidence portfolio is "
+                    f"{portfolio['portfolio_status']} ({CODE_PORTFOLIO_WEAK}); no "
+                    f"sufficient exact evidence in a floor lane {req['floor_lanes']} "
+                    "— add an exact citeable handle in a profile-floor lane or raise "
+                    "retrieval quality upstream (broad recall is never sufficient).")
+            for bid in portfolio["block_insufficient"]:
+                section_blocking = True
+                blocking_diags.append(
+                    f"{sid}: content block {bid!r} has insufficient exact evidence "
+                    f"({CODE_BLOCK_WEAK}); point its topic_evidence_requirements[] "
+                    "(content_block_id) at exact citeable retrieval_needs.* handles.")
+
         if provenance:
             section_status = STATUS_NOT_APPLICABLE
-        elif not topic_rows:
+        elif not topic_rows and not (expanded and portfolio
+                                     and not portfolio["floor_satisfied"]):
             section_status = "pass"  # nothing required to evidence
         elif enforced and section_blocking:
             section_status = "fail"
@@ -286,13 +402,21 @@ def evaluate_evidenced_coverage(bundle, packets, options) -> EvidencedCoverage:
         if section_blocking and sid not in blocking_sids:
             blocking_sids.append(sid)
 
-        section_rows.append({
+        section_row = {
             "section_id": sid,
             "section_role": section.get("section_role"),
             "status": section_status,
             "required_topic_count": sum(1 for r in topic_rows if r["required"]),
             "topics": topic_rows,
-        })
+        }
+        if expanded:
+            section_row["page_profile"] = section.get("page_profile")
+            if portfolio is not None:
+                section_row["portfolio_status"] = portfolio["portfolio_status"]
+                section_row["portfolio_requirements"] = portfolio[
+                    "portfolio_requirements"]
+                section_row["content_blocks"] = portfolio["content_blocks"]
+        section_rows.append(section_row)
 
     enforced_blocking = enforced and bool(blocking_sids)
     matrix = {

@@ -1,0 +1,79 @@
+{
+  "schema_version": "tdd-rightsize-plan-v1",
+  "document_weight": "full",
+  "decision": "Use a full formal TDD.",
+  "rationale": [
+    "The initiative changes multiple phases of a production documentation pipeline: deterministic repository analysis, LLM planning, evidence retrieval, grounded writing, validation, and rollout.",
+    "The penalty for being wrong is high: weakened grounding could create misleading technical documentation, benchmark leakage, false coverage PASS states, or costly live provider runs.",
+    "The design introduces new machine-readable artifacts and gates that need data contracts, failure behavior, tests, and rollout strategy.",
+    "The work must remain compatible with existing baseline mode and the official Vertex/Gemini final provider path."
+  ],
+  "required_sections": [
+    "Header and metadata",
+    "Table of contents",
+    "Summary",
+    "Context and background",
+    "Goals, non-goals, and future goals",
+    "Success metrics and definition of done",
+    "Requirements, constraints, assumptions, and dependencies",
+    "Architecture overview and data flow",
+    "Detailed component/module design",
+    "Data contracts/artifacts",
+    "CLI/wrapper/API behavior and compatibility strategy",
+    "Validation and evaluation design",
+    "Non-functional requirements and quality attributes",
+    "Alternatives considered and trade-offs",
+    "Key architecture decisions / ADR",
+    "Implementation phases, milestones, and tests",
+    "Rollout, migration, rollback, and operations",
+    "Risks, open questions, and failure modes",
+    "Appendices, glossary, and references"
+  ],
+  "intentionally_omitted_sections": [
+    {
+      "section": "Low-level code listings",
+      "reason": "The user requested a TDD and explicitly said not to edit code. Implementation code belongs in later implementation tasks."
+    },
+    {
+      "section": "Detailed class/function signatures for every new module",
+      "reason": "The TDD should name likely files/modules and data contracts, but exact Python APIs should be finalized during implementation with tests."
+    },
+    {
+      "section": "Benchmark-derived page inventory",
+      "reason": "Benchmark headings/page structure are comparator-only and must not seed generated output or citeable evidence."
+    }
+  ],
+  "architecture_views_selected": [
+    {
+      "view": "Context view",
+      "reason": "Readers need to see where the new catalog/source-selection layer fits in the existing Phase 1–4 pipeline."
+    },
+    {
+      "view": "Component/module view",
+      "reason": "Implementers need likely modules to create or modify."
+    },
+    {
+      "view": "Data/artifact view",
+      "reason": "The design is artifact-gated; data contracts are central to correctness."
+    },
+    {
+      "view": "Runtime/data-flow view",
+      "reason": "Success/failure behavior across catalog→plan→source map→evidence→output must be reviewable."
+    },
+    {
+      "view": "Validation/operations view",
+      "reason": "Strict validators, rollout, rollback, freshness, and no-live-without-approval policies are core constraints."
+    }
+  ],
+  "views_omitted": [
+    {
+      "view": "Deployment infrastructure diagram",
+      "reason": "The implementation is a CLI/library pipeline inside an existing repo, not a new deployed service. Operational behavior is covered in rollout/ops."
+    },
+    {
+      "view": "Security threat model deep dive",
+      "reason": "The primary safety risk is documentation grounding and benchmark leakage, covered as quality/risk gates. No new network-facing surface is introduced by the design itself."
+    }
+  ],
+  "feedback_loop_policy": "If implementation discovery shows the catalog cannot be built deterministically from existing Phase 1 artifacts, revisit Phase 3 technical design and possibly Phase 2 success metrics before coding broader rendering changes."
+}

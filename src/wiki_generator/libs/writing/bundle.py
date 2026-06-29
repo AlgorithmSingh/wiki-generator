@@ -29,8 +29,12 @@ from .. import util
 from ..context_docs import is_generated_context_path, looks_like_context_artifact
 from ..evidence.schema import validate_packet
 from .errors import BadInputArtifact, GateFailure
-from .generated_coverage import build_topic_obligations, read_enhancement_gates
-from .options import COVERAGE_MODE_ENHANCEMENT
+from .generated_coverage import (
+    build_content_block_obligations,
+    build_topic_obligations,
+    read_enhancement_gates,
+)
+from .options import ENFORCING_COVERAGE_MODES
 
 # Bundle subtrees / docs that may never be cited as source evidence.
 _NON_SOURCE_PREFIXES = ("plans/", "derived/", "planner-digest/", "wiki/")
@@ -96,6 +100,8 @@ class WritingBundle:
     coverage_mode: str = "baseline"
     evidenced_coverage: dict | None = None    # parsed evidence/evidenced-coverage.json
     topic_obligations: dict = field(default_factory=dict)  # sid -> [obligation]
+    # expanded mode: sid -> [content-block obligation] (Phase E content blocks).
+    content_block_obligations: dict = field(default_factory=dict)
 
     def evidence(self, evidence_id: str) -> EvidenceItem | None:
         return self.evidence_index.get(evidence_id)
@@ -506,15 +512,17 @@ def load_and_gate(options) -> WritingBundle:
     # any provider call. Phase 4 consumes these upstream artifacts; it never re-runs
     # Phase 2/3, repairs plans, retrieves evidence, or synthesizes evidence. A
     # missing/baseline/failed upstream gate is a pre-provider GateFailure (exit 3).
-    if coverage_mode == COVERAGE_MODE_ENHANCEMENT:
+    if coverage_mode in ENFORCING_COVERAGE_MODES:
         gate_failures, evidenced = read_enhancement_gates(root, val)
         if gate_failures:
             summary = "; ".join(gate_failures[:6])
             more = "" if len(gate_failures) <= 6 else \
                 f" (+{len(gate_failures) - 6} more)"
             raise GateFailure(
-                f"enhancement coverage mode requires passing upstream gates: "
+                f"{coverage_mode} coverage mode requires passing upstream gates: "
                 f"{summary}{more}")
         bundle.evidenced_coverage = evidenced
         bundle.topic_obligations = build_topic_obligations(evidenced)
+        # Expanded mode additionally carries content-block obligations (Phase E).
+        bundle.content_block_obligations = build_content_block_obligations(evidenced)
     return bundle

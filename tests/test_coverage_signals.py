@@ -311,6 +311,42 @@ class CondenseIntegrationTests(unittest.TestCase):
         self.assertIn("planning-coverage-signals.md", readme)
 
 
+# ---------------------------------------------------------------------------
+class SharedHelperTests(unittest.TestCase):
+    """The public seams the Phase-A topic catalog reuses so the detector and the
+    catalog can never disagree on a family's files or its signal strength."""
+
+    def test_family_candidates_is_uncapped_and_sorted(self):
+        det = S.DETECTORS["migrations-operations"]
+        files = [_f(f"api/db/migrations/{i:04}_m.py")
+                 for i in range(S._MAX_PATHS_PER_FAMILY + 5)]
+        cands = S.family_candidates(files, det)
+        # full count (uncapped), unlike the detector's capped candidate_paths
+        self.assertEqual(len(cands), S._MAX_PATHS_PER_FAMILY + 5)
+        paths = [c["path"] for c in cands]
+        self.assertEqual(paths, sorted(paths))
+
+    def test_family_candidates_matches_detector_candidate_paths(self):
+        det = S.DETECTORS["frontend"]
+        cands = S.family_candidates(RICH_FILES, det)
+        fe = {f.key: f for f in S.derive_coverage_signals(
+            _bundle(RICH_FILES)).families}["frontend"]
+        # the detector shows the first _MAX_PATHS_PER_FAMILY of the shared list
+        self.assertEqual([c["path"] for c in fe.candidate_paths],
+                         [c["path"] for c in cands][:S._MAX_PATHS_PER_FAMILY])
+
+    def test_family_candidates_skips_generated_and_vendored(self):
+        det = S.DETECTORS["go-native"]
+        cands = S.family_candidates(RICH_FILES, det)
+        self.assertNotIn("go.sum", [c["path"] for c in cands])  # generated
+
+    def test_status_for_matches_canonical_thresholds(self):
+        self.assertEqual(S.status_for(3), S.STATUS_PRESENT)
+        self.assertEqual(S.status_for(1), S.STATUS_LOW)
+        self.assertEqual(S.status_for(0), S.STATUS_MISSING)
+        self.assertEqual(S.status_for(0, query_hit_count=5), S.STATUS_PRESENT)
+
+
 def _rmtree(path):
     import shutil
     shutil.rmtree(path, ignore_errors=True)

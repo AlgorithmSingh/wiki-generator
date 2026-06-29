@@ -41,7 +41,16 @@ MAX_REWRITE_ATTEMPTS_HARD_CAP = 2
 # evidenced sufficient required topic was generated with valid citations.
 COVERAGE_MODE_BASELINE = "baseline"
 COVERAGE_MODE_ENHANCEMENT = "enhancement"
-COVERAGE_MODES = (COVERAGE_MODE_BASELINE, COVERAGE_MODE_ENHANCEMENT)
+# ``expanded`` is the DeepWiki-style hierarchical mode: a strict superset of
+# ``enhancement`` that ALSO validates page-profile / content-block coverage and
+# carries the hierarchical page context (profile, catalog topics, content blocks,
+# relevant-source-map rows) into the writing packet. It enforces the same
+# pre-provider upstream gates as ``enhancement``.
+COVERAGE_MODE_EXPANDED = "expanded"
+COVERAGE_MODES = (COVERAGE_MODE_BASELINE, COVERAGE_MODE_ENHANCEMENT,
+                  COVERAGE_MODE_EXPANDED)
+# The coverage modes that enforce the upstream gates + generated-coverage gate.
+ENFORCING_COVERAGE_MODES = (COVERAGE_MODE_ENHANCEMENT, COVERAGE_MODE_EXPANDED)
 
 
 @dataclass(frozen=True)
@@ -120,6 +129,17 @@ class WritingOptions:
     def is_enhancement(self) -> bool:
         """True when the opt-in DeepWiki coverage enhancement mode is requested."""
         return self.coverage_mode == COVERAGE_MODE_ENHANCEMENT
+
+    @property
+    def is_expanded(self) -> bool:
+        """True when the opt-in DeepWiki-style expanded coverage mode is requested."""
+        return self.coverage_mode == COVERAGE_MODE_EXPANDED
+
+    @property
+    def enforces_coverage(self) -> bool:
+        """True when the run enforces upstream + generated coverage gates
+        (``enhancement`` or ``expanded``)."""
+        return self.coverage_mode in ENFORCING_COVERAGE_MODES
 
     @property
     def is_grounded(self) -> bool:
