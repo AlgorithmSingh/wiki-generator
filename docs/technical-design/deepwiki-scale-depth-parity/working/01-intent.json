@@ -1,0 +1,32 @@
+{
+  "target_change": "Add a deterministic, source-derived per-section DEPTH/detail-density budget to the Phase 4 grounded claim-plan path so a fanned-out but shallow wiki cannot pass as DeepWiki scale parity.",
+  "why_now": "The prior phase (deepwiki-scale-core-fanout) solved Phase 2 BREADTH (anti-compression): the latest real RAGFlow E2E shows 56 sections, 169/169 required topics, 82/82 promoted leaf topics, 96/96 content blocks. Yet the generated wiki is shallow: ~530 words and ~4 headings per section, ~7.3 claims/page, 45,038 words vs a ~98,271-word benchmark. The renderer makes one claim into one paragraph and one required topic into one heading, and nothing fails a shallow plan.",
+  "deliverables": [
+    "New module libs/writing/depth_budget.py: injectable DepthPolicy + source-derived per-section depth budget derivation + deterministic depth evaluation + prompt-guidance rendering (mirrors libs/coverage/anti_compression.py).",
+    "claim_plan.validate_claim_plan: optional depth_budget gate that fails a shallow plan with precise per-topic / per-content-block / per-section diagnostics (measured vs required).",
+    "claim_plan prompt construction: depth-budget guidance lines + hardened system instruction asking the planner to ground enough claims.",
+    "grounded.py + __init__.py: compute the depth budget per section (expanded grounded mode only), thread it into prompt + validation, record depth metrics in the per-section grounded audit block.",
+    "Focused tests proving a shallow-but-covered plan FAILS and a sufficiently detailed one PASSES, plus non-regression of baseline/enhancement and the existing expanded grounded command path."
+  ],
+  "constraints": [
+    "No live Vertex/Gemini/API calls; unit/integration tests only this slice.",
+    "Preserve strict grounding and citation validation; do not weaken any validator.",
+    "Preserve benchmark quarantine: every depth number is source-derived (mapped evidence, evidence packets, content blocks, required topics, token bank, source handles), never benchmark-derived.",
+    "Phase 3 stays deterministic and LLM-free; protected spec docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md untouched.",
+    "baseline and enhancement behavior unchanged; depth budget applies only to the expanded grounded path.",
+    "expanded is the core path; deepwiki-scale remains a behavior-identical alias.",
+    "No output patching; no generic heal/retry loops.",
+    "Python HARD-RULES: explicit typing, no mutable defaults, no import-time side effects, dependency injection (policy object), narrow exceptions, deterministic, clean tree."
+  ],
+  "uncertainty": "medium",
+  "known_unknowns": [
+    "Exact DepthPolicy default thresholds that best approximate DeepWiki density without padding (release-owner sign-off before any billed live run).",
+    "Whether the live planner reaches the depth budget on the real catalog (deferred to a separately approved live run; not in this slice).",
+    "Whether content-block-level heading depth (#### per content block) is added now or as a follow-up (decided: follow-up M2, to bound blast radius on the content-block-coverage evaluator)."
+  ],
+  "assumptions": [
+    "Phase 3 evidenced coverage already maps a precise mapped_evidence_ids[] set to each sufficient required topic (verified in generated_coverage.build_topic_obligations).",
+    "A topic mapped to N distinct evidence ids can ground at least N grounded claims (one per distinct source span), so an evidence-density-derived target is satisfiable without padding.",
+    "The depth budget only needs to act on the grounded claim-plan path; the real DeepWiki-scale run uses --grounded-claim-plan."
+  ]
+}

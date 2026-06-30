@@ -1,0 +1,29 @@
+{
+  "phase": "phase-6-finalization",
+  "role_separation": "Writer (assembler) drafted final/technical-design-document.md from working/*. A distinct validator step (this report) gated it against definition-of-done.json without authoring design content. A distinct repair step recorded findings in working/repair-log.md. Writer did not approve its own output.",
+  "design_validation": {
+    "selected_sections_present": true,
+    "non_goals_paired_with_goals": true,
+    "interfaces_explicit_with_errors_and_failure_paths": true,
+    "quality_attributes_measurable": true,
+    "alternatives_and_adr_recorded": true,
+    "tests_traced_to_requirements": true,
+    "rollout_rollback_operations_present": true,
+    "benchmark_quarantine_stated": true,
+    "grounding_tags_used": true,
+    "toc_present_for_formal_doc": true
+  },
+  "dod_gate_status": [
+    {"id": "DoD1", "status": "pass", "evidence": "§7.1 + working/09,10,11 define a deterministic, source-derived, stdlib-only depth budget; confirmed by implementation tests DepthPolicyTests/DeriveBudgetTests."},
+    {"id": "DoD2", "status": "pass", "evidence": "Implemented: tests/test_phase4_depth_budget.py DepthGateTests prove shallow fails / detailed passes / single-evidence passes."},
+    {"id": "DoD3", "status": "pass", "evidence": "depth_budget optional (default None); full focused + full suite green incl. ops expanded grounded E2E."},
+    {"id": "DoD4", "status": "pass", "evidence": "Prompt carries render_depth_budget_lines; DepthPromptTests assert per-topic targets present and no benchmark string."},
+    {"id": "DoD5", "status": "pass", "evidence": "grounded.depth audit block; DepthGroundedE2ETests assert depth fields recorded."},
+    {"id": "DoD6", "status": "pass", "evidence": "git diff --exit-code on protected spec clean; grep shows no ragflow-deepwiki import in src/."},
+    {"id": "DoD7", "status": "pass", "evidence": ".sequence/static-analysis.json: py_compile clean, no mutable defaults, no import-time construction, layering clean; git diff --check clean; .sequence/ git-ignored."},
+    {"id": "DoD8", "status": "pass", "evidence": "final TDD assembled; this validation report + repair log written; writer != approver simulated."}
+  ],
+  "revisit": null,
+  "verdict": "pass",
+  "notes": "Validation finalized after the M1 implementation completed and tests passed. No structural gap required a revisit; repairs were limited to the items in working/repair-log.md."
+}

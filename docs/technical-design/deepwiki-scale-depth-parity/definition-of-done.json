@@ -1,0 +1,63 @@
+{
+  "slug": "deepwiki-scale-depth-parity",
+  "negotiated_from": "The actual problem (fanned-out but shallow generation), readers (Phase 4 + coverage maintainers, operator, release owner), constraints (no live calls, no weakened validators, benchmark quarantine, baseline/enhancement compatibility), and risk (intentional pass/fail flip on an existing path).",
+  "gates": [
+    {
+      "id": "DoD1",
+      "requirement": "Source-derived depth budget exists and is deterministic.",
+      "evidence": "libs/writing/depth_budget.py with a frozen injectable DepthPolicy, derive_section_depth_budget, evaluate_plan_depth, render_depth_budget_lines; every number derives from mapped evidence / packets / content blocks / required topics / token bank / source handles; byte-identical on rerun.",
+      "verify": "Unit tests assert derivation values and rerun byte-equality; comparator file never imported."
+    },
+    {
+      "id": "DoD2",
+      "requirement": "Shallow-but-covered claim plan FAILS; sufficiently detailed one PASSES.",
+      "evidence": "claim_plan.validate_claim_plan emits required_topic_underfilled_for_mapped_evidence and section_claim_density_below_source_floor with measured-vs-required detail. (Content-block coverage stays the downstream generated-coverage gate; the depth gate deliberately does not duplicate it — see repair-log R6.)",
+      "verify": "tests/test_phase4_depth_budget.py: shallow plan fails, detailed plan passes, single-mapped-evidence topic passes with one claim."
+    },
+    {
+      "id": "DoD3",
+      "requirement": "No existing validator weakened; existing pass cases keep passing.",
+      "evidence": "depth_budget is an optional keyword (default None) on validate_claim_plan and the prompt builders; baseline/enhancement never compute it.",
+      "verify": "Full focused suites + full suite green; the ops expanded grounded command E2E still passes (1 mapped evidence id, 1 claim)."
+    },
+    {
+      "id": "DoD4",
+      "requirement": "Prompt carries the depth budget; system instruction asks for enough claims; no benchmark leakage.",
+      "evidence": "render_depth_budget_lines output embedded in the claim-plan prompt; hardened CLAIM_PLAN_SYSTEM_INSTRUCTION.",
+      "verify": "Prompt test asserts the depth-budget lines and per-topic targets appear and contain no benchmark string."
+    },
+    {
+      "id": "DoD5",
+      "requirement": "Depth metrics are visible to operators.",
+      "evidence": "Per-section grounded audit block records the depth budget + measured per-topic and total claim counts.",
+      "verify": "Grounded E2E asserts the grounded metadata block carries depth fields."
+    },
+    {
+      "id": "DoD6",
+      "requirement": "Benchmark quarantine + Phase 3 protected spec preserved.",
+      "evidence": "No read of ragflow-deepwiki.md anywhere in src; no change to docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md or Phase 1/2/3 code.",
+      "verify": "git diff --exit-code on the protected spec; grep shows no comparator import in src/."
+    },
+    {
+      "id": "DoD7",
+      "requirement": "Python HARD-RULES + clean tree.",
+      "evidence": "py_compile clean; no mutable defaults; no import-time side effects; explicit typing; narrow exceptions; only intended deliverables changed; .sequence/ git-ignored.",
+      "verify": "Static checks in .sequence/static-analysis.json; git diff --check clean."
+    },
+    {
+      "id": "DoD8",
+      "requirement": "TDD is assembled, validated against this DoD by a separate validator step, and repairs (if any) are logged.",
+      "evidence": "final/technical-design-document.md; working/validation-report.json; working/repair-log.md.",
+      "verify": "Phase 6 validation-report status == pass with every DoD gate addressed."
+    }
+  ],
+  "accepted_tradeoffs": [
+    "A previously-passing fanned-out-but-shallow expanded GROUNDED claim plan now fails the depth gate. This is the intended correction (mirrors the prior phase's accepted breadth trade-off). It is off by default at the command level (baseline), opt-in via expanded+grounded, and reversible."
+  ],
+  "out_of_scope": [
+    "Live billed runs",
+    "Content-block-level #### heading rendering (M2)",
+    "Document-level depth dashboard",
+    "Any change to baseline/enhancement, Phase 1/2/3, or the protected spec"
+  ]
+}

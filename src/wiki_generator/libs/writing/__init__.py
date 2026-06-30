@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 
 from . import assemble
 from . import claim_plan as cp
+from . import depth_budget as depth
 from .bundle import load_and_gate
 from .errors import (
     BadInputArtifact,
@@ -25,8 +26,12 @@ from .errors import (
     ProviderFailure,
     WritingValidationFailure,
 )
-from .grounded import generate_grounded_section, section_obligations
-from .options import WritingOptions
+from .grounded import (
+    generate_grounded_section,
+    section_block_obligations,
+    section_obligations,
+)
+from .options import EXPANDED_COVERAGE_MODES, WritingOptions
 from .packet import build_writing_packet
 from .parse import parse_section_response
 from .prompt import build_rewrite_prompt, build_section_prompt
@@ -110,13 +115,28 @@ def run(options: WritingOptions, *, provider=None) -> WritingResult:
     packets = {sid: build_writing_packet(bundle, sid) for sid in bundle.section_order}
     token_banks: dict = {}
     obligations_by_sid: dict = {}
+    depth_budgets: dict = {}
+    # The source-derived Phase 4 depth budget is computed only for the expanded grounded path
+    # (the DeepWiki-scale generation path). baseline/enhancement and freeform expanded compute
+    # nothing, so their behaviour is byte-identical.
+    enforce_depth = grounded and getattr(
+        bundle, "coverage_mode", "baseline") in EXPANDED_COVERAGE_MODES
     if grounded:
         for sid in bundle.section_order:
             token_banks[sid] = build_token_bank(bundle, sid)
             obligations_by_sid[sid] = section_obligations(bundle, sid)
+            if enforce_depth:
+                depth_budgets[sid] = depth.derive_section_depth_budget(
+                    section_id=sid, obligations=obligations_by_sid[sid],
+                    content_block_obligations=section_block_obligations(bundle, sid),
+                    allowed_evidence_ids=packets[sid].allowed_evidence_ids,
+                    token_count=len(token_banks[sid].tokens),
+                    source_handle_count=len(
+                        packets[sid].data.get("relevant_source_handles") or []))
             assemble.write_token_bank(options.out_dir, sid, token_banks[sid])
         prompts = {sid: cp.build_claim_plan_prompt(
-            packets[sid], token_banks[sid], obligations=obligations_by_sid[sid])
+            packets[sid], token_banks[sid], obligations=obligations_by_sid[sid],
+            depth_budget=depth_budgets.get(sid))
             for sid in bundle.section_order}
     else:
         prompts = {sid: build_section_prompt(packets[sid])
@@ -154,7 +174,7 @@ def run(options: WritingOptions, *, provider=None) -> WritingResult:
             validation, raw_path, attempts, grounded_meta = generate_grounded_section(
                 options, provider, bundle, wp, plan_prompt=prompts[sid],
                 token_bank=token_banks[sid], obligations=obligations_by_sid[sid],
-                out_dir=options.out_dir)
+                out_dir=options.out_dir, depth_budget=depth_budgets.get(sid))
         else:
             resp = provider.generate(sid, prompts[sid])
             if resp.raw_text is None:

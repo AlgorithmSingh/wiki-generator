@@ -51,6 +51,7 @@ import re
 from dataclasses import dataclass, field
 
 from . import citations as cit
+from . import depth_budget as depth
 from . import generated_coverage as gencov
 from .schema import CLAIM_PLAN_SCHEMA_VERSION
 
@@ -96,11 +97,18 @@ def _v(code: str, message: str) -> dict:
 
 # --- plan validation ----------------------------------------------------------
 def validate_claim_plan(plan, *, section_id, token_bank, allowed_evidence_ids,
-                        evidence_index, obligations=None) -> PlanValidation:
+                        evidence_index, obligations=None, depth_budget=None) -> PlanValidation:
     """Deterministically validate one parsed claim ``plan``. Returns a
     :class:`PlanValidation`; never mutates ``plan``. ``obligations`` (the section's
     sufficient required-topic obligations, each with ``topic``/``mapped_evidence_ids``)
-    is supplied only in enhancement mode and enforces required-topic planning."""
+    is supplied only in enhancement mode and enforces required-topic planning.
+
+    ``depth_budget`` (a :class:`depth_budget.SectionDepthBudget`) is supplied only in the
+    expanded grounded path. When present, a source-derived depth gate runs **after** all the
+    grounding/required-topic checks above and appends ``claim_plan_*_underfilled`` violations
+    for a plan that covers its required topics/content blocks only existentially while leaving
+    most of the evidence Phase 3 mapped to them unused. When ``None`` the function's output is
+    byte-identical to the pre-depth behaviour; the depth gate never relaxes a grounding check."""
     violations: list = []
     warnings: list = []
     by_token = token_bank.by_id()
@@ -300,6 +308,15 @@ def validate_claim_plan(plan, *, section_id, token_bank, allowed_evidence_ids,
                                  f"required topic {topic!r} is planned but no claim "
                                  f"cites or uses a token from one of its mapped evidence "
                                  f"ids {sorted(mapped)}"))
+
+    # expanded grounded: a source-derived depth gate. Runs AFTER every grounding/required-topic
+    # check above (so a grounding defect is never masked by a depth defect), and only when a
+    # depth budget was supplied. It fails a plan that covers its topics/blocks only
+    # existentially while leaving the evidence Phase 3 mapped to them unused.
+    if depth_budget is not None:
+        depth_report = depth.evaluate_plan_depth(depth_budget, norm_claims)
+        for sf in depth_report.shortfalls:
+            violations.append(_v(sf.code, sf.detail))
 
     ok = not violations
     return PlanValidation(section_id, ok, violations, warnings, norm_claims)
@@ -599,7 +616,13 @@ runtime_flow, summary.
 - Write explanatory prose skeletons; attach each claim to the specific evidence \
 that supports it. Prefer plain prose over forcing a token where evidence is thin.
 - `exact`/`high` evidence supports definitive statements; `low` (graph-context) \
-evidence must never be the sole support for a precise claim."""
+evidence must never be the sole support for a precise claim.
+- Ground enough claims to meet each required topic's source-derived claim target when a \
+depth budget is shown below: roughly one grounded claim per evidence id that Phase 3 \
+mapped to the topic. A required topic written with a single claim while several evidence \
+ids were mapped to it is a shallow page. Do NOT pad, repeat, or invent to hit the target — \
+each added claim must make a distinct, grounded statement citing a distinct mapped evidence \
+id. If the evidence genuinely does not support more, ground what exists and cite it."""
 
 
 def _token_bank_lines(token_bank) -> list:
@@ -653,9 +676,12 @@ def _plan_contract(section_id: str, token_bank, obligations) -> dict:
     }
 
 
-def build_claim_plan_prompt(writing_packet, token_bank, *, obligations=None) -> str:
+def build_claim_plan_prompt(writing_packet, token_bank, *, obligations=None,
+                            depth_budget=None) -> str:
     """The full claim-plan prompt for one section (system instruction + evidence
-    packet + token bank + response contract). Deterministic / byte-stable."""
+    packet + token bank + required topics + optional source-derived depth budget +
+    response contract). Deterministic / byte-stable. ``depth_budget`` is inserted only in the
+    expanded grounded path; when ``None`` the prompt bytes are unchanged from before."""
     wp = writing_packet
     sid = wp.section_id
     parts: list = []
@@ -683,6 +709,8 @@ def build_claim_plan_prompt(writing_packet, token_bank, *, obligations=None) -> 
     parts.append("")
     parts += _token_bank_lines(token_bank)
     parts += _required_topic_lines(obligations)
+    if depth_budget is not None:
+        parts += depth.render_depth_budget_lines(depth_budget)
     parts.append("## Response contract (return EXACTLY this JSON shape)")
     parts.append("")
     parts.append("```json")
@@ -695,11 +723,14 @@ def build_claim_plan_prompt(writing_packet, token_bank, *, obligations=None) -> 
 
 
 def build_claim_plan_rewrite_prompt(writing_packet, token_bank, prior_raw: str,
-                                    problems: list, *, obligations=None) -> str:
+                                    problems: list, *, obligations=None,
+                                    depth_budget=None) -> str:
     """A bounded re-prompt for an INVALID claim plan: the same evidence + token bank
     plus the exact machine-checked plan violations. It adds no evidence, no tokens,
-    and no rules — it only asks the model to fix the listed plan defects."""
-    base = build_claim_plan_prompt(writing_packet, token_bank, obligations=obligations)
+    and no rules — it only asks the model to fix the listed plan defects (which may now
+    include source-derived depth shortfalls when a ``depth_budget`` is in effect)."""
+    base = build_claim_plan_prompt(writing_packet, token_bank, obligations=obligations,
+                                   depth_budget=depth_budget)
     extra = [
         "",
         "# REWRITE — FIX CLAIM-PLAN VALIDATION ERRORS ONLY",

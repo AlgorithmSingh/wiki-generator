@@ -1,0 +1,34 @@
+{
+  "classification": "standard",
+  "penalty_for_being_wrong": "Medium. The change intentionally flips the pass/fail outcome of an existing expanded grounded path, so a wrong threshold could either (a) wrongly fail legitimately-thin sections, or (b) fail to add real depth. Both are recoverable: the policy is injectable, the gate is off by default at the command level (baseline), it is reversible in one place, and there are no irreversible data migrations or external contracts.",
+  "reversibility": "High. Gate is additive and opt-in (expanded grounded only); a one-line guard disables depth enforcement; prompt/metric additions are inert without it. No persisted schema is broken.",
+  "required_sections": [
+    "Header & Metadata",
+    "Summary",
+    "Context & Background",
+    "Goals, Non-Goals & Future Goals",
+    "Success Metrics",
+    "Requirements, Constraints, Assumptions & Dependencies",
+    "Architecture Overview",
+    "Detailed Design",
+    "Interfaces / Data Contracts & Behavior",
+    "Non-Functional Requirements & Quality Attributes",
+    "Alternatives Considered & Trade-offs",
+    "Key Architecture Decisions (ADRs)",
+    "Implementation Plan, Milestones & Test Plan",
+    "Rollout, Migration, Rollback & Operations",
+    "Risks, Open Questions & Failure Modes",
+    "Appendices, Glossary & References"
+  ],
+  "intentionally_omitted_sections": [
+    {
+      "section": "Dedicated data-migration / retention / privacy design",
+      "reason": "No new persisted data store, no PII, no migration. Depth artifacts are in-memory + an additive per-section audit block."
+    },
+    {
+      "section": "Multi-team rollout / deployment topology",
+      "reason": "Library-internal change in one pipeline; no service, no deployment surface."
+    }
+  ],
+  "notes": "Standard weight, matching the prior deepwiki-scale-parity-next-phase TDD which made the same class of change (a new deterministic, source-derived, fail-closed gate with an injectable policy)."
+}

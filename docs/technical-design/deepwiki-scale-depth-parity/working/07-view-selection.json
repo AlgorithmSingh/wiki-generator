@@ -1,0 +1,12 @@
+{
+  "chosen_views": [
+    {"view": "component/module", "why": "The change is a new module plus additive edits to four existing modules; readers need the responsibility boundaries."},
+    {"view": "data contract", "why": "The depth budget and depth report are new in-memory data shapes threaded through the claim plan; their fields and derivation must be explicit."},
+    {"view": "runtime/behavior (sequence + failure paths)", "why": "The gate changes the pass/fail path of the grounded section loop; success and failure (shallow plan) paths must be described."}
+  ],
+  "omitted_views": [
+    {"view": "deployment", "why": "Library-internal; no services, no topology."},
+    {"view": "data-at-rest / storage", "why": "No persisted store; the only on-disk effect is an additive per-section audit block."},
+    {"view": "context diagram (system boundary)", "why": "Boundary is unchanged from the prior phases; reusing their architecture overview is enough."}
+  ]
+}

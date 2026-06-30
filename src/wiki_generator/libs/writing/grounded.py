@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from . import assemble
 from . import claim_plan as cp
+from . import depth_budget as depth
 from .errors import ProviderFailure, WritingValidationFailure
 from .options import EXPANDED_COVERAGE_MODES, ENFORCING_COVERAGE_MODES
 from .parse import parse_section_response
@@ -43,7 +44,8 @@ def section_block_obligations(bundle, sid: str):
 
 
 def generate_grounded_section(options, provider, bundle, writing_packet, *,
-                              plan_prompt, token_bank, obligations, out_dir):
+                              plan_prompt, token_bank, obligations, out_dir,
+                              depth_budget=None):
     """Run the grounded two-stage flow for one section.
 
     Returns ``(validation, raw_path, attempts, grounded_meta)`` where ``validation``
@@ -51,7 +53,11 @@ def generate_grounded_section(options, provider, bundle, writing_packet, *,
     deterministically rendered Markdown). Raises :class:`ProviderFailure` on missing
     provider text and :class:`WritingValidationFailure` when the claim plan cannot be
     validated within the bounded cap, or when the rendered Markdown fails the strict
-    section validator (a deterministic render/token-bank defect, never re-prompted)."""
+    section validator (a deterministic render/token-bank defect, never re-prompted).
+
+    ``depth_budget`` (expanded grounded path only) threads the source-derived depth gate
+    through claim-plan validation + the bounded re-prompt; it never weakens any grounding
+    check and its measured result is recorded in the per-section grounded audit block."""
     sid = writing_packet.section_id
 
     resp = provider.generate(sid, plan_prompt)
@@ -71,7 +77,8 @@ def generate_grounded_section(options, provider, bundle, writing_packet, *,
     pv = cp.validate_claim_plan(
         plan, section_id=sid, token_bank=token_bank,
         allowed_evidence_ids=writing_packet.allowed_evidence_ids,
-        evidence_index=bundle.evidence_index, obligations=obligations)
+        evidence_index=bundle.evidence_index, obligations=obligations,
+        depth_budget=depth_budget)
 
     attempts = 0
     rewrite_enabled = options.uses_live_model and options.max_rewrite_attempts > 0
@@ -79,7 +86,7 @@ def generate_grounded_section(options, provider, bundle, writing_packet, *,
         attempts += 1
         rprompt = cp.build_claim_plan_rewrite_prompt(
             writing_packet, token_bank, resp.raw_text, pv.problem_lines(),
-            obligations=obligations)
+            obligations=obligations, depth_budget=depth_budget)
         resp = provider.generate(sid, rprompt)
         assemble.write_rewrite_audit(
             out_dir, sid, attempts, prompt=rprompt, raw_text=resp.raw_text,
@@ -92,7 +99,8 @@ def generate_grounded_section(options, provider, bundle, writing_packet, *,
         pv = cp.validate_claim_plan(
             plan, section_id=sid, token_bank=token_bank,
             allowed_evidence_ids=writing_packet.allowed_evidence_ids,
-            evidence_index=bundle.evidence_index, obligations=obligations)
+            evidence_index=bundle.evidence_index, obligations=obligations,
+            depth_budget=depth_budget)
 
     assemble.write_plan_validation_audit(out_dir, sid, pv)
 
@@ -136,4 +144,18 @@ def generate_grounded_section(options, provider, bundle, writing_packet, *,
         "plan_warnings": list(pv.warnings),
         "rewrite_attempts": attempts,
     }
+    # Expanded grounded: record the source-derived depth budget + the measured claim density
+    # so an operator can see why a section passed (or, on a fail-closed run, why it failed)
+    # without re-deriving it. Deterministic; benchmark-quarantined.
+    if depth_budget is not None:
+        dr = depth.evaluate_plan_depth(depth_budget, pv.claims)
+        grounded_meta["depth"] = {
+            "schema_version": depth.DEPTH_BUDGET_SCHEMA_VERSION,
+            "min_section_claims": depth_budget.min_section_claims,
+            "total_claims": dr.measured["total_claims"],
+            "topic_targets": {t.topic: t.min_claims for t in depth_budget.topic_targets},
+            "topic_measured": dr.measured["claims_by_topic"],
+            "policy": depth_budget.policy,
+            "satisfied": dr.ok,
+        }
     return validation, raw_path, attempts, grounded_meta

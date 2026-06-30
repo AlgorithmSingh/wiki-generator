@@ -1,0 +1,21 @@
+{
+  "slug": "deepwiki-scale-depth-parity",
+  "title": "DeepWiki Scale: Depth Parity",
+  "intended_weight": "standard",
+  "weight_rationale": "A focused, single-subsystem change in the Phase 4 grounded writing path: one new deterministic module (depth budget), an additive optional gate inside the existing claim-plan validator, prompt/metric hardening, and tests. It is opt-in (expanded grounded mode only), off by default at the command level, and reversible. It earns more than a mini spec because it intentionally changes the pass/fail outcome of an existing expanded path and must preserve strict grounding, benchmark quarantine, and validator strength; it does not earn full weight because there is no new service, data store, interface, or cross-team dependency.",
+  "phase_relation": "Next phase after deepwiki-scale-core-fanout (commit 35d5d6f). Builds on the breadth anti-compression work; does not replace it.",
+  "targets": {
+    "artifact_being_designed": "A source-grounded GeneratedSection depth/detail-density quality contract for the Phase 4 grounded claim plan.",
+    "depth_metric": "Source-derived per-section detail budget: per required topic, claims must reflect the Phase 3 mapped-evidence density (one grounded claim per mapped evidence id, bounded by an injectable cap); a fanned-out but shallow plan fails before assembly.",
+    "non_targets": [
+      "word-count inflation / padding",
+      "copying benchmark page counts, headings, prose, or structure",
+      "weakening any existing validator",
+      "changing baseline or enhancement behavior",
+      "live Vertex/Gemini/API calls",
+      "reintroducing deepwiki-scale as a separate product (it stays a behavior-identical alias)"
+    ]
+  },
+  "comparator_isolation": "ragflow-deepwiki.md is comparison-only: never evidence, prompt seed, headings, prose, structure, or generated required topics. Used only to explain the scale gap and as a post-generation dashboard.",
+  "validator_writer_separation": "Single process; writer and validator/approver roles are explicitly simulated as separate internal steps in Phase 6 and recorded in working/validation-report.json + working/repair-log.md."
+}

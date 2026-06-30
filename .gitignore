@@ -56,3 +56,6 @@ dmypy.json
 # OS cruft
 .DS_Store
 Thumbs.db
+
+# Python build-sequence run dossier (transient; not a deliverable)
+.sequence/
