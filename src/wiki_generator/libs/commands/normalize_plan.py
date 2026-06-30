@@ -127,12 +127,12 @@ def _run_coverage_gates(bundle_dir: str, out_dir: str, mode: str) -> int:
 
 def _run_expanded_gates(bundle_dir: str, out_dir: str, document_plan: dict,
                         sections: list, mode: str) -> int:
-    """The expanded-family Phase 2 gates: hierarchical page planning and the
-    deterministic relevant-source map (``expanded`` and ``deepwiki-scale``), plus the
-    anti-compression breadth gate for ``deepwiki-scale`` only. Reads the Phase A topic
-    catalog; an absent catalog is a hard missing-input failure (exit 2). Returns ``0``
-    when all applicable gates pass, else the first failing gate's exit code. Never edits
-    the plan."""
+    """The expanded-family Phase 2 gates: hierarchical page planning, the deterministic
+    relevant-source map, AND the anti-compression breadth gate — all core behaviour of
+    the ``expanded`` DeepWiki-scale path (``deepwiki-scale`` is a compatibility alias
+    selecting the identical gate set). Reads the Phase A topic catalog; an absent
+    catalog is a hard missing-input failure (exit 2). Returns ``0`` when all applicable
+    gates pass, else the first failing gate's exit code. Never edits the plan."""
     catalog = coverage.load_topic_catalog(bundle_dir)
     if catalog is None:
         log(f"  page-planning gate: {mode} mode requires "
@@ -159,9 +159,10 @@ def _run_expanded_gates(bundle_dir: str, out_dir: str, document_plan: dict,
     if sm_rc != 0:
         return sm_rc
 
-    # deepwiki-scale only: the anti-compression breadth gate (distributive promotion
-    # contract — each promoted leaf catalog topic earns its own leaf page + TER, large
-    # families fan out, the plan is not flat, leaf-page count meets the catalog floor).
+    # The core ``expanded`` path (and its ``deepwiki-scale`` alias): the
+    # anti-compression breadth gate (distributive promotion contract — each promoted
+    # leaf catalog topic earns its own leaf page + TER, large families fan out, the
+    # plan is not flat, leaf-page count meets the catalog floor).
     if coverage.enforces_breadth(mode):
         return _run_anti_compression_gate(out_dir, catalog, document_plan, sections,
                                           mode)
@@ -170,10 +171,12 @@ def _run_expanded_gates(bundle_dir: str, out_dir: str, document_plan: dict,
 
 def _run_anti_compression_gate(out_dir: str, catalog: dict, document_plan: dict,
                                sections: list, mode: str) -> int:
-    """The ``deepwiki-scale`` anti-compression breadth gate. Deterministic, read-only:
+    """The core expanded-path anti-compression breadth gate. Deterministic, read-only:
     closes the loophole where a high-signal catalog collapses into too few flat pages.
-    Writes ``anti-compression-gate.json`` + ``anti-compression-report.md`` and returns
-    ``0`` on pass / ``3`` on a compressed plan. Never edits the plan."""
+    Writes ``anti-compression-gate.json`` + ``anti-compression-report.md`` and the
+    downstream ``promoted-topic-contract.json`` (the Phase 3/4 promoted-catalog-topic
+    granularity contract), then returns ``0`` on pass / ``3`` on a compressed plan.
+    Never edits the plan."""
     ac_gate = coverage.gate_anti_compression(catalog, document_plan, sections,
                                              mode=mode)
     write_json(os.path.join(out_dir, "anti-compression-gate.json"), ac_gate.to_dict())
@@ -181,10 +184,17 @@ def _run_anti_compression_gate(out_dir: str, catalog: dict, document_plan: dict,
                coverage.render_anti_compression_markdown(
                    ac_gate.report,
                    title=f"Phase 2 Anti-Compression Gate ({mode} mode)"))
+    # Downstream data contract: a normalized projection of the promoted leaf catalog
+    # topics (id, family, own-TER, leaf pages, status) that Phase 3/4 read so promoted
+    # granularity is carried forward and cannot regress to broad-topic-only acceptance.
+    write_json(os.path.join(out_dir, "promoted-topic-contract.json"),
+               coverage.build_promoted_topic_contract(ac_gate.report))
     for line in ac_gate.summary_lines():
         log(f"  {line}")
     log("  anti-compression gate report: "
         f"{os.path.join(out_dir, 'anti-compression-report.md')}")
+    log("  promoted-topic contract: "
+        f"{os.path.join(out_dir, 'promoted-topic-contract.json')}")
     return ac_gate.exit_code
 
 
@@ -268,11 +278,13 @@ def run(args: argparse.Namespace) -> int:
 
     # Phase 2 → Phase 3 coverage boundary. Baseline (default) stays non-breaking;
     # enhancement runs the deterministic planned-coverage + topic-obligation gates;
-    # expanded additionally runs the hierarchical page-planning + relevant-source-map
-    # gates; deepwiki-scale additionally runs the anti-compression breadth gate (each
-    # promoted leaf catalog topic earns its own leaf page + TER; large families fan
-    # out; the plan is not flat; leaf-page count meets the catalog floor). Each fails
-    # loudly on a missing family/obligation/page/source obligation or a compressed plan.
+    # ``expanded`` is the core DeepWiki-scale path: it additionally runs the
+    # hierarchical page-planning + relevant-source-map gates AND the anti-compression
+    # breadth gate by default (each promoted leaf catalog topic earns its own leaf page
+    # + TER; large families fan out; the plan is not flat; leaf-page count meets the
+    # catalog floor). ``deepwiki-scale`` is a compatibility alias for ``expanded``.
+    # Each gate fails loudly on a missing family/obligation/page/source obligation or a
+    # compressed plan.
     coverage_mode = getattr(args, "coverage_mode", coverage.MODE_BASELINE)
     if coverage_mode in (coverage.MODE_ENHANCEMENT, coverage.MODE_EXPANDED,
                          coverage.MODE_DEEPWIKI_SCALE):

@@ -1,0 +1,27 @@
+{
+  "phase": "phase-1-setup-framing",
+  "classification": "full",
+  "rationale": "Changes the default semantics of the core generation path (expanded now fails closed on a compressed plan), touches prompt contracts an LLM depends on, and introduces a downstream data contract consumed by two later phases. Reversibility is moderate (mode flag + alias), but the blast radius (every expanded run) and the cross-phase contract earn a full document with explicit alternatives, ADR, rollout, and failure modes.",
+  "required_sections": [
+    "Header & Metadata",
+    "Summary",
+    "Context & Background",
+    "Goals, Non-Goals & Future Goals",
+    "Success Metrics",
+    "Requirements, Constraints, Assumptions & Dependencies",
+    "Architecture Overview",
+    "Detailed Design",
+    "Interfaces, APIs & Behavior",
+    "Non-Functional Requirements & Quality Attributes",
+    "Alternatives Considered & Trade-offs",
+    "Key Architecture Decisions",
+    "Implementation Plan, Milestones & Test Plan",
+    "Rollout, Migration, Rollback & Operations",
+    "Risks, Open Questions & Failure Modes",
+    "Appendices, Glossary & References"
+  ],
+  "intentionally_omitted": [
+    {"section": "Deployment topology diagram", "reason": "No new services/infra; CLI + library change only"},
+    {"section": "Data retention/privacy", "reason": "No new persisted user data; artifacts are deterministic plan/coverage JSON inside the bundle"}
+  ]
+}

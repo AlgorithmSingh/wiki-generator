@@ -1,0 +1,22 @@
+{
+  "schema_version": "tdd-phase-workspace-v1",
+  "slug": "deepwiki-scale-core-fanout",
+  "title": "DeepWiki Scale — Core Fan-Out",
+  "status": "implemented-and-validated-nonlive",
+  "document_weight": "full",
+  "created_from": "TDD phase series at /Users/ankitsingh/Documents/my-pi-ai-tts-setup/5-Technical-Design-document/2-TDD-Phases/tdd-phase-series",
+  "phase_relation": "next implementation phase after deepwiki-scale-parity-next-phase (anti-compression slice); does not replace prior PRDs/TDDs",
+  "primary_goal": "Make strict source-derived DeepWiki-scale breadth core behaviour of the expanded generation path, harden the planner so it fans out, and carry promoted catalog-topic granularity downstream.",
+  "supersedes": null,
+  "builds_on": [
+    "docs/technical-design/deepwiki-coverage-expansion/final/technical-design-document.md",
+    "docs/technical-design/deepwiki-scale-parity-next-phase/final/technical-design-document.md",
+    "docs/technical-design/deepwiki-scale-parity-next-phase/adr/0001-deepwiki-scale-anti-compression-mode.md"
+  ],
+  "comparator_isolation": "ragflow-deepwiki.md is comparison-only; never read as evidence, prompt seed, or copied structure",
+  "owner_decisions_needed": [
+    "Confirm expanded is the official/core scale path and deepwiki-scale stays only as a compatibility alias.",
+    "Approve the source-derived breadth-budget policy defaults (BreadthPolicy) before any billed live run.",
+    "Approve the deferred slice: standalone Phase 4 enforcement that cross-references plans/promoted-topic-contract.json end-to-end."
+  ]
+}

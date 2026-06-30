@@ -43,25 +43,34 @@ MODE_BASELINE = "baseline"
 # exact historical behaviour (the existing enhancement gates only); ``baseline``
 # reports without enforcing. Staging the expanded gates behind their own mode keeps
 # every existing baseline AND enhancement run non-breaking (TDD OD-02 / OD-03).
+# ``expanded`` is the **core** DeepWiki-scale generation path. It runs the
+# enhancement planned-coverage + topic-obligation gates, the Phase B/C hierarchical
+# catalog / page-profile / content-block / relevant-source-map gates, AND — as of the
+# core-scale-fanout slice — the distributive anti-compression breadth gate
+# (:mod:`.anti_compression`) by default. Anti-compression closes the loophole proven
+# by the real RAGFlow run, where a high-signal catalog (94 ``must`` topics across 13
+# families) collapsed into 21 flat pages / 42 TERs because a topic counted as
+# "planned" the moment its id appeared on any page. Strict source-derived breadth is
+# therefore core behaviour of the expanded path, not an optional add-on.
 MODE_EXPANDED = "expanded"
-# ``deepwiki-scale`` is the next-phase opt-in DeepWiki *breadth* mode: a strict
-# superset of ``expanded`` that ALSO runs the anti-compression gate
-# (:mod:`.anti_compression`). It closes the loophole proven by the real RAGFlow run,
-# where a high-signal catalog (94 ``must`` topics across 13 families) collapsed into
-# 21 flat pages / 42 TERs because a topic counted as "planned" the moment its id
-# appeared on any page. ``deepwiki-scale`` enforces every ``expanded`` gate plus the
-# distributive promotion contract (own leaf page, own TER, family fan-out, non-flat
-# hierarchy, catalog-derived breadth floor). Staging it behind its own mode keeps the
-# passing ``expanded`` run and every existing baseline/enhancement run non-breaking.
+# ``deepwiki-scale`` is a **compatibility alias** for ``expanded``: it selects the
+# exact same gate set (every enhancement gate, every hierarchical gate, and the
+# anti-compression breadth gate). It is retained only so existing callers and docs
+# that name ``deepwiki-scale`` keep working; it is not a separate product or a
+# stricter mode. New callers should use ``expanded``.
 MODE_DEEPWIKI_SCALE = "deepwiki-scale"
 _MODES = (MODE_ENHANCEMENT, MODE_BASELINE, MODE_EXPANDED, MODE_DEEPWIKI_SCALE)
-# The modes whose gates fail closed (vs. report-only). ``expanded`` and
+# The modes whose gates fail closed (vs. report-only). ``expanded`` and its alias
 # ``deepwiki-scale`` enforce like ``enhancement``; the planned-coverage and
 # topic-obligation gates consult this.
 _ENFORCING_MODES = frozenset({MODE_ENHANCEMENT, MODE_EXPANDED, MODE_DEEPWIKI_SCALE})
-# The modes that run the full ``expanded`` hierarchical/profile/source-map gate set.
-# ``deepwiki-scale`` is a strict superset of ``expanded``, so it belongs here too.
+# The modes that run the full hierarchical/profile/source-map gate set (the core
+# expanded path and its ``deepwiki-scale`` alias).
 EXPANDED_MODES = frozenset({MODE_EXPANDED, MODE_DEEPWIKI_SCALE})
+# The modes that additionally run the anti-compression breadth gate. This is now the
+# core expanded path (and its alias) — strict source-derived breadth is the default
+# expanded behaviour, never a separate opt-in product.
+_BREADTH_MODES = frozenset({MODE_EXPANDED, MODE_DEEPWIKI_SCALE})
 
 
 def is_enforcing(mode: str) -> bool:
@@ -70,15 +79,17 @@ def is_enforcing(mode: str) -> bool:
 
 
 def is_expanded_family(mode: str) -> bool:
-    """True when ``mode`` runs the expanded hierarchical gate set (``expanded`` or its
-    strict superset ``deepwiki-scale``)."""
+    """True when ``mode`` runs the expanded hierarchical gate set (the core
+    ``expanded`` path or its ``deepwiki-scale`` alias)."""
     return mode in EXPANDED_MODES
 
 
 def enforces_breadth(mode: str) -> bool:
-    """True only for ``deepwiki-scale`` — the mode that runs the anti-compression
-    breadth gate on top of the expanded gates."""
-    return mode == MODE_DEEPWIKI_SCALE
+    """True for the core expanded DeepWiki-scale path (``expanded``) and its
+    compatibility alias ``deepwiki-scale`` — the modes that run the anti-compression
+    breadth gate on top of the expanded hierarchical gates. Strict source-derived
+    breadth is core expanded behaviour, not a separate opt-in mode."""
+    return mode in _BREADTH_MODES
 
 # Exit codes for the deterministic planned coverage gate (shared by the standalone
 # ``validate-coverage`` command and the integrated ``normalize-plan

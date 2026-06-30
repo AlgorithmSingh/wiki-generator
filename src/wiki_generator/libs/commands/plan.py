@@ -104,6 +104,34 @@ exact handles from planning-handles.md instead. A coverage-enhanced run gates th
 normalized plan against all thirteen mandatory families before Phase 3, so omitting \
 a supported family fails loudly.
 
+Fan out, do not compress (core expanded scale behavior). Author a FANNED-OUT \
+hierarchy, never a flat one-page-per-family plan. `planning-topic-catalog.md` carries \
+a source-derived "breadth budget" computed from THIS repo's catalog (target page \
+range, target required-topic count, and a per-family fan-out floor) — hit it; the \
+numbers come from the catalog, never any benchmark. Rules: (a) use TWO kinds of \
+pages — parent/index pages (page_profile "overview"/"architecture-flow") that \
+introduce and link a family, and leaf subsystem pages (e.g. "subsystem-deep-dive") \
+that each cover a few specific subsystems; (b) a leaf page may carry at most ~4 \
+promoted catalog topics in its catalog_topic_ids[] — split denser families across \
+multiple child leaf pages linked by parent_section_id; (c) a family with many \
+high-signal (priority `must`) subsystem topics in the catalog must fan out into \
+multiple child pages, not one broad page; (d) give EACH promoted catalog topic \
+(every `must` subsystem-kind topic in planning-topic-catalog.md) its own required \
+topic AND its own topic_evidence_requirements[] entry whose catalog_topic_id is that \
+topic id; (e) a broad page that merely LISTS a family's subsystem catalog_topic_ids[] \
+does NOT count as covering those leaf topics — only a dedicated leaf page (plus its \
+own TER per topic) does. BAD (compressed): one "Document Processing" page with \
+catalog_topic_ids ["doc-processing","doc-processing.parser","doc-processing.ocr", \
+"doc-processing.chunking"] and two TERs. GOOD (fanned out): a "Document Processing" \
+overview/index page (catalog_topic_ids ["doc-processing"], parent of the rest) PLUS \
+child leaf pages "Deepdoc Parser" (["doc-processing.parser"], own TER), "OCR" \
+(["doc-processing.ocr"], own TER), "Chunking" (["doc-processing.chunking"], own TER) \
+— one promoted catalog topic per leaf page, each with its own catalog_topic_id-keyed \
+TER. A deterministic Phase 2 anti-compression gate fails the run before Phase 3 when \
+promoted leaf topics lack their own leaf page/TER, a leaf page is overloaded, a large \
+family is not split, the plan is flat, or the leaf-page count is below the catalog \
+floor — so fan out from the start.
+
 topic_evidence_requirements[] (enhancement mode): the normalizer MERGES \
 coverage_requirements[] AND required_topics[] into one normalized required-topics \
 list, so add one object {topic, required:true, source_fields:[…], min_items, \
@@ -153,7 +181,13 @@ coverage_labels[] value (frontend, memory, queue-system, helm-k8s, ci-cd-build, 
 go-native, retrieval-internals, doc-processing, llm-internals, \
 user-tenant-admin-health, sandbox-executor, migrations-operations, glossary). Use \
 `planning-coverage-signals.md` (planner context only, never citeable evidence) to \
-decide which families deserve their own page. For every coverage_requirements[] and \
+decide which families deserve their own page. FAN OUT: use `planning-topic-catalog.md`'s \
+source-derived breadth budget to hit its target page and required-topic counts — give \
+each promoted (`must`) subsystem catalog topic its own leaf page (under a parent index \
+page via parent_section_id) and its own catalog_topic_id-keyed \
+topic_evidence_requirements[]; a broad page that just lists a family's subsystem \
+catalog_topic_ids[] does NOT count, and a deterministic anti-compression gate fails a \
+compressed plan before Phase 3. For every coverage_requirements[] and \
 required_topics[] entry (both merge into the normalized required topics), add a \
 topic_evidence_requirements[] entry whose source_fields[] name the exact \
 retrieval_needs.* lanes (e.g. retrieval_needs.symbols[0], retrieval_needs.files[1]) \

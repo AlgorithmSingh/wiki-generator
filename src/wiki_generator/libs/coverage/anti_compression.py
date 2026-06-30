@@ -1,18 +1,19 @@
-"""Deterministic Phase 2 anti-compression / breadth gate (``deepwiki-scale`` mode).
+"""Deterministic Phase 2 anti-compression / breadth gate (core ``expanded`` path).
 
 The hierarchical page-planning gate (:mod:`.page_planning`) marks a catalog topic
 *planned* the moment its ``topic_id`` appears in **any** page's ``catalog_topic_ids[]``.
 That is *existential* coverage: a single broad page can list a whole family's
 high-signal topics for free. The real RAGFlow non-live run exploited exactly this — a
-147-topic / 94-``must`` / 13-family catalog passed ``expanded`` mode as **21 flat
-pages and 42 topic-evidence requirements**, with every ``parent_section_id`` null and
-families collapsed 1:1 onto a single page each.
+147-topic / 94-``must`` / 13-family catalog passed an early ``expanded`` build as **21
+flat pages and 42 topic-evidence requirements**, with every ``parent_section_id`` null
+and families collapsed 1:1 onto a single page each.
 
-This module adds the next-phase **distributive** breadth contract that the opt-in
-``deepwiki-scale`` mode enforces, purely from the normalized plan and the Phase A
-topic catalog, before Phase 3 retrieval. It computes a source-derived **promotion
-contract** (a tier per catalog topic) and then holds promoted *leaf* topics to six
-deterministic obligations:
+This module adds the **distributive** breadth contract that the core ``expanded``
+DeepWiki-scale path now enforces by default (``deepwiki-scale`` is a compatibility
+alias for the same behaviour), purely from the normalized plan and the Phase A topic
+catalog, before Phase 3 retrieval. It computes a source-derived **promotion contract**
+(a tier per catalog topic) and then holds promoted *leaf* topics to six deterministic
+obligations:
 
 1. **Own leaf page** — each ``page``-tier topic must be planned on its own
    non-overview leaf page; an overview/index page listing it does NOT count.
@@ -34,18 +35,22 @@ Thresholds live in an injectable :class:`BreadthPolicy` (no scattered magic numb
 A defect is reported with an actionable remediation pointing back at the LLM-authored
 Phase 2 plan / prompt / schema, and the measured-vs-required numbers.
 
-``deepwiki-scale`` fails closed (a defect blocks before Phase 3, ``status == "fail"``,
-exit ``3``, ``bad_compressed_normalized_plan``). Every other mode (``baseline`` /
-``enhancement`` / ``expanded``) is report-only here, so the gate never surprises an
-existing run; only ``deepwiki-scale`` runs it for real (via :func:`.enforces_breadth`).
+The core ``expanded`` path (and its ``deepwiki-scale`` alias) fails closed (a defect
+blocks before Phase 3, ``status == "fail"``, exit ``3``,
+``bad_compressed_normalized_plan``). ``baseline`` and ``enhancement`` are report-only
+here, so the gate never surprises a non-expanded run; the expanded family runs it for
+real (via :func:`.enforces_breadth`).
 
-The ``promoted_topics[]`` block of the report is the plan-time data contract that the
-later Phase 3 (source-selection / evidence sufficiency) and Phase 4 (generated
-coverage) slices consume to enforce the same promotion granularity downstream.
+The ``promoted_topics[]`` block of the report is the plan-time data contract. A
+normalized projection of it is written to ``plans/promoted-topic-contract.json`` (see
+:func:`build_promoted_topic_contract`) so the downstream Phase 3 (evidence
+sufficiency) and Phase 4 (generated coverage) stages carry the same promoted
+catalog-topic granularity instead of regressing to broad-topic-only acceptance.
 """
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, field
 
 from ..context_docs import is_provenance_section
@@ -294,11 +299,12 @@ def evaluate_anti_compression(catalog: dict | None, document_plan: dict | None,
                               ) -> AntiCompressionReport:
     """Evaluate the distributive anti-compression contract over a normalized plan.
 
-    Deterministic and read-only. In ``deepwiki-scale`` mode a promoted leaf topic with
-    no own leaf page / no own TER, an overloaded leaf page, an unsplit large family, a
-    wholly flat plan, or a leaf-page count below the catalog floor fails before Phase 3
-    (``status == "fail"``, exit ``3``). Every other mode is report-only (the same
-    matrix without gating). ``catalog`` may be ``None`` (nothing to enforce).
+    Deterministic and read-only. In the core ``expanded`` path (and its
+    ``deepwiki-scale`` alias) a promoted leaf topic with no own leaf page / no own TER,
+    an overloaded leaf page, an unsplit large family, a wholly flat plan, or a
+    leaf-page count below the catalog floor fails before Phase 3 (``status == "fail"``,
+    exit ``3``). ``baseline``/``enhancement`` are report-only (the same matrix without
+    gating). ``catalog`` may be ``None`` (nothing to enforce).
 
     Raises ``ValueError`` for an unknown mode or non-list ``sections`` (mirrors
     :func:`.validate.evaluate_plan_coverage`)."""
@@ -530,7 +536,7 @@ class AntiCompressionGate:
     """Verdict of the deterministic Phase 2 anti-compression / breadth gate.
 
     Like the other coverage gates it never edits/synthesizes/heals the plan: it reports
-    the verdict and the exit code a caller fails on (``0`` pass, ``3`` deepwiki-scale
+    the verdict and the exit code a caller fails on (``0`` pass, ``3`` expanded-path
     fail)."""
 
     report: AntiCompressionReport
@@ -576,8 +582,9 @@ def gate_anti_compression(catalog: dict | None, document_plan: dict | None,
                           sections: list, *, mode: str = MODE_DEEPWIKI_SCALE,
                           policy: BreadthPolicy | None = None) -> AntiCompressionGate:
     """Evaluate ``sections`` against the anti-compression contract and map the verdict
-    to an :class:`AntiCompressionGate` (``exit_code`` ``0`` pass / ``3`` fail in
-    ``deepwiki-scale``). It never mutates the plan."""
+    to an :class:`AntiCompressionGate` (``exit_code`` ``0`` pass / ``3`` fail in the
+    core ``expanded`` path and its ``deepwiki-scale`` alias). It never mutates the
+    plan."""
     report = evaluate_anti_compression(catalog, document_plan, sections, mode=mode,
                                        policy=policy)
     passed = report.status == "pass"
@@ -637,3 +644,250 @@ def render_anti_compression_markdown(report: AntiCompressionReport, *,
         lines.append(f"| `{f.family}` | {f.promoted_leaf_count} | "
                      f"{f.required_leaf_pages} | {f.actual_leaf_pages} | {mark} |")
     return "\n".join(lines).rstrip() + "\n"
+
+
+# --- source-derived breadth budget (planner guidance) ------------------------
+# A deterministic, source-derived page / required-topic target the Phase 2 planner is
+# given as CONTEXT (rendered into planning-topic-catalog.md). It is NOT a gate — the
+# anti-compression gate enforces the same floors after planning — but it tells the
+# LLM planner the breadth this repository's catalog actually supports, so it fans out
+# instead of compressing. Every number derives from the catalog counts and the breadth
+# policy; none of it derives from the benchmark.
+BREADTH_BUDGET_SCHEMA_VERSION = "deepwiki-breadth-budget-v1"
+
+
+@dataclass
+class FamilyBudget:
+    """One must-family's source-derived fan-out target (leaf pages it should host)."""
+
+    family: str
+    promoted_leaf_count: int
+    min_leaf_pages: int
+
+    def to_dict(self) -> dict:
+        return {"family": self.family,
+                "promoted_leaf_count": self.promoted_leaf_count,
+                "min_leaf_pages": self.min_leaf_pages}
+
+
+@dataclass
+class BreadthBudget:
+    """A source-derived page / required-topic breadth target for the Phase 2 planner.
+
+    ``min_leaf_pages`` is the catalog floor (``Σ ceil(promoted_leaf/cap)``) — the exact
+    number the anti-compression gate later enforces; ``max_leaf_pages`` is one page per
+    promoted leaf topic. ``min_required_topics`` is one required topic + TER per
+    promoted leaf topic plus one per fanned family overview. All counts are derived
+    from THIS repository's catalog; never from the benchmark."""
+
+    schema_version: str
+    catalog_present: bool
+    policy: dict
+    must_family_count: int
+    families_with_promoted: int
+    promoted_leaf_count: int
+    optional_topic_count: int
+    min_overview_pages: int
+    min_leaf_pages: int
+    max_leaf_pages: int
+    min_total_pages: int
+    max_total_pages: int
+    min_required_topics: int
+    families: list = field(default_factory=list)   # FamilyBudget
+
+    def to_dict(self) -> dict:
+        return {
+            "schema_version": self.schema_version,
+            "catalog_present": self.catalog_present,
+            "policy": self.policy,
+            "counts": {
+                "must_families": self.must_family_count,
+                "families_with_promoted": self.families_with_promoted,
+                "promoted_leaf_topics": self.promoted_leaf_count,
+                "optional_topics": self.optional_topic_count,
+            },
+            "targets": {
+                "min_overview_pages": self.min_overview_pages,
+                "min_leaf_pages": self.min_leaf_pages,
+                "max_leaf_pages": self.max_leaf_pages,
+                "min_total_pages": self.min_total_pages,
+                "max_total_pages": self.max_total_pages,
+                "min_required_topics": self.min_required_topics,
+            },
+            "families": [f.to_dict() for f in self.families],
+        }
+
+
+def derive_breadth_budget(catalog: dict | None, *,
+                          policy: BreadthPolicy | None = None) -> BreadthBudget:
+    """Compute the source-derived breadth budget from a topic catalog.
+
+    Deterministic and read-only. Uses the same promotion classification the gate uses
+    (``must`` family topics → overview tier, ``must`` non-family topics → page/leaf
+    tier), so the planner's guidance and the gate's enforcement are derived
+    identically. An absent/empty catalog yields an all-zero budget (nothing to plan
+    for)."""
+    pol = policy if policy is not None else DEFAULT_BREADTH_POLICY
+    topics = _catalog_topics(catalog)
+    family_leaf: dict = {}
+    must_families: set = set()
+    optional = 0
+    for t in topics:
+        tid = t.get("topic_id")
+        if not isinstance(tid, str) or not tid:
+            continue
+        fam = t.get("family") or (tid.split(".")[0] if "." in tid else tid)
+        tier = classify_promotion(t, False)
+        if tier == TIER_PAGE:
+            family_leaf[fam] = family_leaf.get(fam, 0) + 1
+        elif tier == TIER_OVERVIEW:
+            must_families.add(fam)
+        elif tier == TIER_OPTIONAL:
+            optional += 1
+
+    promoted_leaf = sum(family_leaf.values())
+    families_with_promoted = len(family_leaf)
+    min_leaf = sum(pol.required_leaf_pages(n) for n in family_leaf.values())
+    max_leaf = promoted_leaf
+    # one top index/overview page + one family-index page per fanned family.
+    if families_with_promoted:
+        min_overview = families_with_promoted + 1
+    elif must_families:
+        min_overview = 1
+    else:
+        min_overview = 0
+    min_required = promoted_leaf + families_with_promoted
+    fam_rows = [FamilyBudget(family=f, promoted_leaf_count=family_leaf[f],
+                             min_leaf_pages=pol.required_leaf_pages(family_leaf[f]))
+                for f in sorted(family_leaf)]
+    return BreadthBudget(
+        schema_version=BREADTH_BUDGET_SCHEMA_VERSION,
+        catalog_present=isinstance(catalog, dict),
+        policy=pol.to_dict(),
+        must_family_count=len(must_families | set(family_leaf)),
+        families_with_promoted=families_with_promoted,
+        promoted_leaf_count=promoted_leaf, optional_topic_count=optional,
+        min_overview_pages=min_overview, min_leaf_pages=min_leaf,
+        max_leaf_pages=max_leaf, min_total_pages=min_overview + min_leaf,
+        max_total_pages=min_overview + max_leaf, min_required_topics=min_required,
+        families=fam_rows)
+
+
+def render_breadth_budget_lines(budget: BreadthBudget) -> list:
+    """Markdown lines stating the source-derived breadth budget for the planner.
+
+    Embedded in ``planning-topic-catalog.md`` so the LLM planner sees concrete,
+    catalog-derived page / required-topic targets (and the per-family fan-out floor)
+    and authors a fanned-out hierarchy instead of compressing. Returns ``[]`` when the
+    catalog has no promotable signal."""
+    if not budget.catalog_present or budget.must_family_count == 0:
+        return []
+    pol = budget.policy
+    lines = [
+        "## Source-derived breadth budget (planner guidance)",
+        "",
+        "These page and required-topic targets are derived **only** from this "
+        "repository's catalog counts above (never from any benchmark). Plan a "
+        "fanned-out hierarchy that meets them; the deterministic Phase 2 "
+        "anti-compression gate enforces the same source floors after planning.",
+        "",
+        f"- Promoted **leaf** catalog topics (high-signal subsystems): "
+        f"**{budget.promoted_leaf_count}** across "
+        f"**{budget.families_with_promoted}** high-signal families "
+        f"(plus {budget.must_family_count} mandatory families overall).",
+        f"- Plan **at least {budget.min_total_pages}** and up to "
+        f"~**{budget.max_total_pages}** pages: "
+        f"{budget.min_overview_pages} overview/index page(s) + "
+        f"{budget.min_leaf_pages}–{budget.max_leaf_pages} leaf subsystem pages "
+        f"(cap {pol['max_promoted_topics_per_leaf_page']} promoted leaf topics per "
+        "leaf page).",
+        f"- Plan **at least {budget.min_required_topics}** required topics — one "
+        "required topic AND one topic_evidence_requirements[] entry per promoted leaf "
+        "catalog topic, plus one per fanned family overview page.",
+        f"- A family with more than {pol['family_split_threshold']} promoted leaf "
+        "topics must fan out into multiple child pages under a parent index page; a "
+        "single broad page that merely lists a family's catalog_topic_ids[] does NOT "
+        "count as leaf coverage.",
+        "",
+    ]
+    if budget.families:
+        lines += ["| family | promoted leaf topics | min leaf pages |",
+                  "|---|---|---|"]
+        for f in budget.families:
+            lines.append(f"| `{f.family}` | {f.promoted_leaf_count} | "
+                         f"{f.min_leaf_pages} |")
+        lines.append("")
+    return lines
+
+
+# --- promoted-topic contract (Phase 3/4 downstream data contract) -------------
+# The durable, downstream-facing projection of the promotion contract. Phase 3
+# (evidence sufficiency) and Phase 4 (generated coverage) read this so promoted
+# catalog-topic granularity is carried forward and cannot regress to broad-topic-only
+# acceptance once a promoted topic has evidence.
+PROMOTED_TOPIC_CONTRACT_SCHEMA_VERSION = "deepwiki-promoted-topic-contract-v1"
+PROMOTED_TOPIC_CONTRACT_REL_PATH = os.path.join("plans", "promoted-topic-contract.json")
+
+
+def build_promoted_topic_contract(report: AntiCompressionReport) -> dict:
+    """A normalized, downstream-facing projection of the promotion contract.
+
+    One row per promoted *leaf* catalog topic (``TIER_PAGE``) carrying the fields the
+    downstream phases need: its ``catalog_topic_id``, family, whether it earned its own
+    TER, the leaf pages that host it, and its plan-time status. Read-only — derived
+    purely from the report; never edits the plan."""
+    rows: list = []
+    for r in report.promoted_topics:
+        if r.tier != TIER_PAGE:
+            continue
+        rows.append({
+            "catalog_topic_id": r.topic_id,
+            "family": r.family,
+            "tier": r.tier,
+            "has_ter": r.has_ter,
+            "leaf_pages": list(r.leaf_pages),
+            "status": r.status,
+        })
+    rows.sort(key=lambda x: x["catalog_topic_id"])
+    return {
+        "schema_version": PROMOTED_TOPIC_CONTRACT_SCHEMA_VERSION,
+        "mode": report.mode,
+        "enforced": report.enforced,
+        "source": "phase2-anti-compression-gate",
+        "policy": report.policy,
+        "counts": {
+            "promoted_leaf_topics": report.promoted_leaf_topic_count,
+            "covered": report.covered_topic_count,
+            "uncovered": report.uncovered_topic_count,
+        },
+        "promoted_topics": rows,
+    }
+
+
+def load_promoted_topic_contract(plans_dir: str) -> dict | None:
+    """Load ``plans/promoted-topic-contract.json`` from a plans directory, or ``None``
+    when it is absent/unreadable (a deterministic miss the caller reports, never a
+    crash). ``plans_dir`` is the directory that holds ``document-plan.json``."""
+    from .. import util
+
+    path = os.path.join(plans_dir, "promoted-topic-contract.json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        return util.read_json(path)
+    except (OSError, ValueError):
+        return None
+
+
+def promoted_catalog_topic_ids(contract: dict | None) -> set:
+    """The set of promoted leaf ``catalog_topic_id`` values in a contract (empty when
+    the contract is absent/malformed). The downstream granularity key."""
+    if not isinstance(contract, dict):
+        return set()
+    out: set = set()
+    for row in contract.get("promoted_topics") or []:
+        if isinstance(row, dict):
+            cid = row.get("catalog_topic_id")
+            if isinstance(cid, str) and cid:
+                out.add(cid)
+    return out

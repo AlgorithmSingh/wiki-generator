@@ -169,8 +169,15 @@ def build_parser() -> argparse.ArgumentParser:
                          "compact/legacy plans). enhancement: deterministically "
                          "gate the normalized plan against all 13 mandatory topic "
                          "families and fail loudly (exit 3) on a missing family "
-                         "before Phase 3. This is a planned-coverage gate only; "
-                         "it never edits/heals the plan."))
+                         "before Phase 3. expanded: the CORE DeepWiki-scale path — "
+                         "enhancement gates PLUS the hierarchical page-planning, "
+                         "relevant-source-map, and anti-compression breadth gates "
+                         "(each promoted leaf catalog topic earns its own leaf page "
+                         "+ TER, large families fan out, the plan is not flat, and "
+                         "the leaf-page count meets the source-derived catalog "
+                         "floor); writes plans/promoted-topic-contract.json. "
+                         "deepwiki-scale: compatibility alias for expanded. No mode "
+                         "edits/heals the plan."))
 
     pr = sub.add_parser(
         "plan-repair",
@@ -227,7 +234,12 @@ def build_parser() -> argparse.ArgumentParser:
                            "legacy/compact fixtures). enhancement: a required "
                            "topic with weak/missing exact evidence fails the run "
                            "(exit 3, bad_underspecified_normalized_plan) BEFORE "
-                           "Phase 4. Still all-sections; no --section, no retry "
+                           "Phase 4. expanded: the core DeepWiki-scale path — "
+                           "enhancement sufficiency PLUS a profile-aware evidence "
+                           "portfolio per page, and the additive catalog_topic_id "
+                           "linkage that carries promoted-catalog-topic granularity "
+                           "to Phase 4. deepwiki-scale: compatibility alias for "
+                           "expanded. Still all-sections; no --section, no retry "
                            "loop, no synthetic evidence."))
 
     _ww_help = ("Phase 4: writing/synthesis only. Consume a clean Phase 1-3 bundle, "
@@ -284,8 +296,12 @@ def build_parser() -> argparse.ArgumentParser:
                           "enforced/passing (else exit 3, pre-provider); preserve "
                           "parent/child hierarchy; and deterministically validate that "
                           "every evidenced sufficient required topic is generated with "
-                          "valid mapped citations (else exit 5). Never re-runs Phase "
-                          "2/3 or synthesizes evidence."))
+                          "valid mapped citations (else exit 5). expanded: the core "
+                          "DeepWiki-scale path — enhancement plus hierarchical page/"
+                          "content-block writing and promoted-catalog-topic "
+                          "granularity (each generated-coverage row carries its "
+                          "catalog_topic_id). deepwiki-scale: compatibility alias for "
+                          "expanded. Never re-runs Phase 2/3 or synthesizes evidence."))
     ww.add_argument("--grounded-claim-plan", dest="grounded_claim_plan",
                     action="store_true",
                     help=("opt-in grounded generation: ask the model for a structured "
@@ -329,8 +345,9 @@ def build_parser() -> argparse.ArgumentParser:
                     choices=("enhancement", "baseline", "expanded", "deepwiki-scale"),
                     help="enhancement: missing mandatory family fails the gate "
                          "(default); baseline: report coverage without enforcing; "
-                         "expanded/deepwiki-scale: additionally prove "
-                         "catalog→plan→source→evidence→output traceability + freshness")
+                         "expanded: the core DeepWiki-scale path — additionally prove "
+                         "catalog→plan→source→evidence→output traceability + "
+                         "freshness; deepwiki-scale: compatibility alias for expanded")
     return p
 
 

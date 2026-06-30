@@ -1,0 +1,63 @@
+{
+  "schema_version": "tdd-definition-of-done-v1",
+  "slug": "deepwiki-scale-core-fanout",
+  "negotiated_from": "problem-success.md goals G1-G5 and success metrics SM1-SM6",
+  "gates": [
+    {
+      "id": "DOD-1",
+      "metric": "SM1",
+      "statement": "expanded enforces anti-compression by default: a compressed-family plan fails normalize-plan with exit 3 and bad_compressed_normalized_plan.",
+      "verification": "tests/test_phase2_anti_compression.py::IntegratedDeepwikiScaleTests::test_expanded_fails_on_compressed_family",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-2",
+      "metric": "SM2",
+      "statement": "deepwiki-scale is a behaviour-identical compatibility alias of expanded (same passed/exit_code/defect codes).",
+      "verification": "tests/test_phase2_anti_compression.py::AntiCompressionGateUnitTests::test_expanded_and_alias_are_equivalent",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-3",
+      "metric": "SM3",
+      "statement": "baseline/enhancement never run the anti-compression gate; full suite green.",
+      "verification": "tests/test_phase2_anti_compression.py::IntegratedDeepwikiScaleTests::test_enhancement_does_not_run_anti_compression + full pytest run",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-4",
+      "metric": "SM4",
+      "statement": "The source-derived breadth budget computes catalog-derived page/required-topic targets and a per-family fan-out floor (RAGFlow catalog: >=36 pages, >=94 required topics, vs the 21-page/42-TER collapse).",
+      "verification": "tests/test_deepwiki_scale_core.py::BreadthBudgetTests + manual derive_breadth_budget over the real RAGFlow topic-catalog.json",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-5",
+      "metric": "SM5",
+      "statement": "Embedded planner prompts and Gem prompt files instruct fan-out, one TER per promoted catalog topic, no broad page claiming leaf coverage, and reference the breadth budget.",
+      "verification": "tests/test_deepwiki_scale_core.py::PlannerPromptFanOutTests",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-6",
+      "metric": "SM6",
+      "statement": "plans/promoted-topic-contract.json is emitted + loadable, and a promoted catalog topic that is a sufficient obligation but omitted from generated output fails Phase 4 generated coverage.",
+      "verification": "tests/test_deepwiki_scale_core.py::PromotedTopicContractTests + Phase4PromotedGranularityTests",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-7",
+      "metric": "C2/C3/C5",
+      "statement": "No validator weakened; protected spec unchanged; Python hard rules honoured (explicit typing, no mutable defaults, no import-time side effects, DI policy, deterministic tests).",
+      "verification": "git diff --exit-code on protected spec; full pytest; code review of anti_compression.py/generated_coverage.py",
+      "status": "pass"
+    },
+    {
+      "id": "DOD-8",
+      "metric": "G3-future",
+      "statement": "DEFERRED (explicitly staged, not a failure): a standalone Phase 4 gate that cross-references plans/promoted-topic-contract.json end-to-end and a billed live RAGFlow run.",
+      "verification": "status.md follow-up slice; not required for this slice's done",
+      "status": "deferred"
+    }
+  ]
+}

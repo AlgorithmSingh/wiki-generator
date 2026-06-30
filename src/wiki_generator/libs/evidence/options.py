@@ -25,10 +25,11 @@ DEFAULT_MAX_TOTAL_PER_SECTION = 40
 COVERAGE_MODE_BASELINE = "baseline"
 COVERAGE_MODE_ENHANCEMENT = "enhancement"
 COVERAGE_MODE_EXPANDED = "expanded"
-# ``deepwiki-scale`` is the next-phase breadth mode: a strict superset of ``expanded``.
-# In Phase 3 (this slice) it behaves exactly like ``expanded`` (the same profile-aware
-# portfolio + sufficiency gates); promoted-topic-granular Phase 3 enforcement is a
-# later slice (TDD VG-13 / milestone M2).
+# ``deepwiki-scale`` is a **compatibility alias** for ``expanded`` — the identical
+# Phase 3 behaviour (the same profile-aware portfolio + sufficiency gates, and the
+# additive ``catalog_topic_id`` linkage on each evidenced topic row that carries
+# promoted-catalog-topic granularity to Phase 4). Retained for callers/docs naming
+# ``deepwiki-scale``; new callers should use ``expanded``.
 COVERAGE_MODE_DEEPWIKI_SCALE = "deepwiki-scale"
 COVERAGE_MODES = (COVERAGE_MODE_BASELINE, COVERAGE_MODE_ENHANCEMENT,
                   COVERAGE_MODE_EXPANDED, COVERAGE_MODE_DEEPWIKI_SCALE)

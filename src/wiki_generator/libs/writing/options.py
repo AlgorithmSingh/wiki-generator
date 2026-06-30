@@ -41,15 +41,16 @@ MAX_REWRITE_ATTEMPTS_HARD_CAP = 2
 # evidenced sufficient required topic was generated with valid citations.
 COVERAGE_MODE_BASELINE = "baseline"
 COVERAGE_MODE_ENHANCEMENT = "enhancement"
-# ``expanded`` is the DeepWiki-style hierarchical mode: a strict superset of
+# ``expanded`` is the **core** DeepWiki-scale hierarchical mode: a strict superset of
 # ``enhancement`` that ALSO validates page-profile / content-block coverage and
 # carries the hierarchical page context (profile, catalog topics, content blocks,
-# relevant-source-map rows) into the writing packet. It enforces the same
-# pre-provider upstream gates as ``enhancement``.
+# relevant-source-map rows) into the writing packet, including each evidenced topic's
+# promoted ``catalog_topic_id`` so generated coverage keeps promoted-catalog-topic
+# granularity. It enforces the same pre-provider upstream gates as ``enhancement``.
 COVERAGE_MODE_EXPANDED = "expanded"
-# ``deepwiki-scale`` is the next-phase breadth mode: a strict superset of ``expanded``.
-# In Phase 4 (this slice) it carries the same hierarchical writing behaviour as
-# ``expanded``; promoted-topic-granular generated coverage is a later slice (VG-13/M3).
+# ``deepwiki-scale`` is a **compatibility alias** for ``expanded`` — the identical
+# Phase 4 writing behaviour. Retained so callers/docs naming ``deepwiki-scale`` keep
+# working; new callers should use ``expanded``.
 COVERAGE_MODE_DEEPWIKI_SCALE = "deepwiki-scale"
 COVERAGE_MODES = (COVERAGE_MODE_BASELINE, COVERAGE_MODE_ENHANCEMENT,
                   COVERAGE_MODE_EXPANDED, COVERAGE_MODE_DEEPWIKI_SCALE)

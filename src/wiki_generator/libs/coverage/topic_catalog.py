@@ -37,6 +37,7 @@ import os
 from dataclasses import dataclass, field
 
 from ..util import read_json, sha256_text
+from .anti_compression import derive_breadth_budget, render_breadth_budget_lines
 from .facets import derive_family_facets
 from .signals import (
     DETECTORS,
@@ -480,6 +481,12 @@ def render_catalog_markdown(catalog: TopicCatalog) -> str:
         f"- Source fingerprint: `{catalog.source_fingerprint}` "
         "(deterministic; timestamp-free).",
         "",
+    ]
+    # Source-derived breadth budget: concrete page / required-topic targets the planner
+    # must fan out to, computed only from this catalog (never the benchmark). The core
+    # expanded path's anti-compression gate enforces the same source floors afterwards.
+    L += render_breadth_budget_lines(derive_breadth_budget(catalog.to_dict()))
+    L += [
         "## Strong source-derived topics",
         "",
     ]

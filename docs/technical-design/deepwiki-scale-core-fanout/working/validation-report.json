@@ -1,0 +1,58 @@
+{
+  "schema_version": "tdd-validation-report-v1",
+  "slug": "deepwiki-scale-core-fanout",
+  "validator_role": "Phase 6 finalization (writer != approver: validation/repair distinct from the design/implementation steps)",
+  "document_validation": {
+    "required_sections_present": true,
+    "goals_paired_with_non_goals": true,
+    "interfaces_have_error_paths": true,
+    "failure_paths_described": true,
+    "quality_attributes_measurable": true,
+    "alternatives_and_adr_recorded": true,
+    "tests_traced_to_requirements": true,
+    "rollout_rollback_present": true,
+    "claims_grounded_or_marked_open": true
+  },
+  "definition_of_done": {
+    "DOD-1": "pass",
+    "DOD-2": "pass",
+    "DOD-3": "pass",
+    "DOD-4": "pass",
+    "DOD-5": "pass",
+    "DOD-6": "pass",
+    "DOD-7": "pass",
+    "DOD-8": "deferred"
+  },
+  "implementation_validation": {
+    "targeted_tests": {
+      "command": "uv run python -m pytest -q tests/test_phase2_anti_compression.py tests/test_phase2_topic_catalog_planning.py tests/test_coverage_validation.py",
+      "result": "69 passed"
+    },
+    "new_tests": {
+      "command": "uv run python -m pytest -q tests/test_deepwiki_scale_core.py",
+      "result": "15 passed"
+    },
+    "full_suite": {
+      "command": "uv run python -m pytest -q",
+      "result": "687 passed, 1 skipped, 21 subtests passed"
+    },
+    "whitespace_check": "git diff --check: clean",
+    "protected_spec": "git diff --exit-code docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md: unchanged",
+    "real_catalog_budget_check": "derive_breadth_budget over the real RAGFlow topic-catalog.json (147 topics / 94 must / 12 must-families / 82 must-subsystems) -> min_total_pages=36, max_total_pages=95, min_leaf_pages=23, min_required_topics=94 (vs the prior 21-page / 42-TER collapse)"
+  },
+  "python_hard_rules": {
+    "explicit_typing": "pass (new public functions annotated)",
+    "no_mutable_default_args": "pass (dataclass field(default_factory=...); None + in-body init)",
+    "no_import_time_side_effects": "pass (module level is defs/constants only; util imported inside loader)",
+    "dependency_injection_for_policy": "pass (BreadthPolicy injected into derive_breadth_budget)",
+    "no_broad_swallowed_exceptions": "pass (loader catches narrow OSError/ValueError only)",
+    "deterministic_tests": "pass (no network/clock/random; temp dirs cleaned)",
+    "no_stray_artifacts": "pass (only intended files changed; stub dir removed)"
+  },
+  "deferred": [
+    "Standalone Phase 4 gate that loads plans/promoted-topic-contract.json and fails end-to-end when a promoted leaf topic with evidence is missing from generated output (the data-contract plumbing + catalog_topic_id passthrough + the omitted-promoted-topic failure proof are shipped; the dedicated cross-referencing gate is the next slice).",
+    "Billed live RAGFlow run to confirm the hardened prompt + budget reach source-derived page/topic targets."
+  ],
+  "verdict": "pass",
+  "repair_notes": "Two test assertions failed initially due to markdown-bold and line-wrapping in the Gem prompt files; repaired the test (whitespace-normalize + stable phrase). No design or production-code change was required by validation."
+}

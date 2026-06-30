@@ -15,10 +15,12 @@ a page" counted as planning coverage):
   a leaf obligation (a topic only on the overview page fails);
 - a fanned-out plan (each promoted leaf topic on its own <=cap leaf page with a TER)
   passes;
-- ``baseline``/``enhancement``/``expanded`` are report-only here (opt-in isolation);
-- the integrated ``normalize-plan --coverage-mode deepwiki-scale`` runs the gate, writes
-  its artifacts, passes a non-compressed plan, and fails a compressed one (exit 3),
-  while ``expanded``/``enhancement`` never run it.
+- the core ``expanded`` path (and its ``deepwiki-scale`` alias) ENFORCES the gate;
+  ``baseline``/``enhancement`` are report-only here;
+- the integrated ``normalize-plan --coverage-mode expanded`` runs the gate, writes its
+  artifacts (including the promoted-topic contract), passes a non-compressed plan, and
+  fails a compressed one (exit 3); ``deepwiki-scale`` is an alias for the same
+  behaviour, while ``enhancement`` never runs it.
 
 No Gemini/Vertex/API/network; no real Phase 1/3/4 pipeline run.
 """
@@ -294,13 +296,31 @@ class AntiCompressionGateUnitTests(unittest.TestCase):
         self.assertFalse(g.report.enforced)
         self.assertTrue(g.report.diagnostics)  # still computed/reported
 
-    def test_expanded_is_report_only(self):
+    def test_expanded_enforces_breadth(self):
+        # expanded is now the CORE scale path: it enforces the anti-compression gate
+        # exactly like its deepwiki-scale alias (the same compressed plan fails).
         catalog, subs = _family_catalog("frontend", 12)
         collapse = [_sec("overview", profile="overview"),
                     _sec("frontend", catalog_ids=["frontend"] + subs)]
         g = cov.gate_anti_compression(catalog, None, collapse, mode=cov.MODE_EXPANDED)
-        self.assertTrue(g.passed)
-        self.assertFalse(g.report.enforced)
+        self.assertFalse(g.passed)
+        self.assertTrue(g.report.enforced)
+        self.assertEqual(g.exit_code, cov.COVERAGE_GATE_FAIL_EXIT)
+
+    def test_expanded_and_alias_are_equivalent(self):
+        # deepwiki-scale is a compatibility alias: identical verdict + diagnostics.
+        catalog, subs = _family_catalog("frontend", 12)
+        collapse = [_sec("overview", profile="overview"),
+                    _sec("frontend", catalog_ids=["frontend"] + subs)]
+        exp = cov.gate_anti_compression(catalog, None, collapse,
+                                        mode=cov.MODE_EXPANDED).to_dict()
+        alias = cov.gate_anti_compression(catalog, None, collapse,
+                                          mode=cov.MODE_DEEPWIKI_SCALE).to_dict()
+        # same verdict, exit code, and defect codes (mode label aside).
+        self.assertEqual(exp["passed"], alias["passed"])
+        self.assertEqual(exp["exit_code"], alias["exit_code"])
+        self.assertEqual({d["code"] for d in exp["report"]["diagnostics"]},
+                         {d["code"] for d in alias["report"]["diagnostics"]})
 
     def test_no_catalog_is_graceful(self):
         g = cov.gate_anti_compression(None, None, [_sec("a")],
@@ -339,17 +359,21 @@ class AntiCompressionGateUnitTests(unittest.TestCase):
 class ModeWiringTests(unittest.TestCase):
     """deepwiki-scale is a strict superset of expanded and is accepted everywhere."""
 
-    def test_deepwiki_scale_enforces_expanded_page_planning(self):
-        # a defective page (missing profile) must still fail page-planning in
-        # deepwiki-scale (proving the superset enforces the expanded gates too).
+    def test_expanded_is_core_breadth_enforcing_path(self):
+        # a defective page (missing profile) must still fail page-planning in the core
+        # expanded path; and expanded now enforces breadth (deepwiki-scale is an alias).
         catalog = base._catalog(base._topic("doc-processing", priority="must"))
         secs = [base._norm_section("a", profile=None)]
-        g = cov.gate_page_planning(catalog, None, secs, mode=cov.MODE_DEEPWIKI_SCALE)
+        g = cov.gate_page_planning(catalog, None, secs, mode=cov.MODE_EXPANDED)
         self.assertFalse(g.passed)
-        self.assertTrue(cov.is_enforcing(cov.MODE_DEEPWIKI_SCALE))
-        self.assertTrue(cov.is_expanded_family(cov.MODE_DEEPWIKI_SCALE))
-        self.assertFalse(cov.enforces_breadth(cov.MODE_EXPANDED))
+        self.assertTrue(cov.is_enforcing(cov.MODE_EXPANDED))
+        self.assertTrue(cov.is_expanded_family(cov.MODE_EXPANDED))
+        # core: expanded enforces breadth by default; deepwiki-scale aliases it.
+        self.assertTrue(cov.enforces_breadth(cov.MODE_EXPANDED))
         self.assertTrue(cov.enforces_breadth(cov.MODE_DEEPWIKI_SCALE))
+        # baseline/enhancement never enforce breadth.
+        self.assertFalse(cov.enforces_breadth(cov.MODE_ENHANCEMENT))
+        self.assertFalse(cov.enforces_breadth(cov.MODE_BASELINE))
 
     def test_evidence_and_writing_options_accept_mode(self):
         eo = EvidenceOptions(bundle_root="/tmp/b", out_dir="/tmp/o",
@@ -438,16 +462,45 @@ class IntegratedDeepwikiScaleTests(unittest.TestCase):
         pp = util.read_json(os.path.join(self.plans, "page-planning-gate.json"))
         self.assertTrue(pp["passed"], pp["report"]["diagnostics"])
 
-    def test_expanded_does_not_run_anti_compression(self):
+    def test_expanded_runs_anti_compression_by_default(self):
+        # expanded is now the core scale path: it RUNS the anti-compression gate (and
+        # writes the promoted-topic contract). _EFULL_CATALOG has only family-level
+        # must topics, so there are no promoted leaf topics and the gate passes.
         self._write_catalog(base._EFULL_CATALOG)
         rc = normalize_plan_cmd.run(
             self._args(self._write_raw(base._EFULL), mode="expanded"))
         self.assertEqual(rc, 0)
-        self.assertFalse(os.path.isfile(
-            os.path.join(self.plans, "anti-compression-gate.json")))
-        # expanded still writes its own gates.
+        path = os.path.join(self.plans, "anti-compression-gate.json")
+        self.assertTrue(os.path.isfile(path))
+        gate = util.read_json(path)
+        self.assertTrue(gate["passed"], gate["report"]["diagnostics"])
+        self.assertEqual(gate["report"]["mode"], "expanded")
+        # expanded still writes its own page-planning gate.
         self.assertTrue(os.path.isfile(
             os.path.join(self.plans, "page-planning-gate.json")))
+        # and the downstream promoted-topic contract.
+        contract = util.read_json(
+            os.path.join(self.plans, "promoted-topic-contract.json"))
+        self.assertEqual(contract["schema_version"],
+                         "deepwiki-promoted-topic-contract-v1")
+
+    def test_expanded_fails_on_compressed_family(self):
+        # the same compressed-family plan fails under expanded (exit 3) — proving
+        # strict breadth is core, not opt-in.
+        subs = [f"doc-processing.s{i}" for i in range(1, 8)]
+        catalog = base._catalog(
+            base._topic("retrieval-internals", priority="must"),
+            base._topic("doc-processing", priority="must"),
+            *[base._topic(s, priority="must", kind="subsystem", parent="doc-processing")
+              for s in subs],
+            base._topic("memory", priority="should", strength="low", status="low"))
+        self._write_catalog(catalog)
+        rc = normalize_plan_cmd.run(
+            self._args(self._write_raw(self._scale_fail_rows(subs)), mode="expanded"))
+        self.assertEqual(rc, cov.COVERAGE_GATE_FAIL_EXIT)
+        gate = util.read_json(os.path.join(self.plans, "anti-compression-gate.json"))
+        self.assertFalse(gate["passed"])
+        self.assertEqual(gate["report"]["mode"], "expanded")
 
     def test_enhancement_does_not_run_anti_compression(self):
         self._write_catalog(base._EFULL_CATALOG)
@@ -456,6 +509,8 @@ class IntegratedDeepwikiScaleTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertFalse(os.path.isfile(
             os.path.join(self.plans, "anti-compression-gate.json")))
+        self.assertFalse(os.path.isfile(
+            os.path.join(self.plans, "promoted-topic-contract.json")))
 
 
 if __name__ == "__main__":

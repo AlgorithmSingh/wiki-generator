@@ -1,0 +1,29 @@
+{
+  "phase": "phase-1-setup-framing",
+  "target_change": "Make strict source-derived DeepWiki-scale breadth the core behaviour of the expanded wiki-generation path (not a separate opt-in product), harden the Phase 2 planner so it authors a fanned-out hierarchy, and carry promoted catalog-topic granularity into Phase 3/4.",
+  "deliverables": [
+    "expanded mode enforces the anti-compression breadth gate by default; deepwiki-scale is a compatibility alias",
+    "source-derived breadth budget (page/required-topic targets, per-family fan-out floor) derived from the catalog and shown to the planner",
+    "hardened planner prompt/schema (embedded + Gem files) instructing fan-out, one TER per promoted catalog topic, and no broad page claiming leaf coverage",
+    "promoted-topic downstream data contract (plans/promoted-topic-contract.json) + catalog_topic_id carried into Phase 4 generated coverage"
+  ],
+  "constraints": [
+    "No live/billed Vertex/Gemini/API calls; no full real RAGFlow E2E in this run",
+    "Do not weaken existing validators",
+    "Do not modify docs/specs/protected/PHASE3_EVIDENCE_RETRIEVAL_SPEC.md",
+    "Do not delete prior PRDs/TDDs; do not patch past generated artifacts",
+    "Comparator isolation: ragflow-deepwiki.md is comparison-only",
+    "Python hard rules: explicit typing, no mutable defaults, no import-time side effects, DI for policy, deterministic tests, honest validation"
+  ],
+  "uncertainty": [
+    "Whether full Phase 4 enforcement that cross-references the promoted-topic contract end-to-end fits in one safe slice (decided: defer the standalone gate; ship the data contract + granularity passthrough + tests)",
+    "Exact BreadthPolicy thresholds for live RAGFlow-scale runs (defaults seeded; release owner sign-off required before billed runs)"
+  ],
+  "known_unknowns": [
+    "Live GPT-5.4/Gemini planner response quality to the hardened prompt (cannot be measured without a billed run)"
+  ],
+  "assumptions": [
+    "The Phase A topic catalog (derived/topic-catalog.json) is the source of breadth truth; benchmark is never read",
+    "Phase 3 already tags evidenced topic rows with catalog_topic_id in the expanded family (verified in code)"
+  ]
+}

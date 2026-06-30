@@ -73,6 +73,19 @@ Constraints (repeat of the Gem rules, in case they aren't loaded):
   `planning-handles.md` instead. A coverage-enhanced run gates the normalized plan
   against all thirteen mandatory families before Phase 3, so omitting a supported
   family fails loudly — plan the page.
+- **Fan out, do not compress (core expanded scale behavior).** `planning-topic-catalog.md`
+  lists each family's high-signal **subsystem** topics and a **source-derived breadth
+  budget** (target page range, target required-topic count, per-family fan-out floor)
+  computed only from this repo's catalog — hit it. Use parent/index pages
+  (`page_profile` `overview`/`architecture-flow`) plus **leaf** subsystem pages; a
+  leaf page carries at most ~4 promoted `catalog_topic_ids[]`; split a dense family
+  across multiple child pages via `parent_section_id`; give **each** promoted (`must`)
+  subsystem catalog topic its own leaf page, its own `required_topics[]` entry, and its
+  own `catalog_topic_id`-keyed `topic_evidence_requirements[]`. A broad page that only
+  **lists** a family's subsystem `catalog_topic_ids[]` does **not** count as leaf
+  coverage. A deterministic **anti-compression gate fails a compressed plan before
+  Phase 3** (no own leaf page/TER per promoted topic, overloaded leaf page, unsplit
+  large family, flat plan, or too few leaf pages vs the catalog floor).
 - **Required-topic evidence.** The normalizer merges `coverage_requirements[]` and
   `required_topics[]` into one normalized required-topics list, so for **every entry
   in BOTH fields** add a matching `topic_evidence_requirements[]` object `{topic,

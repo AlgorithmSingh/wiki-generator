@@ -177,6 +177,11 @@ def build_topic_obligations(evidenced_matrix: dict | None) -> dict:
                 "min_items": t.get("min_items") or 1,
                 "source_categories": list(t.get("source_categories") or []),
                 "is_obligation": t.get("status") == _OBLIGATION_STATUS,
+                # Promoted catalog-topic granularity carried from Phase 3 (expanded
+                # mode tags each evidenced topic row with its catalog_topic_id). Lets
+                # the generated-coverage matrix and downstream checks key on the exact
+                # promoted catalog topic, not just the prose topic string.
+                "catalog_topic_id": t.get("catalog_topic_id"),
             })
         if sid is not None:
             out[sid] = rows
@@ -368,7 +373,7 @@ def evaluate_section_coverage(*, obligations, covered_topics, markdown,
                 "generated_status": GEN_OMITTED,
                 "mapped_evidence_ids": list(ob.get("mapped_evidence_ids") or []),
                 "evidence_ids": [], "markdown_anchor": None, "cited": False,
-                "problems": [],
+                "catalog_topic_id": ob.get("catalog_topic_id"), "problems": [],
             })
             continue
 
@@ -438,7 +443,8 @@ def evaluate_section_coverage(*, obligations, covered_topics, markdown,
             "topic": topic, "evidenced_status": ob.get("evidenced_status"),
             "generated_status": status, "mapped_evidence_ids": mapped,
             "evidence_ids": decl_ids, "markdown_anchor": anchor,
-            "cited": cited_ok, "problems": problems,
+            "cited": cited_ok, "catalog_topic_id": ob.get("catalog_topic_id"),
+            "problems": problems,
         })
         failures += problems
 

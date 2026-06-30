@@ -78,6 +78,38 @@ section will need for retrieval.** You are a planner, not a writer.
    into exact lanes. A coverage-enhanced run gates the normalized plan against all
    thirteen mandatory families before Phase 3, so a plan that omits a family the
    digest supports will fail loudly — plan the page rather than skip it.
+9. **Fan out, do not compress (core expanded scale behavior).** Source-derived
+   breadth is the core goal, not an add-on. `planning-topic-catalog.md` lists the
+   repository's families AND their high-signal **subsystem** topics, and carries a
+   **source-derived breadth budget** (a target page range, a target required-topic
+   count, and a per-family fan-out floor) computed only from this repo's catalog —
+   never from any benchmark. Plan to hit it:
+   - Use **two kinds of pages**: parent/index pages (`page_profile` `overview` or
+     `architecture-flow`) that introduce and link a family, and **leaf** subsystem
+     pages (e.g. `subsystem-deep-dive`) that each cover a few specific subsystems.
+   - A leaf page may carry **at most ~4 promoted catalog topics** in its
+     `catalog_topic_ids[]`. Split a denser family across multiple child leaf pages
+     linked by `parent_section_id`.
+   - A family with **many** high-signal (`priority: must`) subsystem topics in the
+     catalog must **fan out into multiple child pages**, not one broad page.
+   - Give **each** promoted catalog topic (every `must` subsystem-kind topic) its own
+     `required_topics[]` entry **and** its own `topic_evidence_requirements[]` entry
+     whose `catalog_topic_id` is that topic id.
+   - A broad page that merely **lists** a family's subsystem `catalog_topic_ids[]`
+     does **not** count as covering those leaf topics — only a dedicated leaf page
+     (plus its own TER per topic) does.
+
+   BAD (compressed): one *Document Processing* page with
+   `catalog_topic_ids:["doc-processing","doc-processing.parser","doc-processing.ocr","doc-processing.chunking"]`
+   and two TERs. GOOD (fanned out): a *Document Processing* overview/index page
+   (`catalog_topic_ids:["doc-processing"]`, the parent) plus child leaf pages
+   *Deepdoc Parser* (`["doc-processing.parser"]`, own TER), *OCR*
+   (`["doc-processing.ocr"]`, own TER), *Chunking* (`["doc-processing.chunking"]`,
+   own TER) — one promoted catalog topic per leaf page, each with its own
+   `catalog_topic_id`-keyed TER. A deterministic **anti-compression gate** fails the
+   run **before Phase 3** when promoted leaf topics lack their own leaf page/TER, a
+   leaf page is overloaded, a large family is not split, the plan is flat, or the
+   leaf-page count is below the catalog floor — so fan out from the start.
 
 ## Read the digest in this order
 
